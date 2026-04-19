@@ -159,6 +159,33 @@ program
       })
   )
   .addCommand(
+    new Command('update')
+      .argument('<name>', 'Profile name')
+      .option('-m, --model <model>', 'Set default model')
+      .option('--cli <cli>', 'Set CLI command')
+      .description('Update profile settings')
+      .action((name: string, options: { model?: string; cli?: string }) => {
+        try {
+          let config = requireConfig();
+          const profile = config.profiles[name];
+          if (!profile) {
+            console.error(`Profile '${name}' not found`);
+            process.exit(1);
+          }
+          if (options.model) profile.model = options.model;
+          if (options.cli) profile.cli = options.cli;
+          config.profiles[name] = profile;
+          saveConfig(config);
+          console.log(`✓ Profile '${name}' updated`);
+          if (options.model) console.log(`  model: ${options.model}`);
+          if (options.cli) console.log(`  cli: ${options.cli}`);
+        } catch (err) {
+          console.error(`Error: ${(err as Error).message}`);
+          process.exit(1);
+        }
+      })
+  )
+  .addCommand(
     new Command('remove')
       .argument('<name>', 'Profile name')
       .option('--keep-dir', 'Keep profile directory on disk')
