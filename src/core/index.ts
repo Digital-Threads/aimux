@@ -35,3 +35,11 @@ export {
 } from './symlinks.js';
 
 export type { SyncResult, HealthReport } from './symlinks.js';
+
+export {
+  detectClaudeDirs,
+  initFromSource,
+  initAutoDetect,
+} from './init.js';
+
+export type { DetectedDir, InitResult } from './init.js';

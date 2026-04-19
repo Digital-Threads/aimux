@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import { render } from 'ink';
 import { StatusView } from './components/StatusView.js';
 import type { AimuxConfig } from './types/index.js';
-import { loadConfig } from './core/index.js';
+import { loadConfig, initAutoDetect, initFromSource, detectClaudeDirs } from './core/index.js';
 
 function requireConfig(): AimuxConfig {
   const config = loadConfig();
@@ -31,8 +31,38 @@ program
 program
   .command('init')
   .description('Initialize aimux — detect and migrate existing Claude directories')
-  .action(() => {
-    console.log('aimux init — coming soon (aimux-g2w)');
+  .option('-s, --source <path>', 'Path to shared source directory (default: auto-detect)')
+  .action((options: { source?: string }) => {
+    try {
+      if (options.source) {
+        const result = initFromSource(options.source);
+        console.log(`✓ Initialized with source: ${result.source}`);
+        return;
+      }
+
+      const dirs = detectClaudeDirs();
+      if (dirs.length === 0) {
+        console.error('No Claude directories found. Use --source <path> to specify.');
+        process.exit(1);
+      }
+
+      console.log(`Found ${dirs.length} Claude director${dirs.length === 1 ? 'y' : 'ies'}:`);
+      for (const d of dirs) {
+        const tag = d.isSource ? ' (source)' : '';
+        const auth = d.hasCredentials ? '✓ auth' : '✗ no auth';
+        console.log(`  ${d.name}: ${d.path} — ${d.realFileCount} files, ${d.symlinkCount} symlinks [${auth}]${tag}`);
+      }
+
+      const result = initAutoDetect();
+      console.log(`\n✓ Config created: source=${result.source}`);
+      for (const p of result.profiles) {
+        const copied = p.privatesCopied.length > 0 ? `, private: ${p.privatesCopied.join(', ')}` : '';
+        console.log(`  ${p.name}: ${p.sync.created.length} symlinks created${copied}`);
+      }
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
   });
 
 program
