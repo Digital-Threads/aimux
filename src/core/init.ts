@@ -30,7 +30,7 @@ export function detectClaudeDirs(): DetectedDir[] {
   const entries = readdirSync(home);
   const claudeDirs: DetectedDir[] = [];
 
-  const CLAUDE_MARKERS = ['.credentials.json', '.claude.json', 'settings.json', 'CLAUDE.md', 'agents', 'skills', 'commands'];
+  const CLAUDE_MARKERS = ['.credentials.json', '.claude.json', 'CLAUDE.md', 'agents', 'skills', 'commands', 'projects'];
 
   for (const entry of entries) {
     if (entry !== '.claude' && !entry.startsWith('.claude-')) continue;
