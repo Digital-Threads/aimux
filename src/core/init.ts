@@ -30,12 +30,17 @@ export function detectClaudeDirs(): DetectedDir[] {
   const entries = readdirSync(home);
   const claudeDirs: DetectedDir[] = [];
 
+  const CLAUDE_MARKERS = ['.credentials.json', '.claude.json', 'settings.json', 'CLAUDE.md', 'agents', 'skills', 'commands'];
+
   for (const entry of entries) {
     if (entry !== '.claude' && !entry.startsWith('.claude-')) continue;
     const fullPath = join(home, entry);
     if (!lstatSync(fullPath).isDirectory()) continue;
 
     const contents = readdirSync(fullPath);
+    const hasMarker = contents.some(item => CLAUDE_MARKERS.includes(item));
+    if (!hasMarker) continue;
+
     let realFiles = 0;
     let symlinks = 0;
 
