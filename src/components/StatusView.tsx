@@ -16,15 +16,14 @@ function countSymlinks(profilePath: string, sharedSource: string): [number, numb
   const sourcePath = expandHome(sharedSource);
   if (!existsSync(sourcePath)) return [0, 0];
 
-  const entries = readdirSync(sourcePath);
+  const sourceEntries = readdirSync(sourcePath);
   let total = 0;
   let linked = 0;
 
-  for (const entry of entries) {
-    const profileEntry = join(profilePath, entry);
+  for (const entry of sourceEntries) {
     total++;
     try {
-      const stat = lstatSync(profileEntry);
+      const stat = lstatSync(join(profilePath, entry));
       if (stat.isSymbolicLink()) linked++;
     } catch {
       // missing
@@ -33,8 +32,18 @@ function countSymlinks(profilePath: string, sharedSource: string): [number, numb
   return [linked, total];
 }
 
+function countSharedElements(config: AimuxConfig): number {
+  const sourcePath = expandHome(config.shared_source);
+  if (!existsSync(sourcePath)) return 0;
+  const all = readdirSync(sourcePath);
+  const privateSet = new Set(config.private);
+  return all.filter(name => !privateSet.has(name)).length;
+}
+
 export function StatusView({ config }: Props) {
   const profiles = Object.entries(config.profiles);
+  const authCount = profiles.filter(([, p]) => checkAuth(expandHome(p.path))).length;
+  const sharedCount = countSharedElements(config);
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -42,7 +51,8 @@ export function StatusView({ config }: Props) {
         <Text bold color="cyan">aimux status</Text>
         <Text> </Text>
         <Text>Shared source: <Text color="green">{config.shared_source}</Text></Text>
-        <Text>Profiles: <Text bold>{profiles.length}</Text></Text>
+        <Text>Profiles: <Text bold>{profiles.length}</Text> ({authCount} authenticated)</Text>
+        <Text>Shared elements: <Text bold>{sharedCount}</Text></Text>
         <Text>Private elements: <Text bold>{config.private.length}</Text></Text>
         <Text> </Text>
 
@@ -59,6 +69,7 @@ export function StatusView({ config }: Props) {
             const authed = checkAuth(pPath);
             const isSource = profile.is_source ?? false;
             const [linked, total] = isSource ? [0, 0] : countSymlinks(pPath, config.shared_source);
+            const linkOk = isSource || linked === total;
 
             return (
               <Box key={name} gap={2}>
@@ -74,7 +85,7 @@ export function StatusView({ config }: Props) {
                   <Text dimColor>{profile.model ?? 'default'}</Text>
                 </Box>
                 <Box width={18}>
-                  <Text dimColor>
+                  <Text color={isSource ? undefined : linkOk ? 'green' : 'yellow'}>
                     {isSource ? '(source)' : `${linked}/${total}`}
                   </Text>
                 </Box>
