@@ -7,7 +7,8 @@ import { rmSync } from 'node:fs';
 import {
   loadConfig, saveConfig, addProfile, removeProfile, expandHome,
   ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs,
-  syncProfile, launchProfile, getLastProfile, recordHistory,
+  syncProfile, syncAllProfiles, checkAllProfiles,
+  launchProfile, getLastProfile, recordHistory,
 } from './core/index.js';
 
 function requireConfig(): AimuxConfig {
@@ -190,14 +191,60 @@ program
   .description('Rebuild symlinks for all profiles')
   .argument('[profile]', 'Specific profile to rebuild')
   .action((profile?: string) => {
-    console.log(`aimux rebuild — coming soon (aimux-0g6) [profile=${profile ?? 'all'}]`);
+    try {
+      const config = requireConfig();
+      if (profile) {
+        const result = syncProfile(config, profile);
+        console.log(`Profile '${profile}':`);
+        console.log(`  created: ${result.created.length}, skipped: ${result.skipped.length}, repaired: ${result.repaired.length}, private: ${result.private.length}`);
+      } else {
+        const results = syncAllProfiles(config);
+        for (const [name, result] of results) {
+          const src = config.profiles[name]?.is_source ? ' (source)' : '';
+          console.log(`${name}${src}: created=${result.created.length} skipped=${result.skipped.length} repaired=${result.repaired.length}`);
+        }
+        console.log(`\n✓ Rebuilt ${results.size} profiles`);
+      }
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
   });
 
 program
   .command('doctor')
   .description('Health check — find broken symlinks, missing credentials, conflicts')
   .action(() => {
-    console.log('aimux doctor — coming soon (aimux-q9n)');
+    try {
+      const config = requireConfig();
+      const reports = checkAllProfiles(config);
+      let healthy = true;
+
+      for (const [name, report] of reports) {
+        const src = config.profiles[name]?.is_source ? ' (source)' : '';
+        const issues = report.broken.length + report.missing.length + report.orphaned.length;
+
+        if (issues === 0) {
+          console.log(`✓ ${name}${src}: ${report.valid.length} valid`);
+        } else {
+          healthy = false;
+          console.log(`✗ ${name}${src}:`);
+          if (report.broken.length > 0) console.log(`    broken: ${report.broken.join(', ')}`);
+          if (report.missing.length > 0) console.log(`    missing: ${report.missing.join(', ')}`);
+          if (report.orphaned.length > 0) console.log(`    orphaned: ${report.orphaned.join(', ')}`);
+        }
+      }
+
+      if (healthy) {
+        console.log('\n✓ All profiles healthy');
+      } else {
+        console.log('\nRun "aimux rebuild" to fix symlink issues');
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
   });
 
 program
