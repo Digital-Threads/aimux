@@ -7,7 +7,7 @@ import { rmSync } from 'node:fs';
 import {
   loadConfig, saveConfig, addProfile, removeProfile, expandHome,
   ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs,
-  syncProfile,
+  syncProfile, launchProfile, getLastProfile, recordHistory,
 } from './core/index.js';
 
 function requireConfig(): AimuxConfig {
@@ -75,7 +75,46 @@ program
   .description('Launch AI CLI with the specified profile')
   .option('-m, --model <model>', 'Override default model')
   .action((profile: string | undefined, options: { model?: string }) => {
-    console.log(`aimux run — coming soon (aimux-viq) [profile=${profile}, model=${options.model}]`);
+    try {
+      const config = requireConfig();
+      let profileName = profile;
+
+      if (!profileName) {
+        const cwd = process.cwd();
+        const last = getLastProfile(cwd);
+        if (last && config.profiles[last]) {
+          console.log(`Using last profile for this directory: ${last}`);
+          profileName = last;
+        } else {
+          const names = Object.keys(config.profiles);
+          if (names.length === 1) {
+            profileName = names[0];
+          } else {
+            console.log('Available profiles:');
+            for (const [i, name] of names.entries()) {
+              const p = config.profiles[name];
+              const tag = p.is_source ? ' (source)' : '';
+              const model = p.model ? ` [${p.model}]` : '';
+              console.log(`  ${i + 1}. ${name}${model}${tag}`);
+            }
+            console.log(`\nUsage: aimux run <profile>`);
+            process.exit(0);
+          }
+        }
+      }
+
+      if (!config.profiles[profileName]) {
+        console.error(`Profile '${profileName}' not found`);
+        process.exit(1);
+      }
+
+      recordHistory(process.cwd(), profileName);
+      const exitCode = launchProfile(config, profileName, { model: options.model });
+      process.exit(exitCode);
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
   });
 
 program
