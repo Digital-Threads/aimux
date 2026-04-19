@@ -1,0 +1,37 @@
+{
+  "name": "aimux",
+  "version": "0.1.0",
+  "description": "Local AI workspace orchestrator — manage multiple AI CLI subscriptions with shared knowledge and isolated auth",
+  "type": "module",
+  "bin": {
+    "aimux": "./dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.tsx",
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": ["cli", "ai", "claude", "orchestrator", "profile-manager", "tui"],
+  "author": "shahinyanm",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "commander": "^14.0.3",
+    "ink": "^7.0.1",
+    "ink-ui": "^0.4.0",
+    "react": "^19.2.5",
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  }
+}
