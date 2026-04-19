@@ -35,20 +35,14 @@ function resolveProfile(config: AimuxConfig, input: string): string {
   process.exit(1);
 }
 
-const MODEL_PATTERN = /^claude-[a-z]+-[\d.-]+$/;
-
-function warnIfBadModel(model: string): void {
-  if (!MODEL_PATTERN.test(model)) {
-    console.warn(`⚠ Model '${model}' doesn't look like a valid Claude model (expected: claude-<variant>-<version>)`);
-  }
-}
 
 const program = new Command();
 
 program
   .name('aimux')
   .description('Local AI workspace orchestrator — manage multiple AI CLI subscriptions')
-  .version('0.1.0');
+  .version('0.1.0')
+  .enablePositionalOptions();
 
 program
   .command('status')
@@ -95,13 +89,13 @@ program
   });
 
 program
-  .command('run [profile]')
-  .description('Launch AI CLI with the specified profile')
+  .command('run [profile] [cliArgs...]')
+  .description('Launch AI CLI with the specified profile (extra flags forwarded to CLI)')
   .option('-m, --model <model>', 'Override default model')
-  .action(async (profile: string | undefined, options: { model?: string }) => {
+  .allowUnknownOption()
+  .action(async (profile: string | undefined, cliArgs: string[], options: { model?: string }) => {
     try {
       const config = requireConfig();
-      if (options.model) warnIfBadModel(options.model);
       let profileName = profile;
 
       if (!profileName) {
@@ -124,7 +118,7 @@ program
                     console.log(`Auto-sync: ${sync.created.length} created, ${sync.repaired.length} repaired`);
                   }
                 }
-                const exitCode = launchProfile(config, selected, { model: options.model });
+                const exitCode = launchProfile(config, selected, { model: options.model, extraArgs: cliArgs });
                 process.exit(exitCode);
               }}
             />
@@ -144,7 +138,7 @@ program
       }
 
       recordHistory(process.cwd(), profileName);
-      const exitCode = launchProfile(config, profileName, { model: options.model });
+      const exitCode = launchProfile(config, profileName, { model: options.model, extraArgs: cliArgs });
       process.exit(exitCode);
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
@@ -201,10 +195,7 @@ program
           let config = requireConfig();
           const resolved = resolveProfile(config, name);
           const profile = config.profiles[resolved];
-          if (options.model) {
-            warnIfBadModel(options.model);
-            profile.model = options.model;
-          }
+          if (options.model) profile.model = options.model;
           if (options.cli) profile.cli = options.cli;
           config.profiles[resolved] = profile;
           saveConfig(config);
@@ -259,7 +250,6 @@ program
             process.exit(1);
           }
 
-          if (options.model) warnIfBadModel(options.model);
           config = addProfile(config, name, {
             cli: srcProfile.cli,
             model: options.model ?? srcProfile.model,
