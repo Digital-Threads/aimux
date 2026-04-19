@@ -3,12 +3,14 @@ import { Command } from 'commander';
 import { render } from 'ink';
 import { StatusView } from './components/StatusView.js';
 import type { AimuxConfig } from './types/index.js';
-import { rmSync } from 'node:fs';
+import { rmSync, existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
 import {
   loadConfig, saveConfig, addProfile, removeProfile, expandHome,
   ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs,
   syncProfile, syncAllProfiles, checkAllProfiles,
-  launchProfile, getLastProfile, recordHistory,
+  launchProfile, getLastProfile, recordHistory, getProfile,
 } from './core/index.js';
 
 function requireConfig(): AimuxConfig {
@@ -255,14 +257,53 @@ program
       .argument('<profile>', 'Profile to authenticate')
       .description('Launch auth flow for a profile')
       .action((profile: string) => {
-        console.log(`aimux auth login — coming soon (aimux-205) [profile=${profile}]`);
+        try {
+          const config = requireConfig();
+          const p = getProfile(config, profile);
+          const profilePath = expandHome(p.path);
+          const env: Record<string, string> = {};
+          if (!p.is_source) {
+            env.CLAUDE_CONFIG_DIR = profilePath;
+          }
+          console.log(`Launching auth for profile '${profile}'...`);
+          const result = spawnSync(p.cli, [], {
+            stdio: 'inherit',
+            env: { ...process.env, ...env },
+          });
+          if (result.error) {
+            throw new Error(`Failed to launch ${p.cli}: ${result.error.message}`);
+          }
+          const hasAuth = existsSync(join(profilePath, '.credentials.json'));
+          if (hasAuth) {
+            console.log(`✓ Profile '${profile}' authenticated`);
+          }
+        } catch (err) {
+          console.error(`Error: ${(err as Error).message}`);
+          process.exit(1);
+        }
       })
   )
   .addCommand(
     new Command('status')
       .description('Show auth status for all profiles')
       .action(() => {
-        console.log('aimux auth status — coming soon (aimux-205)');
+        try {
+          const config = requireConfig();
+          const authFiles = ['.credentials.json', '.claude.json', 'policy-limits.json', 'mcp-needs-auth-cache.json', 'remote-settings.json'];
+
+          for (const [name, profile] of Object.entries(config.profiles)) {
+            const pPath = expandHome(profile.path);
+            const tag = profile.is_source ? ' (source)' : '';
+            console.log(`${name}${tag}:`);
+            for (const file of authFiles) {
+              const exists = existsSync(join(pPath, file));
+              console.log(`  ${exists ? '✓' : '✗'} ${file}`);
+            }
+          }
+        } catch (err) {
+          console.error(`Error: ${(err as Error).message}`);
+          process.exit(1);
+        }
       })
   );
 
