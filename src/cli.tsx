@@ -3,7 +3,12 @@ import { Command } from 'commander';
 import { render } from 'ink';
 import { StatusView } from './components/StatusView.js';
 import type { AimuxConfig } from './types/index.js';
-import { loadConfig, initAutoDetect, initFromSource, detectClaudeDirs } from './core/index.js';
+import { rmSync } from 'node:fs';
+import {
+  loadConfig, saveConfig, addProfile, removeProfile, expandHome,
+  ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs,
+  syncProfile,
+} from './core/index.js';
 
 function requireConfig(): AimuxConfig {
   const config = loadConfig();
@@ -82,8 +87,26 @@ program
       .option('--no-auth', 'Skip authentication')
       .option('-m, --model <model>', 'Default model for this profile')
       .description('Add a new profile')
-      .action((name: string, _options: { auth: boolean; model?: string }) => {
-        console.log(`aimux profile add — coming soon (aimux-9yg) [name=${name}]`);
+      .action((name: string, options: { auth: boolean; model?: string }) => {
+        try {
+          let config = requireConfig();
+          config = addProfile(config, name, { model: options.model });
+          saveConfig(config);
+          ensureProfileDir(config, name);
+          const sync = syncProfile(config, name);
+          console.log(`✓ Profile '${name}' created`);
+          if (sync.created.length > 0) {
+            console.log(`  ${sync.created.length} symlinks created`);
+          }
+          if (!options.auth) {
+            console.log('  Auth skipped (--no-auth). Run: aimux auth login ' + name);
+          } else {
+            console.log('  Run: aimux auth login ' + name);
+          }
+        } catch (err) {
+          console.error(`Error: ${(err as Error).message}`);
+          process.exit(1);
+        }
       })
   )
   .addCommand(
@@ -96,9 +119,30 @@ program
   .addCommand(
     new Command('remove')
       .argument('<name>', 'Profile name')
+      .option('--keep-dir', 'Keep profile directory on disk')
       .description('Remove a profile')
-      .action((name: string) => {
-        console.log(`aimux profile remove — coming soon (aimux-9yg) [name=${name}]`);
+      .action((name: string, options: { keepDir?: boolean }) => {
+        try {
+          let config = requireConfig();
+          const profile = config.profiles[name];
+          if (!profile) {
+            console.error(`Profile '${name}' not found`);
+            process.exit(1);
+          }
+          const profilePath = profile.path;
+          config = removeProfile(config, name);
+          saveConfig(config);
+          if (!options.keepDir) {
+            const fullPath = expandHome(profilePath);
+            rmSync(fullPath, { recursive: true, force: true });
+            console.log(`✓ Profile '${name}' removed (directory deleted)`);
+          } else {
+            console.log(`✓ Profile '${name}' removed (directory kept)`);
+          }
+        } catch (err) {
+          console.error(`Error: ${(err as Error).message}`);
+          process.exit(1);
+        }
       })
   );
 
