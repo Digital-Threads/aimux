@@ -40,12 +40,12 @@ export function ProfilePicker({ config, lastProfile, onSelect }: Props) {
         const hint = name === lastProfile ? ' ← last used' : '';
 
         return (
-          <Box key={name}>
+          <Box key={name} gap={1}>
             <Text color={isSelected ? 'cyan' : undefined} bold={isSelected}>
-              {isSelected ? '❯ ' : '  '}{name}{tag}
+              {isSelected ? '❯' : ' '} {name}{tag}
             </Text>
-            {model && <Text dimColor>{model}</Text>}
-            {hint && <Text dimColor>{hint}</Text>}
+            {model && <Text color="gray">{model}</Text>}
+            {hint && <Text color="yellow">{hint}</Text>}
           </Box>
         );
       })}
