@@ -17,7 +17,7 @@ You have multiple Claude Code subscriptions (personal, work, client) each in sep
 ## Install
 
 ```bash
-npm install -g aimux
+npm install -g @digital-threads/aimux
 ```
 
 ## Getting Started
