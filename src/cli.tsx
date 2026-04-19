@@ -348,14 +348,15 @@ program
       .action((profile: string) => {
         try {
           const config = requireConfig();
-          const p = getProfile(config, profile);
+          const resolved = resolveProfile(config, profile);
+          const p = getProfile(config, resolved);
           const profilePath = expandHome(p.path);
           const env: Record<string, string> = {};
           if (!p.is_source) {
             env.CLAUDE_CONFIG_DIR = profilePath;
           }
-          console.log(`Launching auth for profile '${profile}'...`);
-          const result = spawnSync(p.cli, [], {
+          console.log(`Launching auth for profile '${resolved}'...`);
+          const result = spawnSync(p.cli, ['auth', 'login'], {
             stdio: 'inherit',
             env: { ...process.env, ...env },
           });
@@ -364,7 +365,7 @@ program
           }
           const hasAuth = existsSync(join(profilePath, '.credentials.json'));
           if (hasAuth) {
-            console.log(`✓ Profile '${profile}' authenticated`);
+            console.log(`✓ Profile '${resolved}' authenticated`);
           }
         } catch (err) {
           console.error(`Error: ${(err as Error).message}`);
