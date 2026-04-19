@@ -114,8 +114,17 @@ program
       }
 
       if (!config.profiles[profileName]) {
-        console.error(`Profile '${profileName}' not found`);
-        process.exit(1);
+        const names = Object.keys(config.profiles);
+        const matches = names.filter(n => n.startsWith(profileName!));
+        if (matches.length === 1) {
+          profileName = matches[0];
+        } else if (matches.length > 1) {
+          console.error(`Ambiguous profile '${profileName}': ${matches.join(', ')}`);
+          process.exit(1);
+        } else {
+          console.error(`Profile '${profileName}' not found`);
+          process.exit(1);
+        }
       }
 
       if (!config.profiles[profileName].is_source) {
