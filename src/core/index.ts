@@ -24,3 +24,14 @@ export {
   getProfilesDir,
   setAimuxDir,
 } from './paths.js';
+
+export {
+  getSharedElements,
+  getPrivateElements,
+  syncProfile,
+  syncAllProfiles,
+  checkProfileHealth,
+  checkAllProfiles,
+} from './symlinks.js';
+
+export type { SyncResult, HealthReport } from './symlinks.js';
