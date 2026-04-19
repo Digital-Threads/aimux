@@ -2,6 +2,7 @@
 import { Command } from 'commander';
 import { render } from 'ink';
 import { StatusView } from './components/StatusView.js';
+import { ProfilePicker } from './components/ProfilePicker.js';
 import type { AimuxConfig } from './types/index.js';
 import { rmSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -77,7 +78,7 @@ program
   .command('run [profile]')
   .description('Launch AI CLI with the specified profile')
   .option('-m, --model <model>', 'Override default model')
-  .action((profile: string | undefined, options: { model?: string }) => {
+  .action(async (profile: string | undefined, options: { model?: string }) => {
     try {
       const config = requireConfig();
       let profileName = profile;
@@ -93,15 +94,19 @@ program
           if (names.length === 1) {
             profileName = names[0];
           } else {
-            console.log('Available profiles:');
-            for (const [i, name] of names.entries()) {
-              const p = config.profiles[name];
-              const tag = p.is_source ? ' (source)' : '';
-              const model = p.model ? ` [${p.model}]` : '';
-              console.log(`  ${i + 1}. ${name}${model}${tag}`);
-            }
-            console.log(`\nUsage: aimux run <profile>`);
-            process.exit(0);
+            const { waitUntilExit } = render(
+              <ProfilePicker
+                config={config}
+                lastProfile={last}
+                onSelect={(selected) => {
+                  recordHistory(process.cwd(), selected);
+                  const exitCode = launchProfile(config, selected, { model: options.model });
+                  process.exit(exitCode);
+                }}
+              />
+            );
+            await waitUntilExit();
+            return;
           }
         }
       }
@@ -109,6 +114,13 @@ program
       if (!config.profiles[profileName]) {
         console.error(`Profile '${profileName}' not found`);
         process.exit(1);
+      }
+
+      if (!config.profiles[profileName].is_source) {
+        const sync = syncProfile(config, profileName);
+        if (sync.created.length > 0 || sync.repaired.length > 0) {
+          console.log(`Auto-sync: ${sync.created.length} created, ${sync.repaired.length} repaired`);
+        }
       }
 
       recordHistory(process.cwd(), profileName);
