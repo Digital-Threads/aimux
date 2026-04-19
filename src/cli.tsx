@@ -86,28 +86,30 @@ program
       if (!profileName) {
         const cwd = process.cwd();
         const last = getLastProfile(cwd);
-        if (last && config.profiles[last]) {
-          console.log(`Using last profile for this directory: ${last}`);
-          profileName = last;
+        const names = Object.keys(config.profiles);
+
+        if (names.length === 1) {
+          profileName = names[0];
         } else {
-          const names = Object.keys(config.profiles);
-          if (names.length === 1) {
-            profileName = names[0];
-          } else {
-            const { waitUntilExit } = render(
-              <ProfilePicker
-                config={config}
-                lastProfile={last}
-                onSelect={(selected) => {
-                  recordHistory(process.cwd(), selected);
-                  const exitCode = launchProfile(config, selected, { model: options.model });
-                  process.exit(exitCode);
-                }}
-              />
-            );
-            await waitUntilExit();
-            return;
-          }
+          const { waitUntilExit } = render(
+            <ProfilePicker
+              config={config}
+              lastProfile={last}
+              onSelect={(selected) => {
+                recordHistory(process.cwd(), selected);
+                if (!config.profiles[selected].is_source) {
+                  const sync = syncProfile(config, selected);
+                  if (sync.created.length > 0 || sync.repaired.length > 0) {
+                    console.log(`Auto-sync: ${sync.created.length} created, ${sync.repaired.length} repaired`);
+                  }
+                }
+                const exitCode = launchProfile(config, selected, { model: options.model });
+                process.exit(exitCode);
+              }}
+            />
+          );
+          await waitUntilExit();
+          return;
         }
       }
 
