@@ -28,7 +28,7 @@
   },
   "homepage": "https://github.com/Digital-Threads/aimux#readme",
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "files": [
     "dist"
