@@ -42,9 +42,10 @@ export function ProfilePicker({ config, lastProfile, onSelect }: Props) {
         return (
           <Box key={name}>
             <Text color={isSelected ? 'cyan' : undefined} bold={isSelected}>
-              {isSelected ? '❯ ' : '  '}{name}{model}{tag}
-              {hint && <Text dimColor>{hint}</Text>}
+              {isSelected ? '❯ ' : '  '}{name}{tag}
             </Text>
+            {model && <Text dimColor>{model}</Text>}
+            {hint && <Text dimColor>{hint}</Text>}
           </Box>
         );
       })}
