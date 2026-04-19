@@ -8,7 +8,24 @@ export function expandHome(p: string): string {
   return resolve(p);
 }
 
-export const AIMUX_DIR = join(homedir(), '.aimux');
-export const CONFIG_PATH = join(AIMUX_DIR, 'config.yaml');
-export const HISTORY_PATH = join(AIMUX_DIR, 'history.yaml');
-export const PROFILES_DIR = join(AIMUX_DIR, 'profiles');
+let _aimuxDir = join(homedir(), '.aimux');
+
+export function getAimuxDir(): string {
+  return _aimuxDir;
+}
+
+export function getConfigPath(): string {
+  return join(_aimuxDir, 'config.yaml');
+}
+
+export function getHistoryPath(): string {
+  return join(_aimuxDir, 'history.yaml');
+}
+
+export function getProfilesDir(): string {
+  return join(_aimuxDir, 'profiles');
+}
+
+export function setAimuxDir(dir: string): void {
+  _aimuxDir = dir;
+}
