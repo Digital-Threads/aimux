@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "aimux",
+  "project_id": "f2d72961-0a5f-4804-9ca4-764ae8f79e1b"
+}
