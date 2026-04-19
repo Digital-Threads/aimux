@@ -23,7 +23,7 @@ function checkAuth(profile: ProfileConfig): boolean {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const output = result.stdout?.toString() ?? '';
-    return output.includes('Logged in') || output.includes('authenticated');
+    return output.includes('"loggedIn": true') || output.includes('"loggedIn":true');
   } catch {
     return false;
   }
