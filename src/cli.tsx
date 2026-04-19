@@ -4,7 +4,7 @@ import { render } from 'ink';
 import { StatusView } from './components/StatusView.js';
 import { ProfilePicker } from './components/ProfilePicker.js';
 import type { AimuxConfig } from './types/index.js';
-import { rmSync, existsSync, cpSync, mkdirSync } from 'node:fs';
+import { rmSync, existsSync, cpSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
@@ -456,10 +456,8 @@ complete -c aimux -n '__fish_seen_subcommand_from auth' -a 'login status'
 program
   .command('setup-shell')
   .description('Install shell completions and aliases into your shell config')
-  .action(() => {
-    const { appendFileSync, readFileSync } = require('node:fs');
-    const { homedir } = require('node:os');
-    const home = homedir();
+  .action(async () => {
+    const home = (await import('node:os')).homedir();
     const shell = process.env.SHELL ?? '/bin/bash';
     const line = `\neval "$(aimux completions ${shell.includes('zsh') ? 'zsh' : 'bash'})"`;
 
