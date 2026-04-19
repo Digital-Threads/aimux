@@ -47,7 +47,7 @@ aimux run w
 ```bash
 # Install Claude CLI first, then:
 claude auth login       # creates ~/.claude
-npm install -g aimux
+npm install -g @digital-threads/aimux
 aimux init
 aimux profile add work
 aimux auth login work
@@ -58,8 +58,13 @@ aimux auth login work
 ```bash
 aimux run               # interactive picker (↑↓ + Enter)
 aimux run w             # prefix match → work
-aimux run o -m claude-sonnet-4-6  # with model override
+aimux run o -m claude-sonnet-4-6  # one-time model override
+aimux run w --resume    # flags pass through to Claude CLI
 aimux status            # dashboard
+
+# Set default model per profile (quote model names with special chars)
+aimux profile update w -m claude-opus-4-6
+aimux profile update o -m "claude-opus-4-6[1m]"
 ```
 
 ## Commands
