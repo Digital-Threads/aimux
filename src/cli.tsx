@@ -23,6 +23,26 @@ function requireConfig(): AimuxConfig {
   return config;
 }
 
+function resolveProfile(config: AimuxConfig, input: string): string {
+  if (config.profiles[input]) return input;
+  const matches = Object.keys(config.profiles).filter(n => n.startsWith(input));
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) {
+    console.error(`Ambiguous profile '${input}': ${matches.join(', ')}`);
+    process.exit(1);
+  }
+  console.error(`Profile '${input}' not found`);
+  process.exit(1);
+}
+
+const MODEL_PATTERN = /^claude-[a-z]+-[\d.-]+$/;
+
+function warnIfBadModel(model: string): void {
+  if (!MODEL_PATTERN.test(model)) {
+    console.warn(`⚠ Model '${model}' doesn't look like a valid Claude model (expected: claude-<variant>-<version>)`);
+  }
+}
+
 const program = new Command();
 
 program
@@ -81,6 +101,7 @@ program
   .action(async (profile: string | undefined, options: { model?: string }) => {
     try {
       const config = requireConfig();
+      if (options.model) warnIfBadModel(options.model);
       let profileName = profile;
 
       if (!profileName) {
@@ -113,19 +134,7 @@ program
         }
       }
 
-      if (!config.profiles[profileName]) {
-        const names = Object.keys(config.profiles);
-        const matches = names.filter(n => n.startsWith(profileName!));
-        if (matches.length === 1) {
-          profileName = matches[0];
-        } else if (matches.length > 1) {
-          console.error(`Ambiguous profile '${profileName}': ${matches.join(', ')}`);
-          process.exit(1);
-        } else {
-          console.error(`Profile '${profileName}' not found`);
-          process.exit(1);
-        }
-      }
+      profileName = resolveProfile(config, profileName);
 
       if (!config.profiles[profileName].is_source) {
         const sync = syncProfile(config, profileName);
@@ -190,16 +199,16 @@ program
       .action((name: string, options: { model?: string; cli?: string }) => {
         try {
           let config = requireConfig();
-          const profile = config.profiles[name];
-          if (!profile) {
-            console.error(`Profile '${name}' not found`);
-            process.exit(1);
+          const resolved = resolveProfile(config, name);
+          const profile = config.profiles[resolved];
+          if (options.model) {
+            warnIfBadModel(options.model);
+            profile.model = options.model;
           }
-          if (options.model) profile.model = options.model;
           if (options.cli) profile.cli = options.cli;
-          config.profiles[name] = profile;
+          config.profiles[resolved] = profile;
           saveConfig(config);
-          console.log(`✓ Profile '${name}' updated`);
+          console.log(`✓ Profile '${resolved}' updated`);
           if (options.model) console.log(`  model: ${options.model}`);
           if (options.cli) console.log(`  cli: ${options.cli}`);
         } catch (err) {
@@ -216,20 +225,17 @@ program
       .action((name: string, options: { keepDir?: boolean }) => {
         try {
           let config = requireConfig();
-          const profile = config.profiles[name];
-          if (!profile) {
-            console.error(`Profile '${name}' not found`);
-            process.exit(1);
-          }
+          const resolved = resolveProfile(config, name);
+          const profile = config.profiles[resolved];
           const profilePath = profile.path;
-          config = removeProfile(config, name);
+          config = removeProfile(config, resolved);
           saveConfig(config);
           if (!options.keepDir) {
             const fullPath = expandHome(profilePath);
             rmSync(fullPath, { recursive: true, force: true });
-            console.log(`✓ Profile '${name}' removed (directory deleted)`);
+            console.log(`✓ Profile '${resolved}' removed (directory deleted)`);
           } else {
-            console.log(`✓ Profile '${name}' removed (directory kept)`);
+            console.log(`✓ Profile '${resolved}' removed (directory kept)`);
           }
         } catch (err) {
           console.error(`Error: ${(err as Error).message}`);
@@ -246,16 +252,14 @@ program
       .action((source: string, name: string, options: { model?: string }) => {
         try {
           let config = requireConfig();
-          const srcProfile = config.profiles[source];
-          if (!srcProfile) {
-            console.error(`Source profile '${source}' not found`);
-            process.exit(1);
-          }
+          const resolvedSrc = resolveProfile(config, source);
+          const srcProfile = config.profiles[resolvedSrc];
           if (config.profiles[name]) {
             console.error(`Profile '${name}' already exists`);
             process.exit(1);
           }
 
+          if (options.model) warnIfBadModel(options.model);
           config = addProfile(config, name, {
             cli: srcProfile.cli,
             model: options.model ?? srcProfile.model,
