@@ -20,24 +20,46 @@ You have multiple Claude Code subscriptions (personal, work, client) each in sep
 npm install -g aimux
 ```
 
-## Quick Start
+## Getting Started
+
+### You have `~/.claude` + extra directories (`~/.claude-work`, etc.)
 
 ```bash
-# Auto-detect existing Claude directories and set up
+npm install -g aimux
+aimux init              # auto-detects all ~/.claude* dirs
+aimux status            # verify profiles, auth, symlinks
+aimux run w             # launch work profile (prefix matching)
+```
+
+### You have only `~/.claude` (one subscription)
+
+```bash
+npm install -g aimux
+aimux init              # creates config with main profile
+aimux profile add work  # add a new profile
+aimux auth login work   # OAuth for the new account
+aimux profile update w -m claude-opus-4-6
+aimux run w
+```
+
+### Fresh machine (nothing installed)
+
+```bash
+# Install Claude CLI first, then:
+claude auth login       # creates ~/.claude
+npm install -g aimux
 aimux init
+aimux profile add work
+aimux auth login work
+```
 
-# See what you've got
-aimux status
+### Day-to-day usage
 
-# Set models per profile
-aimux profile update work --model claude-opus-4-6
-aimux profile update own --model claude-opus-4-6
-
-# Launch a profile
-aimux run work
-
-# Launch with model override
-aimux run own --model claude-sonnet-4-6
+```bash
+aimux run               # interactive picker (↑↓ + Enter)
+aimux run w             # prefix match → work
+aimux run o -m claude-sonnet-4-6  # with model override
+aimux status            # dashboard
 ```
 
 ## Commands
