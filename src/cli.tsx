@@ -453,4 +453,29 @@ complete -c aimux -n '__fish_seen_subcommand_from auth' -a 'login status'
     }
   });
 
+program
+  .command('setup-shell')
+  .description('Install shell completions and aliases into your shell config')
+  .action(() => {
+    const { appendFileSync, readFileSync } = require('node:fs');
+    const { homedir } = require('node:os');
+    const home = homedir();
+    const shell = process.env.SHELL ?? '/bin/bash';
+    const line = `\neval "$(aimux completions ${shell.includes('zsh') ? 'zsh' : 'bash'})"`;
+
+    const rcFile = shell.includes('zsh')
+      ? join(home, '.zshrc')
+      : join(home, '.bashrc');
+
+    const existing = existsSync(rcFile) ? readFileSync(rcFile, 'utf-8') : '';
+    if (existing.includes('aimux completions')) {
+      console.log(`✓ Completions already in ${rcFile}`);
+    } else {
+      appendFileSync(rcFile, `\n# aimux — AI workspace orchestrator${line}\n`);
+      console.log(`✓ Completions added to ${rcFile}`);
+    }
+
+    console.log(`\nReload with: source ${rcFile}`);
+  });
+
 program.parse();
