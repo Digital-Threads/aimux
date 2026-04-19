@@ -4,7 +4,7 @@ import { render } from 'ink';
 import { StatusView } from './components/StatusView.js';
 import { ProfilePicker } from './components/ProfilePicker.js';
 import type { AimuxConfig } from './types/index.js';
-import { rmSync, existsSync } from 'node:fs';
+import { rmSync, existsSync, cpSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
@@ -225,6 +225,51 @@ program
           process.exit(1);
         }
       })
+  )
+  .addCommand(
+    new Command('clone')
+      .argument('<source>', 'Source profile to clone')
+      .argument('<name>', 'New profile name')
+      .option('-m, --model <model>', 'Override model for new profile')
+      .description('Clone a profile with its private files')
+      .action((source: string, name: string, options: { model?: string }) => {
+        try {
+          let config = requireConfig();
+          const srcProfile = config.profiles[source];
+          if (!srcProfile) {
+            console.error(`Source profile '${source}' not found`);
+            process.exit(1);
+          }
+          if (config.profiles[name]) {
+            console.error(`Profile '${name}' already exists`);
+            process.exit(1);
+          }
+
+          config = addProfile(config, name, {
+            cli: srcProfile.cli,
+            model: options.model ?? srcProfile.model,
+          });
+          saveConfig(config);
+
+          const newDir = expandHome(config.profiles[name].path);
+          mkdirSync(newDir, { recursive: true });
+
+          const srcDir = expandHome(srcProfile.path);
+          for (const item of config.private) {
+            const srcPath = join(srcDir, item);
+            if (existsSync(srcPath)) {
+              cpSync(srcPath, join(newDir, item), { recursive: true });
+            }
+          }
+
+          const sync = syncProfile(config, name);
+          console.log(`✓ Profile '${name}' cloned from '${source}'`);
+          console.log(`  ${sync.created.length} symlinks, ${config.private.filter(p => existsSync(join(newDir, p))).length} private files copied`);
+        } catch (err) {
+          console.error(`Error: ${(err as Error).message}`);
+          process.exit(1);
+        }
+      })
   );
 
 program
@@ -345,5 +390,67 @@ program
         }
       })
   );
+
+program
+  .command('completions')
+  .argument('<shell>', 'Shell type: bash, zsh, or fish')
+  .description('Generate shell completion script')
+  .action((shell: string) => {
+    const config = loadConfig();
+    const profiles = config ? Object.keys(config.profiles).join(' ') : '';
+
+    if (shell === 'bash') {
+      console.log(`_aimux() {
+  local cur prev commands
+  COMPREPLY=()
+  cur="\${COMP_WORDS[COMP_CWORD]}"
+  prev="\${COMP_WORDS[COMP_CWORD-1]}"
+  commands="init run status profile rebuild doctor auth completions"
+
+  case "\${prev}" in
+    run|auth)
+      COMPREPLY=( $(compgen -W "${profiles}" -- "\${cur}") )
+      return 0;;
+    profile)
+      COMPREPLY=( $(compgen -W "add list update remove clone" -- "\${cur}") )
+      return 0;;
+    aimux)
+      COMPREPLY=( $(compgen -W "\${commands}" -- "\${cur}") )
+      return 0;;
+  esac
+}
+complete -F _aimux aimux
+# Add to ~/.bashrc: eval "$(aimux completions bash)"`);
+    } else if (shell === 'zsh') {
+      console.log(`#compdef aimux
+_aimux() {
+  local -a commands profiles
+  commands=(init run status profile rebuild doctor auth completions)
+  profiles=(${profiles})
+
+  _arguments '1:command:($commands)' '*::arg:->args'
+
+  case $state in
+    args)
+      case \${words[1]} in
+        run) _arguments '1:profile:($profiles)';;
+        profile) _arguments '1:action:(add list update remove clone)';;
+        auth) _arguments '1:action:(login status)' '2:profile:($profiles)';;
+      esac;;
+  esac
+}
+_aimux
+# Add to ~/.zshrc: eval "$(aimux completions zsh)"`);
+    } else if (shell === 'fish') {
+      console.log(`complete -c aimux -n '__fish_use_subcommand' -a 'init run status profile rebuild doctor auth completions'
+complete -c aimux -n '__fish_seen_subcommand_from run' -a '${profiles}'
+complete -c aimux -n '__fish_seen_subcommand_from profile' -a 'add list update remove clone'
+complete -c aimux -n '__fish_seen_subcommand_from auth' -a 'login status'
+# Add to config.fish: aimux completions fish | source`);
+    } else {
+      console.error(`Unknown shell: ${shell}. Supported: bash, zsh, fish`);
+      process.exit(1);
+    }
+  });
 
 program.parse();
