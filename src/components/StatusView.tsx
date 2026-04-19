@@ -1,15 +1,32 @@
 import { Box, Text } from 'ink';
 import { existsSync, readdirSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AimuxConfig } from '../types/index.js';
+import { spawnSync } from 'node:child_process';
+import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 import { expandHome } from '../core/paths.js';
 
 interface Props {
   config: AimuxConfig;
 }
 
-function checkAuth(profilePath: string): boolean {
-  return existsSync(join(profilePath, '.credentials.json'));
+function checkAuth(profile: ProfileConfig): boolean {
+  const profilePath = expandHome(profile.path);
+  if (existsSync(join(profilePath, '.credentials.json'))) return true;
+  const env: Record<string, string> = {};
+  if (!profile.is_source) {
+    env.CLAUDE_CONFIG_DIR = profilePath;
+  }
+  try {
+    const result = spawnSync(profile.cli, ['auth', 'status'], {
+      env: { ...process.env, ...env },
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const output = result.stdout?.toString() ?? '';
+    return output.includes('Logged in') || output.includes('authenticated');
+  } catch {
+    return false;
+  }
 }
 
 function countSymlinks(profilePath: string, sharedSource: string): [number, number] {
@@ -42,7 +59,7 @@ function countSharedElements(config: AimuxConfig): number {
 
 export function StatusView({ config }: Props) {
   const profiles = Object.entries(config.profiles);
-  const authCount = profiles.filter(([, p]) => checkAuth(expandHome(p.path))).length;
+  const authCount = profiles.filter(([, p]) => checkAuth(p)).length;
   const sharedCount = countSharedElements(config);
 
   return (
@@ -66,7 +83,7 @@ export function StatusView({ config }: Props) {
 
           {profiles.map(([name, profile]) => {
             const pPath = expandHome(profile.path);
-            const authed = checkAuth(pPath);
+            const authed = checkAuth(profile);
             const isSource = profile.is_source ?? false;
             const [linked, total] = isSource ? [0, 0] : countSymlinks(pPath, config.shared_source);
             const linkOk = isSource || linked === total;
