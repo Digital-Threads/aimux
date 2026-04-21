@@ -6,7 +6,8 @@ import { ProfilePicker } from './components/ProfilePicker.js';
 import type { AimuxConfig } from './types/index.js';
 import { rmSync, existsSync, cpSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   loadConfig, saveConfig, addProfile, removeProfile, expandHome,
   ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs,
@@ -35,13 +36,35 @@ function resolveProfile(config: AimuxConfig, input: string): string {
   process.exit(1);
 }
 
+function getCliVersion(): string {
+  try {
+    const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url));
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as { version?: string };
+    return packageJson.version ?? '0.1.0';
+  } catch {
+    return '0.1.0';
+  }
+}
+
+function formatSyncSummary(result: {
+  created: string[];
+  repaired: string[];
+  conflicts: string[];
+}): string {
+  const parts = [`${result.created.length} created`, `${result.repaired.length} repaired`];
+  if (result.conflicts.length > 0) {
+    parts.push(`${result.conflicts.length} conflicts`);
+  }
+  return parts.join(', ');
+}
+
 
 const program = new Command();
 
 program
   .name('aimux')
   .description('Local AI workspace orchestrator — manage multiple AI CLI subscriptions')
-  .version('0.1.0')
+  .version(getCliVersion())
   .enablePositionalOptions();
 
 program
@@ -114,8 +137,8 @@ program
                 recordHistory(process.cwd(), selected);
                 if (!config.profiles[selected].is_source) {
                   const sync = syncProfile(config, selected);
-                  if (sync.created.length > 0 || sync.repaired.length > 0) {
-                    console.log(`Auto-sync: ${sync.created.length} created, ${sync.repaired.length} repaired`);
+                  if (sync.created.length > 0 || sync.repaired.length > 0 || sync.conflicts.length > 0) {
+                    console.log(`Auto-sync: ${formatSyncSummary(sync)}`);
                   }
                 }
                 const exitCode = launchProfile(config, selected, { model: options.model, extraArgs: cliArgs });
@@ -132,8 +155,8 @@ program
 
       if (!config.profiles[profileName].is_source) {
         const sync = syncProfile(config, profileName);
-        if (sync.created.length > 0 || sync.repaired.length > 0) {
-          console.log(`Auto-sync: ${sync.created.length} created, ${sync.repaired.length} repaired`);
+        if (sync.created.length > 0 || sync.repaired.length > 0 || sync.conflicts.length > 0) {
+          console.log(`Auto-sync: ${formatSyncSummary(sync)}`);
         }
       }
 
@@ -165,6 +188,9 @@ program
           console.log(`✓ Profile '${name}' created`);
           if (sync.created.length > 0) {
             console.log(`  ${sync.created.length} symlinks created`);
+          }
+          if (sync.conflicts.length > 0) {
+            console.log(`  conflicts left unchanged: ${sync.conflicts.join(', ')}`);
           }
           if (!options.auth) {
             console.log('  Auth skipped (--no-auth). Run: aimux auth login ' + name);
@@ -279,20 +305,21 @@ program
 
 program
   .command('rebuild')
-  .description('Rebuild symlinks for all profiles')
+  .description('Rebuild symlinks for all profiles and surface local conflicts')
   .argument('[profile]', 'Specific profile to rebuild')
   .action((profile?: string) => {
     try {
       const config = requireConfig();
       if (profile) {
-        const result = syncProfile(config, profile);
-        console.log(`Profile '${profile}':`);
-        console.log(`  created: ${result.created.length}, skipped: ${result.skipped.length}, repaired: ${result.repaired.length}, private: ${result.private.length}`);
+        const resolved = resolveProfile(config, profile);
+        const result = syncProfile(config, resolved);
+        console.log(`Profile '${resolved}':`);
+        console.log(`  created: ${result.created.length}, skipped: ${result.skipped.length}, repaired: ${result.repaired.length}, conflicts: ${result.conflicts.length}, private: ${result.private.length}`);
       } else {
         const results = syncAllProfiles(config);
         for (const [name, result] of results) {
           const src = config.profiles[name]?.is_source ? ' (source)' : '';
-          console.log(`${name}${src}: created=${result.created.length} skipped=${result.skipped.length} repaired=${result.repaired.length}`);
+          console.log(`${name}${src}: created=${result.created.length} skipped=${result.skipped.length} repaired=${result.repaired.length} conflicts=${result.conflicts.length}`);
         }
         console.log(`\n✓ Rebuilt ${results.size} profiles`);
       }
@@ -304,7 +331,7 @@ program
 
 program
   .command('doctor')
-  .description('Health check — find broken symlinks, missing credentials, conflicts')
+  .description('Health check — find broken symlinks, missing shared entries, and local conflicts')
   .action(() => {
     try {
       const config = requireConfig();
@@ -313,7 +340,7 @@ program
 
       for (const [name, report] of reports) {
         const src = config.profiles[name]?.is_source ? ' (source)' : '';
-        const issues = report.broken.length + report.missing.length + report.orphaned.length;
+        const issues = report.broken.length + report.missing.length + report.orphaned.length + report.conflicts.length;
 
         if (issues === 0) {
           console.log(`✓ ${name}${src}: ${report.valid.length} valid`);
@@ -322,6 +349,7 @@ program
           console.log(`✗ ${name}${src}:`);
           if (report.broken.length > 0) console.log(`    broken: ${report.broken.join(', ')}`);
           if (report.missing.length > 0) console.log(`    missing: ${report.missing.join(', ')}`);
+          if (report.conflicts.length > 0) console.log(`    conflicts: ${report.conflicts.join(', ')}`);
           if (report.orphaned.length > 0) console.log(`    orphaned: ${report.orphaned.join(', ')}`);
         }
       }
@@ -461,15 +489,25 @@ complete -c aimux -n '__fish_seen_subcommand_from auth' -a 'login status'
 
 program
   .command('setup-shell')
-  .description('Install shell completions and aliases into your shell config')
+  .description('Install shell completions into your shell config')
   .action(async () => {
     const home = (await import('node:os')).homedir();
     const shell = process.env.SHELL ?? '/bin/bash';
-    const line = `\neval "$(aimux completions ${shell.includes('zsh') ? 'zsh' : 'bash'})"`;
+    const shellType = shell.includes('fish')
+      ? 'fish'
+      : shell.includes('zsh')
+        ? 'zsh'
+        : 'bash';
+    const line = shellType === 'fish'
+      ? '\naimux completions fish | source'
+      : `\neval "$(aimux completions ${shellType})"`;
 
-    const rcFile = shell.includes('zsh')
-      ? join(home, '.zshrc')
-      : join(home, '.bashrc');
+    const rcFile = shellType === 'fish'
+      ? join(home, '.config', 'fish', 'config.fish')
+      : shellType === 'zsh'
+        ? join(home, '.zshrc')
+        : join(home, '.bashrc');
+    mkdirSync(dirname(rcFile), { recursive: true });
 
     const existing = existsSync(rcFile) ? readFileSync(rcFile, 'utf-8') : '';
     if (existing.includes('aimux completions')) {

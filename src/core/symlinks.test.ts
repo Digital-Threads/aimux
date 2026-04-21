@@ -120,7 +120,7 @@ describe('syncProfile', () => {
     writeFileSync(join(workDir, 'settings.json'), 'local override');
 
     const result = syncProfile(config, 'work');
-    expect(result.skipped).toContain('settings.json');
+    expect(result.conflicts).toContain('settings.json');
   });
 
   it('returns empty result for source profile', () => {
@@ -198,6 +198,18 @@ describe('checkProfileHealth', () => {
 
     const report = checkProfileHealth(config, 'work');
     expect(report.orphaned).toContain('old-file.json');
+  });
+
+  it('reports local shared-file conflicts', () => {
+    seedShared(['settings.json']);
+    const config = makeConfig();
+    const workDir = join(PROFILES_DIR, 'work');
+    mkdirSync(workDir, { recursive: true });
+    writeFileSync(join(workDir, 'settings.json'), 'local override');
+
+    const report = checkProfileHealth(config, 'work');
+    expect(report.conflicts).toContain('settings.json');
+    expect(report.valid).not.toContain('settings.json');
   });
 
   it('reports missing profile directory', () => {
