@@ -11,6 +11,7 @@ export interface SyncResult {
   skipped: string[];
   broken: string[];
   repaired: string[];
+  conflicts: string[];
   private: string[];
 }
 
@@ -20,6 +21,7 @@ export interface HealthReport {
   broken: string[];
   missing: string[];
   orphaned: string[];
+  conflicts: string[];
 }
 
 export function getSharedElements(config: AimuxConfig): string[] {
@@ -46,7 +48,14 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
     throw new Error(`Profile '${profileName}' not found`);
   }
   if (profile.is_source) {
-    return { created: [], skipped: [], broken: [], repaired: [], private: [] };
+    return {
+      created: [],
+      skipped: [],
+      broken: [],
+      repaired: [],
+      conflicts: [],
+      private: [],
+    };
   }
 
   const sourcePath = expandHome(config.shared_source);
@@ -62,6 +71,7 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
     skipped: [],
     broken: [],
     repaired: [],
+    conflicts: [],
     private: [],
   };
 
@@ -88,7 +98,7 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
           result.repaired.push(entry);
         }
       } else {
-        result.skipped.push(entry);
+        result.conflicts.push(entry);
       }
     } else {
       symlinkSync(sourceTarget, targetInProfile);
@@ -119,6 +129,7 @@ export function checkProfileHealth(config: AimuxConfig, profileName: string): He
     broken: [],
     missing: [],
     orphaned: [],
+    conflicts: [],
   };
 
   if (profile.is_source) return report;
@@ -154,7 +165,7 @@ export function checkProfileHealth(config: AimuxConfig, profileName: string): He
         report.broken.push(entry);
       }
     } else {
-      report.valid.push(entry);
+      report.conflicts.push(entry);
     }
   }
 

@@ -79,15 +79,15 @@ aimux profile update o -m "claude-opus-4-6[1m]"
 | `aimux run w` | Prefix matching — launches `work` if unambiguous |
 | `aimux run work -m claude-sonnet-4-6` | Launch with model override |
 | `aimux profile add <name>` | Create new profile with symlinks |
-| `aimux profile update <name>` | Update model/cli settings (with model validation) |
+| `aimux profile update <name>` | Update model/cli settings |
 | `aimux profile list` | List all profiles |
 | `aimux profile remove <name>` | Remove profile and clean up |
 | `aimux profile clone <src> <name>` | Clone profile with private files |
-| `aimux rebuild [profile]` | Sync symlinks (after source changes) |
-| `aimux doctor` | Health check — broken symlinks, missing files |
+| `aimux rebuild [profile]` | Sync symlinks and surface local shared-file conflicts |
+| `aimux doctor` | Health check — broken symlinks, missing shared entries, conflicts |
 | `aimux auth login <profile>` | Launch OAuth flow for a profile |
 | `aimux auth status` | Show auth file status per profile |
-| `aimux setup-shell` | Auto-install shell completions (bash/zsh) |
+| `aimux setup-shell` | Auto-install shell completions (bash/zsh/fish) |
 
 All profile commands support **prefix matching**: `aimux run w` → `work`, `aimux profile update o` → `own`.
 
@@ -152,7 +152,7 @@ private:
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 22+
 - Claude Code CLI installed
 
 ## License
