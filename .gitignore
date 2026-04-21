@@ -6,6 +6,7 @@ dist/
 # Local tooling
 .beads/
 .claude/
+.docs/
 CLAUDE.md
 AGENTS.md
 .dolt/
