@@ -132,6 +132,17 @@ export function validateConfig(config: unknown): string[] {
       if (p.model !== undefined && typeof p.model !== 'string') {
         errors.push(`Profile '${name}': model must be a string`);
       }
+      if (p.env !== undefined) {
+        if (!p.env || typeof p.env !== 'object' || Array.isArray(p.env)) {
+          errors.push(`Profile '${name}': env must be a map of string keys to string values`);
+        } else {
+          for (const [k, v] of Object.entries(p.env as Record<string, unknown>)) {
+            if (typeof v !== 'string') {
+              errors.push(`Profile '${name}': env.${k} must be a string`);
+            }
+          }
+        }
+      }
       if (p.is_source) sourceCount++;
     }
 

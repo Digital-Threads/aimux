@@ -13,6 +13,7 @@ import {
   ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs,
   syncProfile, syncAllProfiles, checkAllProfiles,
   launchProfile, getLastProfile, recordHistory, getProfile,
+  loadProfileEnv,
 } from './core/index.js';
 
 function requireConfig(): AimuxConfig {
@@ -379,7 +380,7 @@ program
           const resolved = resolveProfile(config, profile);
           const p = getProfile(config, resolved);
           const profilePath = expandHome(p.path);
-          const env: Record<string, string> = {};
+          const env: Record<string, string> = loadProfileEnv(p, profilePath);
           if (!p.is_source) {
             env.CLAUDE_CONFIG_DIR = profilePath;
           }
