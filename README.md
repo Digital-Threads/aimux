@@ -117,6 +117,44 @@ All profile commands support **prefix matching**: `aimux run w` → `work`, `aim
 
 When you run `aimux run work`, it sets `CLAUDE_CONFIG_DIR=~/.aimux/profiles/work` and launches the CLI. Claude sees a complete config directory — shared content via symlinks, private auth locally.
 
+## Per-profile environment variables
+
+Some Claude Code modes (Microsoft Foundry, Bedrock, Vertex, custom proxies) are activated by environment variables, not by JSON config. aimux gives each profile two ways to inject env vars into the spawned `claude` process:
+
+1. **`<profile>/.env`** — dotenv file inside the profile directory. Best for secrets; supports `KEY=value`, `export KEY=value`, comments, and quoted values. `chmod 600` it.
+2. **`env:` block under the profile in `config.yaml`** — best for non-secret toggles you want versioned alongside the rest of the profile config. Overrides `.env` on key conflict.
+
+Both are merged together and passed to `claude` along with `CLAUDE_CONFIG_DIR`. The same env is also applied to `aimux auth login <profile>`.
+
+### Microsoft Foundry recipe
+
+```yaml
+# ~/.aimux/config.yaml
+profiles:
+  foundry:
+    cli: claude
+    path: ~/.aimux/profiles/foundry
+    model: claude-opus-4-7
+    env:
+      CLAUDE_CODE_USE_FOUNDRY: "1"
+      ANTHROPIC_FOUNDRY_RESOURCE: <your-foundry-resource>
+      ANTHROPIC_DEFAULT_OPUS_MODEL: claude-opus-4-7
+      ANTHROPIC_DEFAULT_SONNET_MODEL: claude-sonnet-4-6
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-haiku-4-5
+```
+
+```bash
+# ~/.aimux/profiles/foundry/.env
+ANTHROPIC_FOUNDRY_API_KEY=<your-azure-foundry-key>
+```
+
+```bash
+chmod 600 ~/.aimux/profiles/foundry/.env
+aimux run foundry
+```
+
+> Note: putting Foundry settings inside `.claude.json` is not enough — Claude Code activates Foundry mode from environment variables on startup. Fields like `useFoundry` / `foundryResource` in `.claude.json` are state Claude Code *writes* after the env-driven activation, not the activation switch itself.
+
 ## Config
 
 ```yaml
@@ -137,6 +175,10 @@ profiles:
     cli: claude
     model: claude-opus-4-6
     path: /home/user/.aimux/profiles/own
+    # Optional per-profile env injected into the spawned CLI.
+    # env:
+    #   CLAUDE_CODE_USE_FOUNDRY: "1"
+    #   ANTHROPIC_FOUNDRY_RESOURCE: my-resource
 
 private:
   - .credentials.json

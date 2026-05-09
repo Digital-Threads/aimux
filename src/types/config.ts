@@ -3,6 +3,7 @@ export interface ProfileConfig {
   model?: string;
   path: string;
   is_source?: boolean;
+  env?: Record<string, string>;
 }
 
 export interface AimuxConfig {
