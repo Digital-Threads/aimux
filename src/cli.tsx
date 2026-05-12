@@ -170,6 +170,66 @@ program
   });
 
 program
+  .command('agents')
+  .description('Multi-profile agent view — manage claude background sessions across all profiles')
+  .action(async () => {
+    try {
+      const config = requireConfig();
+      const { render } = await import('ink');
+      const { AgentsView } = await import('./components/AgentsView.js');
+      const { attachSession, dispatchSession, stopSession } = await import('./core/sessionActions.js');
+      type PendingAction =
+        | { type: 'exit' }
+        | { type: 'attach'; profile: string; short: string }
+        | { type: 'dispatch'; profile: string; prompt: string }
+        | { type: 'stop'; profile: string; short: string };
+
+      let running = true;
+      while (running) {
+        const actionRef: { value: PendingAction } = { value: { type: 'exit' } };
+
+        const { waitUntilExit, unmount } = render(
+          <AgentsView
+            config={config}
+            onAction={(action) => {
+              actionRef.value = action;
+            }}
+          />
+        );
+        await waitUntilExit();
+        unmount();
+
+        const action = actionRef.value;
+        switch (action.type) {
+          case 'exit':
+            running = false;
+            break;
+          case 'attach': {
+            const code = await attachSession(config, action.profile, action.short);
+            if (code !== 0) console.error(`Attach exited with code ${code}`);
+            break;
+          }
+          case 'dispatch': {
+            const result = dispatchSession(config, action.profile, action.prompt);
+            if (result.stdout) process.stdout.write(result.stdout);
+            if (result.stderr) process.stderr.write(result.stderr);
+            break;
+          }
+          case 'stop': {
+            const result = stopSession(config, action.profile, action.short);
+            if (result.stderr) process.stderr.write(result.stderr);
+            break;
+          }
+        }
+      }
+      process.exit(0);
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
   .command('profile')
   .description('Manage profiles')
   .addCommand(

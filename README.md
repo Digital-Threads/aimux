@@ -78,6 +78,7 @@ aimux profile update o -m "claude-opus-4-6[1m]"
 | `aimux run` | Interactive picker — history pre-selects last used profile |
 | `aimux run w` | Prefix matching — launches `work` if unambiguous |
 | `aimux run work -m claude-sonnet-4-6` | Launch with model override |
+| `aimux agents` | Multi-profile agent view — see and manage claude background sessions across **all** profiles in one TUI |
 | `aimux profile add <name>` | Create new profile with symlinks |
 | `aimux profile update <name>` | Update model/cli settings |
 | `aimux profile list` | List all profiles |
