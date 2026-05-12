@@ -44,5 +44,5 @@ export {
 
 export type { DetectedDir, InitResult } from './init.js';
 
-export { buildRunParams, launchProfile } from './run.js';
+export { buildRunParams, launchProfile, looksLikeSubcommand } from './run.js';
 export type { RunOptions, RunParams } from './run.js';

@@ -13,6 +13,7 @@ import {
   ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs,
   syncProfile, syncAllProfiles, checkAllProfiles,
   launchProfile, getLastProfile, recordHistory, getProfile,
+  looksLikeSubcommand,
 } from './core/index.js';
 
 function requireConfig(): AimuxConfig {
@@ -120,6 +121,7 @@ program
     try {
       const config = requireConfig();
       let profileName = profile;
+      const launchingSubcommand = looksLikeSubcommand(cliArgs[0]);
 
       if (!profileName) {
         const cwd = process.cwd();
@@ -129,25 +131,19 @@ program
         if (names.length === 1) {
           profileName = names[0];
         } else {
+          let selectedProfile: string | undefined;
           const { waitUntilExit } = render(
             <ProfilePicker
               config={config}
               lastProfile={last}
               onSelect={(selected) => {
-                recordHistory(process.cwd(), selected);
-                if (!config.profiles[selected].is_source) {
-                  const sync = syncProfile(config, selected);
-                  if (sync.created.length > 0 || sync.repaired.length > 0 || sync.conflicts.length > 0) {
-                    console.log(`Auto-sync: ${formatSyncSummary(sync)}`);
-                  }
-                }
-                const exitCode = launchProfile(config, selected, { model: options.model, extraArgs: cliArgs });
-                process.exit(exitCode);
+                selectedProfile = selected;
               }}
             />
           );
           await waitUntilExit();
-          return;
+          if (!selectedProfile) return;
+          profileName = selectedProfile;
         }
       }
 
@@ -155,13 +151,14 @@ program
 
       if (!config.profiles[profileName].is_source) {
         const sync = syncProfile(config, profileName);
-        if (sync.created.length > 0 || sync.repaired.length > 0 || sync.conflicts.length > 0) {
+        const hasChanges = sync.created.length > 0 || sync.repaired.length > 0 || sync.conflicts.length > 0;
+        if (hasChanges && !launchingSubcommand) {
           console.log(`Auto-sync: ${formatSyncSummary(sync)}`);
         }
       }
 
       recordHistory(process.cwd(), profileName);
-      const exitCode = launchProfile(config, profileName, { model: options.model, extraArgs: cliArgs });
+      const exitCode = await launchProfile(config, profileName, { model: options.model, extraArgs: cliArgs });
       process.exit(exitCode);
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);

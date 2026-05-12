@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import type { AimuxConfig } from '../types/index.js';
 import { getProfile } from './config.js';
 import { expandHome } from './paths.js';
@@ -62,17 +62,25 @@ export function launchProfile(
   config: AimuxConfig,
   profileName: string,
   options: RunOptions = {},
-): number {
+): Promise<number> {
   const params = buildRunParams(config, profileName, options);
 
-  const result = spawnSync(params.cli, params.args, {
-    stdio: 'inherit',
-    env: { ...process.env, ...params.env },
+  return new Promise((resolve, reject) => {
+    const child = spawn(params.cli, params.args, {
+      stdio: 'inherit',
+      env: { ...process.env, ...params.env },
+    });
+
+    child.on('error', (err) => {
+      reject(new Error(`Failed to launch ${params.cli}: ${err.message}`));
+    });
+
+    child.on('exit', (code, signal) => {
+      if (signal) {
+        resolve(128 + (signal === 'SIGINT' ? 2 : signal === 'SIGTERM' ? 15 : 1));
+        return;
+      }
+      resolve(code ?? 1);
+    });
   });
-
-  if (result.error) {
-    throw new Error(`Failed to launch ${params.cli}: ${result.error.message}`);
-  }
-
-  return result.status ?? 1;
 }

@@ -1,6 +1,6 @@
 {
   "name": "@digital-threads/aimux",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Local AI workspace orchestrator — manage multiple AI CLI subscriptions with shared knowledge and isolated auth",
   "type": "module",
   "bin": {
