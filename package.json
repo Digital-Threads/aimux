@@ -1,6 +1,6 @@
 {
   "name": "@digital-threads/aimux",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Local AI workspace orchestrator — manage multiple AI CLI subscriptions with shared knowledge and isolated auth",
   "type": "module",
   "bin": {
@@ -8,10 +8,10 @@
   },
   "scripts": {
     "dev": "tsx src/cli.tsx",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/cli.js",
     "test": "vitest run",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm test && npm run build"
   },
   "keywords": [
     "cli",
