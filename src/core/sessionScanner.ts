@@ -18,7 +18,9 @@ interface LineCandidate {
   type?: string;
   isMeta?: boolean;
   userType?: string;
+  entrypoint?: string;
   timestamp?: string;
+  operation?: string;
   message?: { role?: string; content?: string | unknown };
 }
 
@@ -60,17 +62,21 @@ const MAX_SCAN_LINES = 40;
 
 export function parseSessionJsonl(
   path: string,
-): Pick<InteractiveSession, 'cwd' | 'intent' | 'createdAtMs' | 'events'> {
+): Pick<InteractiveSession, 'cwd' | 'intent' | 'createdAtMs' | 'events'> & {
+  isSubagent: boolean;
+} {
   let cwd = '';
   let intent = '';
   let createdAtMs = 0;
   let events = 0;
+  let hasExternalUserMessage = false;
+  let hasQueueOperation = false;
 
   let raw: string;
   try {
     raw = readFileSync(path, 'utf-8');
   } catch {
-    return { cwd, intent, createdAtMs, events };
+    return { cwd, intent, createdAtMs, events, isSubagent: true };
   }
 
   const lines = raw.split('\n');
@@ -82,23 +88,34 @@ export function parseSessionJsonl(
     const obj = safeParse(line);
     if (!obj) continue;
 
+    if (obj.type === 'queue-operation') hasQueueOperation = true;
+
     if (!cwd && typeof obj.cwd === 'string') cwd = obj.cwd;
     if (!createdAtMs && typeof obj.timestamp === 'string') {
       const t = Date.parse(obj.timestamp);
       if (!Number.isNaN(t)) createdAtMs = t;
     }
 
-    if (!intent && obj.type === 'user' && obj.message?.role === 'user' && !obj.isMeta) {
-      const text = extractText(obj.message.content).trim();
-      if (text && !isMetaPrompt(text)) {
-        intent = text.length > 200 ? text.slice(0, 200) + '…' : text;
+    if (obj.type === 'user' && obj.message?.role === 'user' && !obj.isMeta) {
+      if (obj.userType === 'external' && (!obj.entrypoint || obj.entrypoint === 'cli')) {
+        hasExternalUserMessage = true;
+      }
+      if (!intent) {
+        const text = extractText(obj.message.content).trim();
+        if (text && !isMetaPrompt(text)) {
+          intent = text.length > 200 ? text.slice(0, 200) + '…' : text;
+        }
       }
     }
-
-    if (cwd && intent && createdAtMs) break;
   }
 
-  return { cwd, intent, createdAtMs, events };
+  // Sub-agent sessions: dominated by queue-operation entries, no external
+  // human-typed user message. Classifier / memory / task-journal sub-agents
+  // each get their own jsonl in projects/ but should not appear in the
+  // user-facing session list.
+  const isSubagent = hasQueueOperation && !hasExternalUserMessage;
+
+  return { cwd, intent, createdAtMs, events, isSubagent };
 }
 
 export function scanInteractiveSessions(config: AimuxConfig): InteractiveSession[] {
@@ -133,6 +150,7 @@ export function scanInteractiveSessions(config: AimuxConfig): InteractiveSession
         continue;
       }
       const parsed = parseSessionJsonl(filePath);
+      if (parsed.isSubagent) continue;
       sessions.push({
         sessionId,
         cwd: parsed.cwd || decodeHashedCwd(cwdHashDir),
