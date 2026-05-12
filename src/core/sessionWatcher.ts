@@ -8,7 +8,7 @@ import { expandHome } from './paths.js';
 export function watchSessions(
   config: AimuxConfig,
   onChange: () => void,
-  debounceMs = 500,
+  debounceMs = 2000,
 ): () => void {
   const watchers: FSWatcher[] = [];
   let timer: NodeJS.Timeout | null = null;
@@ -25,6 +25,10 @@ export function watchSessions(
     }, debounceMs);
   };
 
+  // Watch only the small, low-traffic state files. The shared projects/
+  // tree intentionally is NOT watched — active sessions append to their
+  // transcripts constantly, which used to fire fs.watch many times per
+  // second and starve the Ink render loop (visible as cursor lag).
   for (const profileName of Object.keys(config.profiles)) {
     try {
       const profile = getProfile(config, profileName);
@@ -34,26 +38,21 @@ export function watchSessions(
 
       if (existsSync(jobsDir)) {
         try {
-          watchers.push(watch(jobsDir, { recursive: true }, trigger));
-        } catch {
-          // recursive may be unsupported on some platforms
           watchers.push(watch(jobsDir, trigger));
+        } catch {
+          // some platforms reject non-recursive watch on dirs that
+          // disappear — best-effort.
         }
       }
       if (existsSync(rosterPath)) {
-        watchers.push(watch(rosterPath, trigger));
+        try {
+          watchers.push(watch(rosterPath, trigger));
+        } catch {
+          // ignore
+        }
       }
     } catch {
       // ignore per-profile watcher errors
-    }
-  }
-
-  const projectsRoot = join(expandHome(config.shared_source), 'projects');
-  if (existsSync(projectsRoot)) {
-    try {
-      watchers.push(watch(projectsRoot, { recursive: true }, trigger));
-    } catch {
-      watchers.push(watch(projectsRoot, trigger));
     }
   }
 

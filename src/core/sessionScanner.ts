@@ -190,25 +190,18 @@ export function scanInteractiveSessions(
         continue;
       }
 
+      const insideWindow = stat.mtimeMs >= windowCutoff;
+
+      // Outside the scan window: skip entirely. No stat-open-read on the
+      // jsonl, no quick subagent probe — saves thousands of opens when
+      // projects/ has accumulated long-lived background-agent files.
+      // The user surfaces them on demand via [L] (windowDays = Infinity).
+      if (!insideWindow) continue;
+
       // Fast subagent reject: first line of a queue-driven session is
       // a queue-operation. Real interactive sessions start with
       // permission-mode / file-history-snapshot / user / etc.
       if (quickFirstLineType(filePath) === 'queue-operation') continue;
-
-      const insideWindow = stat.mtimeMs >= windowCutoff;
-      if (!insideWindow) {
-        sessions.push({
-          sessionId,
-          cwd: decodeHashedCwd(cwdHashDir),
-          intent: '',
-          cwdHashDir,
-          createdAtMs: stat.birthtimeMs || stat.mtimeMs,
-          updatedAtMs: stat.mtimeMs,
-          events: 0,
-          isStub: true,
-        });
-        continue;
-      }
 
       const parsed = parseSessionJsonl(filePath);
       if (parsed.isSubagent) continue;
