@@ -2,8 +2,10 @@ import { useState, useMemo, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import type { AimuxConfig } from '../types/index.js';
 import { unifyAllSessions, type UnifiedSession } from '../core/unifiedSessions.js';
-import { formatRelativeTime, shortenPath, type SessionState } from '../core/sessions.js';
+import { formatSmartTimestamp, shortenPath, type SessionState } from '../core/sessions.js';
 import { loadActiveProfile, saveActiveProfile } from '../core/activeProfile.js';
+import { profileColor } from '../core/profileColors.js';
+import { watchSessions } from '../core/sessionWatcher.js';
 
 export type AgentsAction =
   | { type: 'exit' }
@@ -44,10 +46,10 @@ type DisplayRow = SessionRow | GroupHeader;
 const STATE_ICON: Record<SessionState, string> = {
   working: '✽',
   needs_input: '⚠',
-  idle: '∙',
+  idle: '○',
   done: '✻',
   failed: '✗',
-  stopped: '∙',
+  stopped: '⏸',
   unknown: '·',
 };
 
@@ -252,6 +254,16 @@ export function AgentsView({ config, onAction }: Props) {
     setSessions(unifyAllSessions(config, { windowDays: Infinity }));
   };
 
+  // Auto-refresh: watch jobs/daemon/projects for changes and reload the
+  // session list (debounced inside watchSessions). The watcher is set up
+  // once per config; cleanup happens on unmount.
+  useEffect(() => {
+    const stop = watchSessions(config, () => {
+      setSessions(unifyAllSessions(config, { windowDays }));
+    }, 700);
+    return stop;
+  }, [config, windowDays]);
+
   const moveCursor = (delta: number) => {
     if (rows.length === 0) return;
     let next = cursor;
@@ -397,7 +409,9 @@ export function AgentsView({ config, onAction }: Props) {
       return;
     }
 
-    if (key.upArrow) moveCursor(-1);
+    if (key.pageUp) moveCursor(-VISIBLE_ROWS);
+    else if (key.pageDown) moveCursor(VISIBLE_ROWS);
+    else if (key.upArrow) moveCursor(-1);
     else if (key.downArrow) moveCursor(1);
     else if (key.tab) jumpToNextGroup();
     else if (key.return || key.rightArrow) {
@@ -481,7 +495,7 @@ export function AgentsView({ config, onAction }: Props) {
           </Text>
         </Text>
         <Text>
-          active: <Text bold color="magenta">★ {activeProfile}</Text>
+          active: <Text bold color={profileColor(activeProfile) ?? 'magenta'}>★ {activeProfile}</Text>
           <Text dimColor>  [p] change · [Shift+P] one-off · [?] help</Text>
         </Text>
       </Box>
@@ -517,10 +531,11 @@ export function AgentsView({ config, onAction }: Props) {
         const s = row.session;
         const icon = STATE_ICON[s.state];
         const color = STATE_COLOR[s.state];
-        const age = formatRelativeTime(s.updatedAtMs, now);
+        const age = formatSmartTimestamp(s.updatedAtMs, now);
         const cwd = shortenPath(s.cwd, home);
         const detail = s.detail || s.intent || '';
         const lastProfile = s.lastProfile ?? s.bgProfile;
+        const lastColor = profileColor(lastProfile);
         const bgTag = s.isBackground ? '[bg]' : '';
 
         return (
@@ -528,13 +543,13 @@ export function AgentsView({ config, onAction }: Props) {
             <Box gap={1}>
               <Text color={isSel ? 'cyan' : undefined}>{isSel ? '❯' : ' '}</Text>
               <Text color={color}>{icon}</Text>
-              <Box width={32}>
+              <Box width={50}>
                 <Text bold={isSel} wrap="truncate">{s.name}</Text>
               </Box>
               <Box width={22}>
                 <Text dimColor wrap="truncate">{cwd}</Text>
               </Box>
-              <Box width={6}>
+              <Box width={13}>
                 <Text dimColor>{age}</Text>
               </Box>
               <Box width={11}>
@@ -544,7 +559,7 @@ export function AgentsView({ config, onAction }: Props) {
                 <Text dimColor>{bgTag}</Text>
               </Box>
               {lastProfile && (
-                <Text dimColor>last: <Text color="yellow">{lastProfile}</Text></Text>
+                <Text dimColor>last: <Text color={lastColor} bold>{lastProfile}</Text></Text>
               )}
             </Box>
             {isSel && peekOpen && detail && (

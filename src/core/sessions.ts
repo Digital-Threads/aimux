@@ -128,6 +128,30 @@ export function formatRelativeTime(ms: number, now: number = Date.now()): string
   return `${day}d`;
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function pad(n: number): string {
+  return n < 10 ? `0${n}` : `${n}`;
+}
+
+/**
+ * Returns a short timestamp string:
+ * - "27s" / "12m" / "3h" within the last day
+ * - "12 May 14:32" within the current year
+ * - "12 May 2025" if older than the current year
+ */
+export function formatSmartTimestamp(ms: number, now: number = Date.now()): string {
+  const diff = Math.max(0, now - ms);
+  const DAY = 24 * 60 * 60 * 1000;
+  if (diff < DAY) return formatRelativeTime(ms, now);
+  const d = new Date(ms);
+  const nowDate = new Date(now);
+  const sameYear = d.getFullYear() === nowDate.getFullYear();
+  const date = `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  if (sameYear) return `${date} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${date} ${d.getFullYear()}`;
+}
+
 export function shortenPath(path: string, home: string = process.env.HOME ?? ''): string {
   if (!path) return '';
   if (home && path.startsWith(home)) return '~' + path.slice(home.length);
