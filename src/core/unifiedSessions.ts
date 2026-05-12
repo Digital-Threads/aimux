@@ -2,6 +2,7 @@ import type { AimuxConfig } from '../types/index.js';
 import { listAllSessions, type SessionState } from './sessions.js';
 import { scanInteractiveSessions } from './sessionScanner.js';
 import { loadSessionHistory, type SessionHistoryEntry } from './sessionHistory.js';
+import { buildProfileSessionMap } from './profileSessionMap.js';
 
 export interface UnifiedSession {
   sessionId: string;
@@ -39,12 +40,20 @@ export function unifyAllSessions(config: AimuxConfig): UnifiedSession[] {
   const interactive = scanInteractiveSessions(config);
   const bgByProfile = listAllSessions(config);
   const history = loadSessionHistory();
+  const profileMap = buildProfileSessionMap(config);
+
+  function resolveLastProfile(sessionId: string): string | undefined {
+    // Explicit aimux tracking wins. Fallback to claude.json's lastSessionId
+    // mapping so even pre-tracking sessions get attribution.
+    const entry: SessionHistoryEntry | undefined = history.get(sessionId);
+    if (entry) return entry.profile;
+    return profileMap.get(sessionId)?.profile;
+  }
 
   const bySessionId = new Map<string, UnifiedSession>();
 
   // Seed with interactive transcripts (canonical universe of sessions).
   for (const s of interactive) {
-    const lastEntry: SessionHistoryEntry | undefined = history.get(s.sessionId);
     bySessionId.set(s.sessionId, {
       sessionId: s.sessionId,
       short: shortId(s.sessionId),
@@ -57,7 +66,7 @@ export function unifyAllSessions(config: AimuxConfig): UnifiedSession[] {
       updatedAtMs: s.updatedAtMs,
       createdAtMs: s.createdAtMs,
       events: s.events,
-      lastProfile: lastEntry?.profile,
+      lastProfile: resolveLastProfile(s.sessionId),
       isInteractive: true,
       isBackground: false,
     });
@@ -77,9 +86,9 @@ export function unifyAllSessions(config: AimuxConfig): UnifiedSession[] {
           existing.name = bg.name || existing.name;
         }
         if (!existing.intent) existing.intent = bg.intent;
+        if (!existing.lastProfile) existing.lastProfile = profileName;
       } else {
         // Background session whose transcript isn't yet flushed to projects/
-        const lastEntry: SessionHistoryEntry | undefined = history.get(bg.sessionId);
         bySessionId.set(bg.sessionId, {
           sessionId: bg.sessionId,
           short: bg.short || shortId(bg.sessionId),
@@ -92,7 +101,7 @@ export function unifyAllSessions(config: AimuxConfig): UnifiedSession[] {
           createdAtMs: bg.createdAt ? Date.parse(bg.createdAt) : bg.updatedAtMs,
           events: 0,
           bgProfile: profileName,
-          lastProfile: lastEntry?.profile,
+          lastProfile: resolveLastProfile(bg.sessionId) ?? profileName,
           isInteractive: false,
           isBackground: true,
         });
