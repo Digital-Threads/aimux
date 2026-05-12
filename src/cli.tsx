@@ -170,11 +170,110 @@ program
   });
 
 program
+  .command('migrate')
+  .description('Migration utilities')
+  .addCommand(
+    new Command('isolate')
+      .description('Convert per-profile jobs/daemon/projects symlinks into real private dirs so each profile gets its own supervisor + sessions (one-time, safe — no data is deleted)')
+      .option('--dry-run', 'Show what would change without touching the filesystem')
+      .action(async (options: { dryRun?: boolean }) => {
+        try {
+          const config = requireConfig();
+          const { isolateProfile } = await import('./core/migration.js');
+          const { lstatSync, existsSync } = await import('node:fs');
+          const { join } = await import('node:path');
+
+          const nonSource = Object.entries(config.profiles).filter(([, p]) => !p.is_source);
+          if (nonSource.length === 0) {
+            console.log('No non-source profiles to isolate.');
+            return;
+          }
+
+          let totalUnlinked = 0;
+          for (const [name, profile] of nonSource) {
+            if (options.dryRun) {
+              const profilePath = expandHome(profile.path);
+              const wouldUnlink: string[] = [];
+              for (const element of config.private) {
+                const target = join(profilePath, element);
+                try {
+                  if (existsSync(target) && lstatSync(target).isSymbolicLink()) {
+                    wouldUnlink.push(element);
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+              if (wouldUnlink.length === 0) {
+                console.log(`✓ ${name}: already isolated`);
+              } else {
+                console.log(`• ${name}: would convert ${wouldUnlink.length} symlink(s): ${wouldUnlink.join(', ')}`);
+                totalUnlinked += wouldUnlink.length;
+              }
+              continue;
+            }
+
+            const result = isolateProfile(config, name);
+            if (result.unlinkedSymlinks.length === 0) {
+              console.log(`✓ ${name}: already isolated`);
+            } else {
+              totalUnlinked += result.unlinkedSymlinks.length;
+              console.log(`✓ ${name}: converted ${result.unlinkedSymlinks.join(', ')} to private dirs`);
+            }
+          }
+
+          // Persist the merged private list so future syncs respect it.
+          if (!options.dryRun) {
+            saveConfig(config);
+          }
+
+          if (totalUnlinked === 0) {
+            console.log('\nAll profiles already isolated.');
+          } else {
+            console.log(`\nDone. ${totalUnlinked} symlink(s) converted. Each non-source profile now has its own supervisor and sessions.`);
+            console.log('Existing sessions in the source profile (~/.claude/jobs/) remain accessible from the source profile only.');
+          }
+        } catch (err) {
+          console.error(`Error: ${(err as Error).message}`);
+          process.exit(1);
+        }
+      }),
+  );
+
+program
   .command('agents')
   .description('Multi-profile agent view — manage claude background sessions across all profiles')
   .action(async () => {
     try {
       const config = requireConfig();
+      // Warn once at startup if any non-source profile still has its
+      // session-state dirs symlinked to the source — without isolation
+      // every profile shares the same sessions.
+      const { lstatSync, existsSync } = await import('node:fs');
+      const { join } = await import('node:path');
+      const sharedProfiles: string[] = [];
+      for (const [pname, pcfg] of Object.entries(config.profiles)) {
+        if (pcfg.is_source) continue;
+        const ppath = expandHome(pcfg.path);
+        for (const element of ['jobs', 'daemon']) {
+          const target = join(ppath, element);
+          try {
+            if (existsSync(target) && lstatSync(target).isSymbolicLink()) {
+              sharedProfiles.push(pname);
+              break;
+            }
+          } catch {
+            // ignore per-profile errors
+          }
+        }
+      }
+      if (sharedProfiles.length > 0) {
+        console.error(
+          `\x1b[33m⚠ Profiles still share sessions with the source: ${sharedProfiles.join(', ')}\n` +
+          `  Run \`aimux migrate isolate\` so each profile gets its own supervisor.\n\x1b[0m`,
+        );
+      }
+
       const { render } = await import('ink');
       const { AgentsView } = await import('./components/AgentsView.js');
       const { attachSession, dispatchSession, stopSession } = await import('./core/sessionActions.js');

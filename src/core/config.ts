@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { parse, stringify } from 'yaml';
 import type { AimuxConfig, ProfileConfig, HistoryEntry } from '../types/index.js';
-import { DEFAULT_CONFIG } from '../types/index.js';
+import { DEFAULT_CONFIG, DEFAULT_PRIVATE_ELEMENTS } from '../types/index.js';
 import { getConfigPath, getHistoryPath, getAimuxDir, getProfilesDir, expandHome } from './paths.js';
 
 export function loadConfig(): AimuxConfig | null {
@@ -15,6 +15,10 @@ export function loadConfig(): AimuxConfig | null {
   if (errors.length > 0) {
     throw new Error(`Invalid config:\n${errors.map(e => `  - ${e}`).join('\n')}`);
   }
+  // Union with current defaults so old configs pick up new private entries
+  // (e.g. jobs/daemon for session isolation) without manual edits.
+  const merged = new Set([...config.private, ...DEFAULT_PRIVATE_ELEMENTS]);
+  config.private = Array.from(merged);
   return config;
 }
 

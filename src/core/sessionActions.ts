@@ -61,3 +61,20 @@ export function stopSession(
     stderr: result.stderr ?? '',
   };
 }
+
+export function respawnSession(
+  config: AimuxConfig,
+  profileName: string,
+  sessionShort: string,
+): { code: number; stdout: string; stderr: string } {
+  const profile = getProfile(config, profileName);
+  const result = spawnSync(profile.cli, ['respawn', sessionShort], {
+    env: buildEnv(config, profileName),
+    encoding: 'utf-8',
+  });
+  return {
+    code: result.status ?? 1,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+  };
+}

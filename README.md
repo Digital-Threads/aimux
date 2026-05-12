@@ -89,6 +89,7 @@ aimux profile update o -m "claude-opus-4-6[1m]"
 | `aimux auth login <profile>` | Launch OAuth flow for a profile |
 | `aimux auth status` | Show auth file status per profile |
 | `aimux setup-shell` | Auto-install shell completions (bash/zsh/fish) |
+| `aimux migrate isolate` | One-time migration: convert per-profile `jobs/`, `daemon/`, `projects/` symlinks into real private dirs so each profile gets its own supervisor and sessions. Safe — no data is deleted. Add `--dry-run` to preview. |
 
 All profile commands support **prefix matching**: `aimux run w` → `work`, `aimux profile update o` → `own`.
 

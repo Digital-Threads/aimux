@@ -11,3 +11,7 @@ AGENTS.md
 .dolt/
 *.db
 .beads-credential-key
+.token-pilot/
+.token-pilot-fingerprint.json
+.codex/
+.docs/
