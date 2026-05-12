@@ -173,7 +173,10 @@ export function AgentsView({ config, onAction }: Props) {
   }, [config, nonSourceProfiles, allProfiles]);
 
   const [activeProfile, setActiveProfile] = useState<string>(initialActive);
-  const [sessions, setSessions] = useState<UnifiedSession[]>(() => unifyAllSessions(config));
+  const [windowDays, setWindowDays] = useState<number>(7);
+  const [sessions, setSessions] = useState<UnifiedSession[]>(() =>
+    unifyAllSessions(config, { windowDays: 7 }),
+  );
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [groupMode, setGroupMode] = useState<GroupMode>('recency');
   const [filter, setFilter] = useState('');
@@ -234,7 +237,12 @@ export function AgentsView({ config, onAction }: Props) {
     }
   }, [activeProfile]);
 
-  const refresh = () => setSessions(unifyAllSessions(config));
+  const refresh = () => setSessions(unifyAllSessions(config, { windowDays }));
+
+  const loadAllHistory = () => {
+    setWindowDays(Infinity);
+    setSessions(unifyAllSessions(config, { windowDays: Infinity }));
+  };
 
   const moveCursor = (delta: number) => {
     if (rows.length === 0) return;
@@ -410,6 +418,8 @@ export function AgentsView({ config, onAction }: Props) {
       toggleCollapseAtCursor();
     } else if (input === 'r') {
       refresh();
+    } else if (input === 'L') {
+      loadAllHistory();
     } else if (input === 'a') {
       setShowAll((v) => !v);
     } else if (input === '/') {
@@ -457,6 +467,7 @@ export function AgentsView({ config, onAction }: Props) {
           <Text dimColor>
             {' · '}
             {sessions.length} sessions · group: {groupMode}
+            {Number.isFinite(windowDays) ? ` · window: ${windowDays}d` : ' · window: all'}
             {filter ? ` · filter: ${filter}` : ''}
           </Text>
         </Text>
@@ -559,7 +570,7 @@ export function AgentsView({ config, onAction }: Props) {
       <Text> </Text>
       <Box>
         <Text dimColor>
-          [↑↓] nav  [→/⏎] attach via [{activeProfile}]  [Shift+P] one-off  [␣] peek  [n] new  [s] stop  [g] group  [a] {showAll ? 'hide noise' : 'show all'}  [c] collapse  [/] filter  [r] refresh  [?] help  [q] quit
+          [↑↓] nav  [→/⏎] attach via [{activeProfile}]  [Shift+P] one-off  [␣] peek  [n] new  [s] stop  [g] group  [a] {showAll ? 'hide noise' : 'show all'}  [L] load older  [c] collapse  [/] filter  [r] refresh  [?] help  [q] quit
         </Text>
       </Box>
     </Box>

@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, existsSync, openSync, readSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AimuxConfig } from '../types/index.js';
 import { expandHome } from './paths.js';
@@ -11,6 +11,13 @@ export interface InteractiveSession {
   createdAtMs: number;
   updatedAtMs: number;
   events: number;
+  /** True when the jsonl was only stat'd, not parsed (outside scan window). */
+  isStub?: boolean;
+}
+
+export interface ScanOptions {
+  /** Sessions with mtime older than this many days are stubbed (no jsonl parse). */
+  windowDays?: number;
 }
 
 interface LineCandidate {
@@ -118,7 +125,35 @@ export function parseSessionJsonl(
   return { cwd, intent, createdAtMs, events, isSubagent };
 }
 
-export function scanInteractiveSessions(config: AimuxConfig): InteractiveSession[] {
+function quickFirstLineType(filePath: string): string | null {
+  let fd: number | undefined;
+  try {
+    fd = openSync(filePath, 'r');
+    const buf = Buffer.alloc(256);
+    const read = readSync(fd, buf, 0, 256, 0);
+    const text = buf.subarray(0, read).toString('utf-8');
+    const nl = text.indexOf('\n');
+    const firstLine = nl >= 0 ? text.slice(0, nl) : text;
+    if (!firstLine.trim()) return null;
+    const obj = safeParse(firstLine);
+    return obj?.type ?? null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        closeSync(fd);
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+export function scanInteractiveSessions(
+  config: AimuxConfig,
+  opts: ScanOptions = {},
+): InteractiveSession[] {
   const projectsRoot = join(expandHome(config.shared_source), 'projects');
   if (!existsSync(projectsRoot)) return [];
 
@@ -128,6 +163,11 @@ export function scanInteractiveSessions(config: AimuxConfig): InteractiveSession
   } catch {
     return [];
   }
+
+  const windowDays = opts.windowDays ?? 7;
+  const windowCutoff = Number.isFinite(windowDays)
+    ? Date.now() - windowDays * 24 * 60 * 60 * 1000
+    : -Infinity;
 
   const sessions: InteractiveSession[] = [];
 
@@ -149,6 +189,27 @@ export function scanInteractiveSessions(config: AimuxConfig): InteractiveSession
       } catch {
         continue;
       }
+
+      // Fast subagent reject: first line of a queue-driven session is
+      // a queue-operation. Real interactive sessions start with
+      // permission-mode / file-history-snapshot / user / etc.
+      if (quickFirstLineType(filePath) === 'queue-operation') continue;
+
+      const insideWindow = stat.mtimeMs >= windowCutoff;
+      if (!insideWindow) {
+        sessions.push({
+          sessionId,
+          cwd: decodeHashedCwd(cwdHashDir),
+          intent: '',
+          cwdHashDir,
+          createdAtMs: stat.birthtimeMs || stat.mtimeMs,
+          updatedAtMs: stat.mtimeMs,
+          events: 0,
+          isStub: true,
+        });
+        continue;
+      }
+
       const parsed = parseSessionJsonl(filePath);
       if (parsed.isSubagent) continue;
       sessions.push({

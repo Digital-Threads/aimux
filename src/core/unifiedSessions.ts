@@ -36,8 +36,11 @@ function shortId(sessionId: string): string {
   return sessionId.slice(0, 8);
 }
 
-export function unifyAllSessions(config: AimuxConfig): UnifiedSession[] {
-  const interactive = scanInteractiveSessions(config);
+export function unifyAllSessions(
+  config: AimuxConfig,
+  opts: { windowDays?: number } = {},
+): UnifiedSession[] {
+  const interactive = scanInteractiveSessions(config, { windowDays: opts.windowDays });
   const bgByProfile = listAllSessions(config);
   const history = loadSessionHistory();
   const profileMap = buildProfileSessionMap(config);
