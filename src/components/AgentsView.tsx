@@ -183,10 +183,25 @@ export function AgentsView({ config, onAction }: Props) {
   const [dispatchPrompt, setDispatchPrompt] = useState('');
   const [dispatchProfileDraft, setDispatchProfileDraft] = useState<string>(initialActive);
   const [profilePickerIdx, setProfilePickerIdx] = useState(0);
+  const [showAll, setShowAll] = useState(false);
+  const [viewportTop, setViewportTop] = useState(0);
+  const VISIBLE_ROWS = 15;
+
+  const visibleSessions = useMemo(() => {
+    if (showAll || filter) return sessions;
+    // Hide noise: very short sessions that look like dispatched system
+    // tasks with no real interactive activity. Keep anything that's
+    // currently working / needs input regardless of event count.
+    return sessions.filter((s) => {
+      if (s.state === 'working' || s.state === 'needs_input') return true;
+      if (s.events >= 5) return true;
+      return false;
+    });
+  }, [sessions, showAll, filter]);
 
   const rows = useMemo(
-    () => buildRows(sessions, groupMode, collapsed, filter),
-    [sessions, groupMode, collapsed, filter],
+    () => buildRows(visibleSessions, groupMode, collapsed, filter),
+    [visibleSessions, groupMode, collapsed, filter],
   );
 
   const [cursor, setCursor] = useState(() => firstSessionIndex(rows));
@@ -194,12 +209,22 @@ export function AgentsView({ config, onAction }: Props) {
   useEffect(() => {
     if (rows.length === 0) {
       setCursor(0);
+      setViewportTop(0);
       return;
     }
     if (cursor >= rows.length || rows[cursor]?.kind !== 'session') {
       setCursor(firstSessionIndex(rows));
     }
   }, [rows]);
+
+  // Keep cursor inside the viewport window.
+  useEffect(() => {
+    if (cursor < viewportTop) {
+      setViewportTop(cursor);
+    } else if (cursor >= viewportTop + VISIBLE_ROWS) {
+      setViewportTop(cursor - VISIBLE_ROWS + 1);
+    }
+  }, [cursor, viewportTop]);
 
   useEffect(() => {
     try {
@@ -385,6 +410,8 @@ export function AgentsView({ config, onAction }: Props) {
       toggleCollapseAtCursor();
     } else if (input === 'r') {
       refresh();
+    } else if (input === 'a') {
+      setShowAll((v) => !v);
     } else if (input === '/') {
       setFilterDraft(filter);
       setMode('filter');
@@ -449,7 +476,12 @@ export function AgentsView({ config, onAction }: Props) {
 
       <Text> </Text>
 
-      {rows.map((row, idx) => {
+      {viewportTop > 0 && (
+        <Text dimColor>▲ {viewportTop} more above (↑ to scroll)</Text>
+      )}
+
+      {rows.slice(viewportTop, viewportTop + VISIBLE_ROWS).map((row, relIdx) => {
+        const idx = viewportTop + relIdx;
         if (row.kind === 'header') {
           const arrow = collapsed.has(row.groupKey) ? '▶' : '▼';
           return (
@@ -507,18 +539,27 @@ export function AgentsView({ config, onAction }: Props) {
         );
       })}
 
+      {(() => {
+        const remaining = Math.max(0, rows.length - viewportTop - VISIBLE_ROWS);
+        return remaining > 0 ? (
+          <Text dimColor>▼ {remaining} more below (↓ to scroll)</Text>
+        ) : null;
+      })()}
+
       {rows.length === 0 && (
         <Text dimColor>
           {filter
             ? `No sessions match "${filter}". Press / to edit, Esc to clear.`
-            : 'No sessions yet. Press [n] to dispatch one.'}
+            : sessions.length > 0 && !showAll
+              ? `Noise hidden (${sessions.length} total). Press [a] to show all.`
+              : 'No sessions yet. Press [n] to dispatch one.'}
         </Text>
       )}
 
       <Text> </Text>
       <Box>
         <Text dimColor>
-          [↑↓] nav  [→/⏎] attach via [{activeProfile}]  [Shift+P] one-off  [␣] peek  [n] new  [s] stop  [g] group  [c] collapse  [/] filter  [r] refresh  [?] help  [q] quit
+          [↑↓] nav  [→/⏎] attach via [{activeProfile}]  [Shift+P] one-off  [␣] peek  [n] new  [s] stop  [g] group  [a] {showAll ? 'hide noise' : 'show all'}  [c] collapse  [/] filter  [r] refresh  [?] help  [q] quit
         </Text>
       </Box>
     </Box>
