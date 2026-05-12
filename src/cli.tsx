@@ -238,6 +238,40 @@ program
           process.exit(1);
         }
       }),
+  )
+  .addCommand(
+    new Command('share-projects')
+      .description('Re-share <profile>/projects/ with the source so interactive session transcripts work across profiles (resume the same session from another subscription when limits hit). Earlier 0.3.0 migrate isolate over-isolated projects/ — this reverts that subset.')
+      .action(async () => {
+        try {
+          const config = requireConfig();
+          const { shareProjectsForAllProfiles } = await import('./core/migration.js');
+          const result = shareProjectsForAllProfiles(config);
+          let symlinked = 0;
+          let conflicts = 0;
+          for (const r of result.perProfile) {
+            if (r.status === 'symlinked') {
+              symlinked++;
+              console.log(`✓ ${r.profile}: projects/ re-symlinked to source`);
+            } else if (r.status === 'already-shared') {
+              console.log(`• ${r.profile}: already shared`);
+            } else if (r.status === 'skipped-missing-source') {
+              console.log(`⚠ ${r.profile}: source projects/ missing — skipped`);
+            } else if (r.status === 'skipped-non-empty') {
+              conflicts++;
+              console.log(`⚠ ${r.profile}: projects/ is non-empty (${r.contents?.length ?? 0} entries) — skipped to avoid losing data`);
+              console.log(`  Manual: merge contents into ${expandHome(config.shared_source)}/projects/ then remove ${expandHome(config.profiles[r.profile].path)}/projects/ and re-run.`);
+            }
+          }
+          console.log(
+            `\nDone. ${symlinked} profile(s) re-shared.` +
+            (conflicts > 0 ? ` ${conflicts} need manual merge.` : ''),
+          );
+        } catch (err) {
+          console.error(`Error: ${(err as Error).message}`);
+          process.exit(1);
+        }
+      }),
   );
 
 program

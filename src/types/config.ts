@@ -23,15 +23,19 @@ export const DEFAULT_PRIVATE_ELEMENTS = [
   'stats-cache.json',
   'statsig',
   'telemetry',
-  // Per-profile background-session state — must be PRIVATE so each profile
-  // has its own supervisor and its own dispatched sessions instead of
-  // sharing them with the source profile via symlinks.
+  // Per-profile background-session supervisor state — PRIVATE so each
+  // profile has its own daemon and dispatched-session pool.
+  //
+  // NOTE: `projects/` stays SHARED (not in this list). It holds interactive
+  // session transcripts keyed by cwd hash. Sharing it is what makes the
+  // killer aimux workflow possible: hit a rate limit on one profile,
+  // Ctrl+C, resume the SAME session from another profile's subscription
+  // via `claude --resume <id>`.
   'jobs',
   'daemon',
   'daemon.lock',
   'daemon.log',
   'daemon.status.json',
-  'projects',
 ];
 
 export const DEFAULT_CONFIG: AimuxConfig = {
