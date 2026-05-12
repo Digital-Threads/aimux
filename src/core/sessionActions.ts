@@ -78,3 +78,21 @@ export function respawnSession(
     stderr: result.stderr ?? '',
   };
 }
+
+export function resumeSession(
+  config: AimuxConfig,
+  profileName: string,
+  sessionId: string,
+  options: { cwd?: string } = {},
+): Promise<number> {
+  const profile = getProfile(config, profileName);
+  return new Promise((resolve, reject) => {
+    const child = spawn(profile.cli, ['--resume', sessionId], {
+      stdio: 'inherit',
+      env: buildEnv(config, profileName),
+      cwd: options.cwd,
+    });
+    child.on('error', (err) => reject(new Error(`Failed to resume: ${err.message}`)));
+    child.on('exit', (code) => resolve(code ?? 1));
+  });
+}

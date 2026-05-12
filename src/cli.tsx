@@ -310,12 +310,28 @@ program
 
       const { render } = await import('ink');
       const { AgentsView } = await import('./components/AgentsView.js');
-      const { attachSession, dispatchSession, stopSession } = await import('./core/sessionActions.js');
+      const {
+        attachSession,
+        resumeSession,
+        dispatchSession,
+        stopSession,
+      } = await import('./core/sessionActions.js');
+      const { recordSessionUsage } = await import('./core/sessionHistory.js');
+
       type PendingAction =
         | { type: 'exit' }
-        | { type: 'attach'; profile: string; short: string }
+        | {
+            type: 'attach';
+            profile: string;
+            sessionId: string;
+            cwd: string;
+            isBackground: boolean;
+            bgShort?: string;
+          }
         | { type: 'dispatch'; profile: string; prompt: string }
         | { type: 'stop'; profile: string; short: string };
+
+      const { existsSync: existsSyncFn } = await import('node:fs');
 
       let running = true;
       while (running) {
@@ -338,8 +354,26 @@ program
             running = false;
             break;
           case 'attach': {
-            const code = await attachSession(config, action.profile, action.short);
-            if (code !== 0) console.error(`Attach exited with code ${code}`);
+            // Always use `claude --resume <id>` with the chosen profile's
+            // CLAUDE_CONFIG_DIR. Reads transcript from the shared projects/
+            // folder, bills the chosen profile — works cross-profile.
+            //
+            // Trade-off: if a background supervisor in another profile
+            // already has this session live, we spawn a second reader
+            // process. For interactive resume of a Ctrl+C'd session that's
+            // exactly what we want. Background-only sessions are still
+            // best handled by attaching via their owning profile.
+            void attachSession; // kept exported for future per-profile attach
+            const cwdForSession =
+              action.cwd && existsSyncFn(action.cwd) ? action.cwd : undefined;
+            const code = await resumeSession(
+              config,
+              action.profile,
+              action.sessionId,
+              { cwd: cwdForSession },
+            );
+            recordSessionUsage(action.sessionId, action.profile);
+            if (code !== 0) console.error(`Resume exited with code ${code}`);
             break;
           }
           case 'dispatch': {
