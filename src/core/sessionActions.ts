@@ -83,11 +83,13 @@ export function resumeSession(
   config: AimuxConfig,
   profileName: string,
   sessionId: string,
-  options: { cwd?: string } = {},
+  options: { cwd?: string; forkSession?: boolean } = {},
 ): Promise<number> {
   const profile = getProfile(config, profileName);
+  const args = ['--resume', sessionId];
+  if (options.forkSession) args.push('--fork-session');
   return new Promise((resolve, reject) => {
-    const child = spawn(profile.cli, ['--resume', sessionId], {
+    const child = spawn(profile.cli, args, {
       stdio: 'inherit',
       env: buildEnv(config, profileName),
       cwd: options.cwd,

@@ -327,6 +327,7 @@ program
             cwd: string;
             isBackground: boolean;
             bgShort?: string;
+            bgProfile?: string;
           }
         | { type: 'dispatch'; profile: string; prompt: string }
         | { type: 'stop'; profile: string; short: string };
@@ -354,23 +355,34 @@ program
             running = false;
             break;
           case 'attach': {
-            // Always use `claude --resume <id>` with the chosen profile's
-            // CLAUDE_CONFIG_DIR. Reads transcript from the shared projects/
-            // folder, bills the chosen profile — works cross-profile.
+            // Use `claude --resume <id>` with the chosen profile's
+            // CLAUDE_CONFIG_DIR. The transcript is read from the shared
+            // projects/ folder and billing follows the picked profile.
             //
-            // Trade-off: if a background supervisor in another profile
-            // already has this session live, we spawn a second reader
-            // process. For interactive resume of a Ctrl+C'd session that's
-            // exactly what we want. Background-only sessions are still
-            // best handled by attaching via their owning profile.
+            // If the session is currently live as a background agent under
+            // a DIFFERENT profile, claude refuses a plain --resume because
+            // two concurrent writers would corrupt the transcript. In that
+            // case, add --fork-session so claude branches a copy: same
+            // history, new session-id, runs under the chosen profile's
+            // subscription. This is the killer cross-profile workflow.
             void attachSession; // kept exported for future per-profile attach
             const cwdForSession =
               action.cwd && existsSyncFn(action.cwd) ? action.cwd : undefined;
+            const needsFork =
+              action.isBackground &&
+              !!action.bgProfile &&
+              action.bgProfile !== action.profile;
+            if (needsFork) {
+              console.error(
+                `Session is live as a background agent under "${action.bgProfile}". ` +
+                `Forking a copy that will run under "${action.profile}" (new session-id, same history).`,
+              );
+            }
             const code = await resumeSession(
               config,
               action.profile,
               action.sessionId,
-              { cwd: cwdForSession },
+              { cwd: cwdForSession, forkSession: needsFork },
             );
             recordSessionUsage(action.sessionId, action.profile);
             if (code !== 0) console.error(`Resume exited with code ${code}`);

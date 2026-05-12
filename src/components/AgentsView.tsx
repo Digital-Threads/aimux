@@ -7,7 +7,15 @@ import { loadActiveProfile, saveActiveProfile } from '../core/activeProfile.js';
 
 export type AgentsAction =
   | { type: 'exit' }
-  | { type: 'attach'; profile: string; sessionId: string; cwd: string; isBackground: boolean; bgShort?: string }
+  | {
+      type: 'attach';
+      profile: string;
+      sessionId: string;
+      cwd: string;
+      isBackground: boolean;
+      bgShort?: string;
+      bgProfile?: string;
+    }
   | { type: 'dispatch'; profile: string; prompt: string }
   | { type: 'stop'; profile: string; short: string };
 
@@ -296,6 +304,7 @@ export function AgentsView({ config, onAction }: Props) {
       cwd: currentSession.cwd,
       isBackground: currentSession.isBackground,
       bgShort: currentSession.short,
+      bgProfile: currentSession.bgProfile,
     });
     exit();
   };
