@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { render } from 'ink';
-import { StatusView } from './components/StatusView.js';
-import { ProfilePicker } from './components/ProfilePicker.js';
 import type { AimuxConfig } from './types/index.js';
 import { rmSync, existsSync, cpSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -71,7 +68,9 @@ program
 program
   .command('status')
   .description('Show overview of profiles and shared source')
-  .action(() => {
+  .action(async () => {
+    const { render } = await import('ink');
+    const { StatusView } = await import('./components/StatusView.js');
     render(<StatusView config={requireConfig()} />);
   });
 
@@ -131,12 +130,14 @@ program
         if (names.length === 1) {
           profileName = names[0];
         } else {
+          const { render } = await import('ink');
+          const { ProfilePicker } = await import('./components/ProfilePicker.js');
           let selectedProfile: string | undefined;
           const { waitUntilExit } = render(
             <ProfilePicker
               config={config}
               lastProfile={last}
-              onSelect={(selected) => {
+              onSelect={(selected: string) => {
                 selectedProfile = selected;
               }}
             />
@@ -203,7 +204,9 @@ program
   .addCommand(
     new Command('list')
       .description('List all profiles')
-      .action(() => {
+      .action(async () => {
+        const { render } = await import('ink');
+        const { StatusView } = await import('./components/StatusView.js');
         render(<StatusView config={requireConfig()} />);
       })
   )
