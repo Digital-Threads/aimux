@@ -15,6 +15,14 @@ export interface RunParams {
   profilePath: string;
 }
 
+const SUBCOMMAND_TOKEN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+
+export function looksLikeSubcommand(arg: string | undefined): boolean {
+  if (!arg) return false;
+  if (arg.startsWith('-')) return false;
+  return SUBCOMMAND_TOKEN.test(arg);
+}
+
 export function buildRunParams(
   config: AimuxConfig,
   profileName: string,
@@ -24,12 +32,17 @@ export function buildRunParams(
   const profilePath = expandHome(profile.path);
   const model = options.model ?? profile.model;
 
+  const extraArgs = options.extraArgs ?? [];
+  const firstExtra = extraArgs[0];
+  const isSubcommand = looksLikeSubcommand(firstExtra);
+  const userPassedModel = extraArgs.some((a) => a === '--model' || a === '-m');
+
   const args: string[] = [];
-  if (model) {
+  if (model && !isSubcommand && !userPassedModel) {
     args.push('--model', model);
   }
-  if (options.extraArgs) {
-    args.push(...options.extraArgs);
+  if (extraArgs.length > 0) {
+    args.push(...extraArgs);
   }
 
   const env: Record<string, string> = {};
