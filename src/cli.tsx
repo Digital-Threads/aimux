@@ -150,15 +150,17 @@ program
 
       profileName = resolveProfile(config, profileName);
 
-      if (!config.profiles[profileName].is_source) {
+      if (!config.profiles[profileName].is_source && !launchingSubcommand) {
         const sync = syncProfile(config, profileName);
         const hasChanges = sync.created.length > 0 || sync.repaired.length > 0 || sync.conflicts.length > 0;
-        if (hasChanges && !launchingSubcommand) {
+        if (hasChanges) {
           console.log(`Auto-sync: ${formatSyncSummary(sync)}`);
         }
       }
 
-      recordHistory(process.cwd(), profileName);
+      if (!launchingSubcommand) {
+        recordHistory(process.cwd(), profileName);
+      }
       const exitCode = await launchProfile(config, profileName, { model: options.model, extraArgs: cliArgs });
       process.exit(exitCode);
     } catch (err) {

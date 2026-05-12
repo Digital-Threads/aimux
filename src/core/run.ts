@@ -65,6 +65,16 @@ export function launchProfile(
 ): Promise<number> {
   const params = buildRunParams(config, profileName, options);
 
+  if (process.env.AIMUX_DEBUG) {
+    process.stderr.write(
+      `[aimux-diag] cli=${params.cli} args=${JSON.stringify(params.args)}\n` +
+      `[aimux-diag] tty: stdin=${process.stdin.isTTY} stdout=${process.stdout.isTTY} stderr=${process.stderr.isTTY}\n` +
+      `[aimux-diag] cwd=${process.cwd()}\n` +
+      `[aimux-diag] CLAUDE_CONFIG_DIR=${params.env.CLAUDE_CONFIG_DIR ?? '(not set, inherits)'}\n` +
+      `[aimux-diag] TERM=${process.env.TERM}\n`
+    );
+  }
+
   return new Promise((resolve, reject) => {
     const child = spawn(params.cli, params.args, {
       stdio: 'inherit',
