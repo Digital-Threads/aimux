@@ -56,6 +56,60 @@ function formatSyncSummary(result: {
   return parts.join(', ');
 }
 
+function formatInteger(value: number): string {
+  return Math.round(value).toLocaleString('en-US');
+}
+
+function pad(value: string, width: number): string {
+  return value.length >= width ? value : value + ' '.repeat(width - value.length);
+}
+
+function topModels(models: Map<string, number>): string {
+  const entries = Array.from(models.entries()).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) return '-';
+  return entries.slice(0, 2).map(([model]) => model).join(', ');
+}
+
+function printUsageTable(
+  summaries: Array<{
+    profile: string;
+    sessions: number;
+    requests: number;
+    inputTokens: number;
+    cacheCreationInputTokens: number;
+    cacheReadInputTokens: number;
+    outputTokens: number;
+    estimatedCostUsd: number;
+    models: Map<string, number>;
+  }>,
+  totalTokens: (summary: {
+    inputTokens: number;
+    cacheCreationInputTokens: number;
+    cacheReadInputTokens: number;
+    outputTokens: number;
+    estimatedCostUsd: number;
+  }) => number,
+): void {
+  const headers = ['PROFILE', 'SESS', 'REQ', 'INPUT', 'CACHE+', 'CACHE', 'OUTPUT', 'TOTAL', 'MODELS'];
+  const rows = summaries.map((s) => [
+    s.profile,
+    formatInteger(s.sessions),
+    formatInteger(s.requests),
+    formatInteger(s.inputTokens),
+    formatInteger(s.cacheCreationInputTokens),
+    formatInteger(s.cacheReadInputTokens),
+    formatInteger(s.outputTokens),
+    formatInteger(totalTokens(s)),
+    topModels(s.models),
+  ]);
+  const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)));
+  console.log(headers.map((h, i) => pad(h, widths[i])).join('  '));
+  console.log(widths.map((w) => '-'.repeat(w)).join('  '));
+  for (const row of rows) {
+    console.log(row.map((cell, i) => pad(cell, widths[i])).join('  '));
+  }
+}
+
 
 const program = new Command();
 
@@ -72,6 +126,33 @@ program
     const { render } = await import('ink');
     const { StatusView } = await import('./components/StatusView.js');
     render(<StatusView config={requireConfig()} />);
+  });
+
+program
+  .command('usage')
+  .description('Show token usage by profile from Claude transcript metadata')
+  .option('-p, --profile <profile>', 'Only show one profile (supports prefix matching)')
+  .option('--since <duration>', 'Only include usage since duration: 24h, 7d, 4w', '7d')
+  .option('--all', 'Include all known transcript usage')
+  .action(async (options: { profile?: string; since: string; all?: boolean }) => {
+    try {
+      const config = requireConfig();
+      const { summarizeUsage, parseSinceDuration, totalTokens } = await import('./core/usage.js');
+      const profile = options.profile ? resolveProfile(config, options.profile) : undefined;
+      const sinceMs = options.all ? undefined : parseSinceDuration(options.since);
+      const summaries = summarizeUsage(config, { profile, sinceMs });
+      printUsageTable(summaries, totalTokens);
+      if (!options.all) {
+        console.log(`\nWindow: ${options.since}`);
+      }
+      console.log('Source: shared projects/*.jsonl transcript usage metadata; duplicate requestIds counted once.');
+      if (summaries.some((s) => s.profile === 'unknown')) {
+        console.log('Note: unknown means aimux could not map a transcript session to a profile.');
+      }
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
   });
 
 program
@@ -680,7 +761,7 @@ program
   COMPREPLY=()
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="init run status profile rebuild doctor auth completions"
+  commands="init run status usage profile rebuild doctor auth completions"
 
   case "\${prev}" in
     run|auth)
@@ -700,7 +781,7 @@ complete -F _aimux aimux
       console.log(`#compdef aimux
 _aimux() {
   local -a commands profiles
-  commands=(init run status profile rebuild doctor auth completions)
+  commands=(init run status usage profile rebuild doctor auth completions)
   profiles=(${profiles})
 
   _arguments '1:command:($commands)' '*::arg:->args'
@@ -717,7 +798,7 @@ _aimux() {
 _aimux
 # Add to ~/.zshrc: eval "$(aimux completions zsh)"`);
     } else if (shell === 'fish') {
-      console.log(`complete -c aimux -n '__fish_use_subcommand' -a 'init run status profile rebuild doctor auth completions'
+      console.log(`complete -c aimux -n '__fish_use_subcommand' -a 'init run status usage profile rebuild doctor auth completions'
 complete -c aimux -n '__fish_seen_subcommand_from run' -a '${profiles}'
 complete -c aimux -n '__fish_seen_subcommand_from profile' -a 'add list update remove clone'
 complete -c aimux -n '__fish_seen_subcommand_from auth' -a 'login status'
