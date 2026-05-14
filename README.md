@@ -61,6 +61,8 @@ aimux run w             # prefix match → work
 aimux run o -m claude-sonnet-4-6  # one-time model override
 aimux run w --resume    # flags pass through to Claude CLI
 aimux status            # dashboard
+aimux usage             # token usage by profile for the last 7 days
+aimux usage --all       # all known transcript usage
 
 # Set default model per profile (quote model names with special chars)
 aimux profile update w -m claude-opus-4-6
@@ -74,6 +76,8 @@ aimux profile update o -m "claude-opus-4-6[1m]"
 | `aimux init` | Auto-detect Claude dirs, create config, migrate profiles |
 | `aimux init --source <path>` | Initialize with explicit source directory |
 | `aimux status` | TUI dashboard — profiles, auth, symlink health |
+| `aimux usage` | Show token usage by profile from Claude transcript metadata |
+| `aimux usage --profile work --since 24h` | Show usage for one profile over a recent window |
 | `aimux run [profile]` | Launch AI CLI with correct env and model |
 | `aimux run` | Interactive picker — history pre-selects last used profile |
 | `aimux run w` | Prefix matching — launches `work` if unambiguous |
