@@ -1,5 +1,11 @@
 # aimux
 
+[![npm version](https://img.shields.io/npm/v/@digital-threads/aimux?color=cb3837&logo=npm)](https://www.npmjs.com/package/@digital-threads/aimux)
+[![npm downloads](https://img.shields.io/npm/dw/@digital-threads/aimux?color=cb3837&logo=npm)](https://www.npmjs.com/package/@digital-threads/aimux)
+[![license](https://img.shields.io/npm/l/@digital-threads/aimux?color=blue)](./LICENSE)
+[![node](https://img.shields.io/node/v/@digital-threads/aimux?color=339933&logo=node.js)](https://nodejs.org)
+[![GitHub stars](https://img.shields.io/github/stars/Digital-Threads/aimux?style=social)](https://github.com/Digital-Threads/aimux)
+
 Local AI workspace orchestrator — manage multiple AI CLI subscriptions with shared knowledge and isolated authentication.
 
 ## Problem
