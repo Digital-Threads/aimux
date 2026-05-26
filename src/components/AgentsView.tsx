@@ -524,6 +524,8 @@ export function AgentsView({ config, onAction }: Props) {
 
       <Text> </Text>
 
+      <Box flexDirection="row" gap={2}>
+        <Box flexDirection="column" flexGrow={1}>
       {viewportTop > 0 && (
         <Text dimColor>▲ {viewportTop} more above (↑ to scroll)</Text>
       )}
@@ -547,7 +549,6 @@ export function AgentsView({ config, onAction }: Props) {
         const color = STATE_COLOR[s.state];
         const age = formatSmartTimestamp(s.updatedAtMs, now);
         const cwd = shortenPath(s.cwd, home);
-        const detail = s.detail || s.intent || '';
         const lastProfile = s.lastProfile ?? s.bgProfile;
         const lastColor = profileColor(lastProfile);
         const bgTag = s.isBackground ? '[bg]' : '';
@@ -577,14 +578,6 @@ export function AgentsView({ config, onAction }: Props) {
                 <Text dimColor>last: <Text color={lastColor} bold>{lastProfile}</Text></Text>
               )}
             </Box>
-            {isSel && peekOpen && detail && (
-              <Box marginLeft={4} flexDirection="column">
-                <Text dimColor wrap="wrap">{detail}</Text>
-                {s.intent && s.intent !== detail && (
-                  <Text dimColor>↪ intent: {s.intent.slice(0, 200)}</Text>
-                )}
-              </Box>
-            )}
           </Box>
         );
       })}
@@ -605,6 +598,11 @@ export function AgentsView({ config, onAction }: Props) {
               : 'No sessions yet. Press [n] to dispatch one.'}
         </Text>
       )}
+        </Box>
+        {peekOpen && currentSession && (
+          <PeekPanel session={currentSession} pinned={pinned.has(currentSession.sessionId)} home={home} />
+        )}
+      </Box>
 
       <Text> </Text>
       <Box>
@@ -622,7 +620,7 @@ function HelpOverlay({ activeProfile }: { activeProfile: string }) {
     ['→ / Enter', `attach via active profile (${activeProfile}) — uses claude --resume`],
     ['Shift+P', 'attach via different profile (one-off override)'],
     ['p', 'change active profile (persistent across runs)'],
-    ['Space', 'toggle peek for selected session (detail/intent)'],
+    ['Space', 'toggle side-pane peek for selected session (rich detail)'],
     ['n', 'dispatch new background session (Tab cycles target profile)'],
     ['s', 'stop selected session (background only)'],
     ['g', 'cycle group mode: recency → cwd → state → flat'],
@@ -719,6 +717,59 @@ function DispatchModal({
       </Box>
       <Text> </Text>
       <Text dimColor>Enter to dispatch · Esc to cancel</Text>
+    </Box>
+  );
+}
+
+function PeekPanel({
+  session,
+  pinned,
+  home,
+}: {
+  session: UnifiedSession;
+  pinned: boolean;
+  home: string;
+}) {
+  const icon = STATE_ICON[session.state];
+  const color = STATE_COLOR[session.state];
+  return (
+    <Box flexDirection="column" width={50} borderStyle="round" paddingX={1}>
+      <Box>
+        <Text color="cyan" bold>Peek</Text>
+        {pinned && <Text color="yellow">  ★ pinned</Text>}
+      </Box>
+      <Text bold wrap="wrap">{session.name}</Text>
+      <Box>
+        <Text color={color}>{icon} {STATE_LABEL[session.state]}</Text>
+      </Box>
+      <Text> </Text>
+      <Text dimColor>cwd:</Text>
+      <Text wrap="wrap">{shortenPath(session.cwd, home)}</Text>
+      {session.intent ? (
+        <Box flexDirection="column">
+          <Text> </Text>
+          <Text dimColor>intent:</Text>
+          <Text wrap="wrap">{session.intent}</Text>
+        </Box>
+      ) : null}
+      {session.detail && session.detail !== session.intent ? (
+        <Box flexDirection="column">
+          <Text> </Text>
+          <Text dimColor>detail:</Text>
+          <Text wrap="wrap">{session.detail}</Text>
+        </Box>
+      ) : null}
+      <Text> </Text>
+      <Text dimColor>events: {session.events}</Text>
+      <Text dimColor>updated: {formatSmartTimestamp(session.updatedAtMs, Date.now())}</Text>
+      {session.lastProfile ? (
+        <Text>last: <Text color={profileColor(session.lastProfile) ?? 'magenta'} bold>{session.lastProfile}</Text></Text>
+      ) : null}
+      {session.isBackground && session.bgProfile ? (
+        <Text dimColor>bg: <Text color={profileColor(session.bgProfile) ?? 'magenta'} bold>{session.bgProfile}</Text></Text>
+      ) : null}
+      <Text> </Text>
+      <Text dimColor>id: {session.sessionId.slice(0, 8)}…</Text>
     </Box>
   );
 }
