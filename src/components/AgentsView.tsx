@@ -6,6 +6,7 @@ import { formatSmartTimestamp, shortenPath, type SessionState } from '../core/se
 import { loadActiveProfile, saveActiveProfile } from '../core/activeProfile.js';
 import { profileColor } from '../core/profileColors.js';
 import { watchSessions } from '../core/sessionWatcher.js';
+import { loadPinned, togglePinned } from '../core/pinnedSessions.js';
 
 export type AgentsAction =
   | { type: 'exit' }
@@ -90,16 +91,25 @@ function matchesFilter(s: UnifiedSession, query: string): boolean {
   );
 }
 
+function sortByPinned<T extends UnifiedSession>(arr: T[], pinned: Set<string>): T[] {
+  if (pinned.size === 0) return arr;
+  const pin: T[] = [];
+  const rest: T[] = [];
+  for (const s of arr) (pinned.has(s.sessionId) ? pin : rest).push(s);
+  return [...pin, ...rest];
+}
+
 function buildRows(
   sessions: UnifiedSession[],
   groupMode: GroupMode,
   collapsed: Set<string>,
   filter: string,
+  pinned: Set<string>,
 ): DisplayRow[] {
   const filtered = sessions.filter((s) => matchesFilter(s, filter));
 
   if (groupMode === 'flat') {
-    return filtered.map((s) => ({ kind: 'session', session: s }));
+    return sortByPinned(filtered, pinned).map((s) => ({ kind: 'session', session: s }));
   }
 
   const groups = new Map<string, { label: string; sessions: UnifiedSession[] }>();
@@ -148,7 +158,7 @@ function buildRows(
     const g = groups.get(key)!;
     rows.push({ kind: 'header', label: g.label, count: g.sessions.length, groupKey: key });
     if (!collapsed.has(key)) {
-      for (const s of g.sessions) rows.push({ kind: 'session', session: s });
+      for (const s of sortByPinned(g.sessions, pinned)) rows.push({ kind: 'session', session: s });
     }
   }
   return rows;
@@ -212,9 +222,11 @@ export function AgentsView({ config, onAction }: Props) {
     });
   }, [sessions, showAll, filter]);
 
+  const [pinned, setPinned] = useState<Set<string>>(() => loadPinned());
+
   const rows = useMemo(
-    () => buildRows(visibleSessions, groupMode, collapsed, filter),
-    [visibleSessions, groupMode, collapsed, filter],
+    () => buildRows(visibleSessions, groupMode, collapsed, filter, pinned),
+    [visibleSessions, groupMode, collapsed, filter, pinned],
   );
 
   const [cursor, setCursor] = useState(() => firstSessionIndex(rows));
@@ -445,6 +457,8 @@ export function AgentsView({ config, onAction }: Props) {
       loadAllHistory();
     } else if (input === 'a') {
       setShowAll((v) => !v);
+    } else if (input === '*') {
+      if (currentSession) setPinned(togglePinned(currentSession.sessionId));
     } else if (input === '/') {
       setFilterDraft(filter);
       setMode('filter');
@@ -544,6 +558,7 @@ export function AgentsView({ config, onAction }: Props) {
               <Text color={isSel ? 'cyan' : undefined}>{isSel ? '❯' : ' '}</Text>
               <Text color={color}>{icon}</Text>
               <Box width={50}>
+                {pinned.has(s.sessionId) && <Text color="yellow">★ </Text>}
                 <Text bold={isSel} wrap="truncate">{s.name}</Text>
               </Box>
               <Box width={22}>
@@ -594,7 +609,7 @@ export function AgentsView({ config, onAction }: Props) {
       <Text> </Text>
       <Box>
         <Text dimColor>
-          [↑↓] nav  [→/⏎] attach via [{activeProfile}]  [Shift+P] one-off  [␣] peek  [n] new  [s] stop  [g] group  [a] {showAll ? 'hide noise' : 'show all'}  [L] load older  [c] collapse  [/] filter  [r] refresh  [?] help  [q] quit
+          [↑↓] nav  [→/⏎] attach via [{activeProfile}]  [Shift+P] one-off  [␣] peek  [n] new  [s] stop  [*] pin  [g] group  [a] {showAll ? 'hide noise' : 'show all'}  [L] load older  [c] collapse  [/] filter  [r] refresh  [?] help  [q] quit
         </Text>
       </Box>
     </Box>
@@ -612,6 +627,7 @@ function HelpOverlay({ activeProfile }: { activeProfile: string }) {
     ['s', 'stop selected session (background only)'],
     ['g', 'cycle group mode: recency → cwd → state → flat'],
     ['c', 'collapse/expand group at cursor'],
+    ['*', 'pin/unpin selected session — pinned float to top of their group'],
     ['Tab', 'jump to next group'],
     ['/', 'filter (name/cwd/intent/state/profile)'],
     ['r', 'refresh now'],

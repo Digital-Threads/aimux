@@ -8,7 +8,8 @@ export function expandHome(p: string): string {
   return resolve(p);
 }
 
-let _aimuxDir = join(homedir(), '.aimux');
+const _defaultAimuxDir = join(homedir(), '.aimux');
+let _aimuxDir = _defaultAimuxDir;
 
 export function getAimuxDir(): string {
   return _aimuxDir;
@@ -28,4 +29,8 @@ export function getProfilesDir(): string {
 
 export function setAimuxDir(dir: string): void {
   _aimuxDir = dir;
+}
+
+export function resetAimuxDir(): void {
+  _aimuxDir = _defaultAimuxDir;
 }
