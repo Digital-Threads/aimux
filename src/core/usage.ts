@@ -160,7 +160,7 @@ export function summarizeUsage(config: AimuxConfig, options: UsageOptions = {}):
       }
       if (options.sinceMs !== undefined && stat.mtimeMs < options.sinceMs) continue;
       if (quickFirstLineType(filePath) === 'queue-operation') continue;
-      if (parseSessionJsonl(filePath).isSubagent) continue;
+      if (parseSessionJsonl(filePath, stat.size).isSubagent) continue;
 
       const fallbackSessionId = file.replace(/\.jsonl$/, '');
       const fallbackProfile =
