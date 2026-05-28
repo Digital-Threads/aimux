@@ -173,7 +173,7 @@ export function parseSessionJsonl(
   return { cwd, intent, createdAtMs, events, isSubagent };
 }
 
-function quickFirstLineType(filePath: string): string | null {
+export function quickFirstLineType(filePath: string): string | null {
   let fd: number | undefined;
   try {
     fd = openSync(filePath, 'r');
