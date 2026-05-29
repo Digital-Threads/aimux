@@ -121,6 +121,7 @@ aimux run main
 | Element | Reason |
 |---------|--------|
 | `.credentials.json` | OAuth tokens per subscription |
+| `.env` | 3rd-party API credentials (ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, …) — chmod 600 |
 | `.claude.json` | Session/account state |
 | `policy-limits.json` | Rate limits per subscription |
 | `mcp-needs-auth-cache.json` | MCP auth per account |
@@ -190,6 +191,13 @@ Interactive migration wizard:
 2. Creates symlinks to shared source for all shared elements
 3. Optionally triggers auth (`--no-auth` to skip)
 4. Updates `config.yaml`
+
+**`--api` flag — 3rd-party API endpoint:**
+1. Prompts (interactively, before any disk mutation) for Base URL, auth token (no echo), and per-tier models
+2. Writes `~/.aimux/profiles/<name>/.env` with `chmod 600` — credentials never touch `config.yaml` or shell history
+3. Skips OAuth — the profile authenticates via `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` env at launch
+
+Env injection (both `aimux run` and `aimux auth login`) merges `<profile>/.env` with an optional `env:` block in `config.yaml`; the YAML block wins on conflict. `aimux profile update -e KEY=VALUE / --unset-env KEY` edits the `.env` file in place.
 
 ### 4.3 `aimux profile list`
 Shows all profiles with status:

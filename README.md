@@ -48,6 +48,23 @@ aimux profile update w -m claude-opus-4-6
 aimux run w
 ```
 
+### You want to connect a 3rd-party / self-hosted API endpoint
+
+```bash
+aimux profile add myapi --api
+# Configure API endpoint (leave blank to use default):
+#   Base URL:                          https://api.your-provider.com/v1
+#   Auth token:                        [hidden]
+#   Default model [claude-sonnet-4-6]:
+#   Opus model    [claude-opus-4-6]:
+#   Sonnet model  [claude-sonnet-4-6]:
+#   Haiku model   [claude-haiku-4-5]:
+# ✓ Credentials saved to ~/.aimux/profiles/myapi/.env (chmod 600)
+aimux run myapi
+```
+
+See [Per-profile environment variables](#per-profile-environment-variables) for the declarative alternative (`.env` file / `env:` block) used by power users and CI.
+
 ### Fresh machine (nothing installed)
 
 ```bash
@@ -90,7 +107,10 @@ aimux profile update o -m "claude-opus-4-6[1m]"
 | `aimux run work -m claude-sonnet-4-6` | Launch with model override |
 | `aimux agents` | Multi-profile agent view — see and manage claude background sessions across **all** profiles in one TUI |
 | `aimux profile add <name>` | Create new profile with symlinks |
+| `aimux profile add <name> --api` | Create a 3rd-party API profile (interactive endpoint + token prompt) |
 | `aimux profile update <name>` | Update model/cli settings |
+| `aimux profile update <name> -e KEY=VALUE` | Set an env var in the profile `.env` file |
+| `aimux profile update <name> --unset-env KEY` | Remove an env var from the profile `.env` file |
 | `aimux profile list` | List all profiles |
 | `aimux profile remove <name>` | Remove profile and clean up |
 | `aimux profile clone <src> <name>` | Clone profile with private files |
@@ -129,6 +149,34 @@ All profile commands support **prefix matching**: `aimux run w` → `work`, `aim
 
 When you run `aimux run work`, it sets `CLAUDE_CONFIG_DIR=~/.aimux/profiles/work` and launches the CLI. Claude sees a complete config directory — shared content via symlinks, private auth locally.
 
+## Per-profile environment variables
+
+Some Claude Code modes (3rd-party proxies, self-hosted gateways, Bedrock, Vertex) are activated by environment variables rather than OAuth. aimux injects per-profile env into the spawned `claude` process (and into `aimux auth login <profile>`) from two sources, merged in this order:
+
+1. **`<profile>/.env`** — a dotenv file inside the profile directory. Best for secrets. Written with `chmod 600` when aimux creates it; `aimux run` warns if it becomes group/other-readable.
+2. **`env:` block under the profile in `config.yaml`** — best for non-secret toggles you want versioned. **Overrides `.env`** on key conflict.
+
+The fastest way to set up an API profile is the interactive prompt:
+
+```bash
+aimux profile add myapi --api      # prompts for Base URL, hidden token, models
+aimux profile update myapi -e ANTHROPIC_MODEL=claude-opus-4-6   # edit later
+```
+
+…which writes something like:
+
+```bash
+# ~/.aimux/profiles/myapi/.env — do not commit
+ANTHROPIC_BASE_URL=https://api.your-provider.com/v1
+ANTHROPIC_AUTH_TOKEN=sk-your-token...
+ANTHROPIC_MODEL=claude-sonnet-4-6
+ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-6
+ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-4-6
+ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4-5
+```
+
+The `.env` parser supports `KEY=value`, `export KEY=value`, comments, and single/double-quoted values (with `\n`/`\t` escapes inside double quotes). It does **not** do `${VAR}` interpolation or multi-line values — it's a secrets loader, not a full `dotenv-expand`. `.env` is always private (never symlinked to the shared source).
+
 ## Config
 
 ```yaml
@@ -145,13 +193,17 @@ profiles:
     cli: claude
     model: claude-opus-4-6
     path: /home/user/.aimux/profiles/work
-  own:
+  myapi:
     cli: claude
-    model: claude-opus-4-6
-    path: /home/user/.aimux/profiles/own
+    model: claude-sonnet-4-6
+    path: /home/user/.aimux/profiles/myapi   # secrets live in this dir's .env
+    # Optional non-secret env injected into the spawned CLI (overrides .env).
+    # env:
+    #   ANTHROPIC_DEFAULT_OPUS_MODEL: claude-opus-4-6
 
 private:
   - .credentials.json
+  - .env                  # API credentials — never symlinked, never committed
   - .claude.json
   - policy-limits.json
   - mcp-needs-auth-cache.json

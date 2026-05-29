@@ -44,8 +44,17 @@ export {
 
 export type { DetectedDir, InitResult } from './init.js';
 
-export { buildRunParams, launchProfile, looksLikeSubcommand } from './run.js';
+export { buildRunParams, launchProfile, looksLikeSubcommand, parseDotenv, loadProfileEnv } from './run.js';
 export type { RunOptions, RunParams } from './run.js';
+
+export {
+  collectApiCredentials,
+  writeProfileDotEnv,
+  mergeProfileDotEnv,
+  checkDotenvPermissions,
+  seedApiClaudeJson,
+  API_MODEL_DEFAULTS,
+} from './apiProfile.js';
 
 export { summarizeUsage, parseSinceDuration, totalTokens } from './usage.js';
 export type { ProfileUsageSummary, UsageOptions, UsageTotals } from './usage.js';
