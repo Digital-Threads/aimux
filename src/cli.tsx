@@ -13,7 +13,12 @@ import {
   launchProfile, getLastProfile, recordHistory, getProfile,
   looksLikeSubcommand,
   summarizeUsage, parseSinceDuration, totalTokens,
+  loadProfileEnv, collectApiCredentials, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson,
 } from './core/index.js';
+
+function collectRepeatable(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
 
 function requireConfig(): AimuxConfig {
   const config = loadConfig();
@@ -224,6 +229,10 @@ program
 
       if (!launchingSubcommand) {
         recordHistory(process.cwd(), profileName);
+      }
+      const permWarning = checkDotenvPermissions(expandHome(config.profiles[profileName].path));
+      if (permWarning) {
+        console.error(`\x1b[33m⚠ ${permWarning}\x1b[0m`);
       }
       const exitCode = await launchProfile(config, profileName, { model: options.model, extraArgs: cliArgs });
       process.exit(exitCode);
@@ -480,14 +489,30 @@ program
       .argument('<name>', 'Profile name')
       .option('--no-auth', 'Skip authentication')
       .option('-m, --model <model>', 'Default model for this profile')
+      .option('--api', 'Configure a 3rd-party API endpoint instead of a Claude subscription')
       .description('Add a new profile')
-      .action((name: string, options: { auth: boolean; model?: string }) => {
+      .action(async (name: string, options: { auth: boolean; model?: string; api?: boolean }) => {
         try {
-          let config = requireConfig();
-          config = addProfile(config, name, { model: options.model });
-          saveConfig(config);
-          ensureProfileDir(config, name);
-          const sync = syncProfile(config, name);
+          const config = requireConfig();
+
+          // Reject a duplicate name up front so the user isn't asked to type a
+          // token blind only to hit "already exists" after the prompts.
+          if (config.profiles[name]) {
+            throw new Error(`Profile '${name}' already exists`);
+          }
+
+          // Collect credentials BEFORE mutating config/disk so a Ctrl+C
+          // mid-prompt leaves no half-created profile behind.
+          let apiVars: Record<string, string> | undefined;
+          if (options.api) {
+            console.log('Configure API endpoint (leave blank to use default):');
+            apiVars = await collectApiCredentials();
+          }
+
+          const updated = addProfile(config, name, { model: options.model });
+          saveConfig(updated);
+          const profilePath = ensureProfileDir(updated, name);
+          const sync = syncProfile(updated, name);
           console.log(`✓ Profile '${name}' created`);
           if (sync.created.length > 0) {
             console.log(`  ${sync.created.length} symlinks created`);
@@ -495,7 +520,15 @@ program
           if (sync.conflicts.length > 0) {
             console.log(`  conflicts left unchanged: ${sync.conflicts.join(', ')}`);
           }
-          if (!options.auth) {
+
+          if (apiVars) {
+            writeProfileDotEnv(profilePath, apiVars);
+            console.log(`  Credentials saved to ${join(profilePath, '.env')} (chmod 600)`);
+            if (seedApiClaudeJson(profilePath)) {
+              console.log('  Seeded .claude.json (skips Claude Code onboarding)');
+            }
+            console.log(`  Run: aimux run ${name}`);
+          } else if (!options.auth) {
             console.log('  Auth skipped (--no-auth). Run: aimux auth login ' + name);
           } else {
             console.log('  Run: aimux auth login ' + name);
@@ -520,19 +553,29 @@ program
       .argument('<name>', 'Profile name')
       .option('-m, --model <model>', 'Set default model')
       .option('--cli <cli>', 'Set CLI command')
+      .option('-e, --env <KEY=VALUE>', 'Set an env var in the profile .env file (repeatable)', collectRepeatable, [])
+      .option('--unset-env <KEY>', 'Remove an env var from the profile .env file (repeatable)', collectRepeatable, [])
       .description('Update profile settings')
-      .action((name: string, options: { model?: string; cli?: string }) => {
+      .action((name: string, options: { model?: string; cli?: string; env: string[]; unsetEnv: string[] }) => {
         try {
-          let config = requireConfig();
+          const config = requireConfig();
           const resolved = resolveProfile(config, name);
           const profile = config.profiles[resolved];
           if (options.model) profile.model = options.model;
           if (options.cli) profile.cli = options.cli;
           config.profiles[resolved] = profile;
           saveConfig(config);
+
+          let envChange: { set: string[]; unset: string[] } | undefined;
+          if (options.env.length > 0 || options.unsetEnv.length > 0) {
+            envChange = mergeProfileDotEnv(expandHome(profile.path), options.env, options.unsetEnv);
+          }
+
           console.log(`✓ Profile '${resolved}' updated`);
           if (options.model) console.log(`  model: ${options.model}`);
           if (options.cli) console.log(`  cli: ${options.cli}`);
+          if (envChange?.set.length) console.log(`  .env set: ${envChange.set.join(', ')}`);
+          if (envChange?.unset.length) console.log(`  .env unset: ${envChange.unset.join(', ')}`);
         } catch (err) {
           console.error(`Error: ${(err as Error).message}`);
           process.exit(1);
@@ -684,9 +727,13 @@ program
           const resolved = resolveProfile(config, profile);
           const p = getProfile(config, resolved);
           const profilePath = expandHome(p.path);
-          const env: Record<string, string> = {};
+          const env: Record<string, string> = loadProfileEnv(p, profilePath);
           if (!p.is_source) {
             env.CLAUDE_CONFIG_DIR = profilePath;
+          }
+          const permWarning = checkDotenvPermissions(profilePath);
+          if (permWarning) {
+            console.error(`\x1b[33m⚠ ${permWarning}\x1b[0m`);
           }
           console.log(`Launching auth for profile '${resolved}'...`);
           const result = spawnSync(p.cli, ['auth', 'login'], {

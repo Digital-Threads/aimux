@@ -3,6 +3,8 @@ export interface ProfileConfig {
   model?: string;
   path: string;
   is_source?: boolean;
+  /** Non-secret env vars injected into the spawned CLI; overrides `.env` on conflict. */
+  env?: Record<string, string>;
 }
 
 export interface AimuxConfig {
@@ -14,6 +16,7 @@ export interface AimuxConfig {
 
 export const DEFAULT_PRIVATE_ELEMENTS = [
   '.credentials.json',
+  '.env',
   '.claude.json',
   '.last-cleanup',
   'policy-limits.json',

@@ -1,11 +1,92 @@
 import { spawn } from 'node:child_process';
-import type { AimuxConfig } from '../types/index.js';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 import { getProfile } from './config.js';
 import { expandHome } from './paths.js';
 
 export interface RunOptions {
   model?: string;
   extraArgs?: string[];
+}
+
+const ENV_LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/;
+
+const DOUBLE_QUOTE_ESCAPES: Record<string, string> = {
+  n: '\n',
+  r: '\r',
+  t: '\t',
+  '"': '"',
+  '\\': '\\',
+};
+
+/**
+ * Parse a single dotenv right-hand-side value.
+ *
+ * - Quoted values (`"..."` / `'...'`) end at the matching closing quote; any
+ *   trailing inline comment after the closing quote is discarded.
+ * - Double-quoted values decode `\n`, `\r`, `\t`, `\"`, `\\` escapes.
+ * - Single-quoted values are taken literally (no escape decoding).
+ * - Unquoted values strip a trailing ` #` inline comment.
+ *
+ * Note: `${VAR}` interpolation and multi-line values are NOT supported —
+ * this is a secrets-oriented loader, not a full dotenv-expand implementation.
+ */
+function parseDotenvValue(raw: string): string {
+  const quote = raw[0];
+  if (quote === '"' || quote === "'") {
+    let out = '';
+    for (let i = 1; i < raw.length; i++) {
+      const ch = raw[i];
+      if (quote === '"' && ch === '\\' && i + 1 < raw.length) {
+        const next = raw[i + 1];
+        out += DOUBLE_QUOTE_ESCAPES[next] ?? `\\${next}`;
+        i++;
+        continue;
+      }
+      if (ch === quote) return out; // closing quote — ignore any inline comment after it
+      out += ch;
+    }
+    return raw; // unterminated quote — treat the raw text literally
+  }
+  const inlineComment = raw.search(/\s#/); // whitespace + '#' starts a comment
+  return (inlineComment >= 0 ? raw.slice(0, inlineComment) : raw).trimEnd();
+}
+
+/**
+ * Parse the contents of a dotenv file into a key/value map.
+ *
+ * Supports `KEY=value`, `export KEY=value`, `# comments`, blank lines,
+ * single/double-quoted values, escape sequences inside double quotes only,
+ * and trailing inline comments on both quoted and unquoted values.
+ */
+export function parseDotenv(contents: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const rawLine of contents.split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const match = ENV_LINE.exec(rawLine);
+    if (!match) continue;
+    result[match[1]] = parseDotenvValue(match[2]);
+  }
+  return result;
+}
+
+/**
+ * Resolve the environment variables injected into the spawned CLI for a
+ * profile. Merges the profile's `<path>/.env` dotenv file with the optional
+ * `env:` block from config.yaml; the YAML block wins on key conflict.
+ */
+export function loadProfileEnv(profile: ProfileConfig, profilePath: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  const dotenvPath = join(profilePath, '.env');
+  if (existsSync(dotenvPath)) {
+    Object.assign(env, parseDotenv(readFileSync(dotenvPath, 'utf-8')));
+  }
+  if (profile.env) {
+    Object.assign(env, profile.env);
+  }
+  return env;
 }
 
 export interface RunParams {
@@ -45,7 +126,7 @@ export function buildRunParams(
     args.push(...extraArgs);
   }
 
-  const env: Record<string, string> = {};
+  const env: Record<string, string> = loadProfileEnv(profile, profilePath);
   if (!profile.is_source) {
     env.CLAUDE_CONFIG_DIR = profilePath;
   }
