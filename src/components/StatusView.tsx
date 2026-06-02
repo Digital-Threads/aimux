@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 import { expandHome } from '../core/paths.js';
 import { loadProfileEnv } from '../core/run.js';
+import { readProfileAutoMode } from '../core/autoMode.js';
 import { getSharedElements, checkAllProfiles } from '../core/symlinks.js';
 
 interface Props {
@@ -67,6 +68,9 @@ function safeGetSharedElements(config: AimuxConfig): string[] {
 export function StatusView({ config }: Props) {
   const profiles = Object.entries(config.profiles);
   const authStatuses = new Map(profiles.map(([name, profile]) => [name, checkAuth(profile)]));
+  const autoModes = new Map(
+    profiles.map(([name, profile]) => [name, readProfileAutoMode(expandHome(profile.path))]),
+  );
   const authCount = Array.from(authStatuses.values()).filter(isAuthenticated).length;
   const sharedEntries = safeGetSharedElements(config);
   const sharedCount = sharedEntries.length;
@@ -88,12 +92,14 @@ export function StatusView({ config }: Props) {
             <Box width={12}><Text bold underline>NAME</Text></Box>
             <Box width={16}><Text bold underline>AUTH</Text></Box>
             <Box width={20}><Text bold underline>MODEL</Text></Box>
+            <Box width={16}><Text bold underline>AUTOMODE</Text></Box>
             <Box width={18}><Text bold underline>SHARED</Text></Box>
           </Box>
 
           {profiles.map(([name, profile]) => {
             const auth = authStatuses.get(name) ?? { kind: 'none' as const };
             const authed = isAuthenticated(auth);
+            const autoMode = autoModes.get(name) ?? { configured: false, allowCount: 0, softDenyCount: 0 };
             const isSource = profile.is_source ?? false;
             const report = reports.get(name);
             const healthyShared = isSource ? sharedCount : report?.valid.length ?? 0;
@@ -125,6 +131,12 @@ export function StatusView({ config }: Props) {
                 </Box>
                 <Box width={20}>
                   <Text dimColor>{profile.model ?? 'default'}</Text>
+                </Box>
+                <Box width={16}>
+                  {autoMode.configured
+                    ? <Text color="cyan">✓ {autoMode.allowCount} allow</Text>
+                    : <Text dimColor>—</Text>
+                  }
                 </Box>
                 <Box width={18}>
                   <Text color={sharedColor}>

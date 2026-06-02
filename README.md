@@ -98,7 +98,7 @@ aimux profile update o -m "claude-opus-4-6[1m]"
 |---------|-------------|
 | `aimux init` | Auto-detect Claude dirs, create config, migrate profiles |
 | `aimux init --source <path>` | Initialize with explicit source directory |
-| `aimux status` | TUI dashboard — profiles, auth, symlink health |
+| `aimux status` | TUI dashboard — profiles, auth, auto-mode posture, symlink health |
 | `aimux usage` | Show token usage by profile from Claude transcript metadata |
 | `aimux usage --profile work --since 24h` | Show usage for one profile over a recent window |
 | `aimux run [profile]` | Launch AI CLI with correct env and model |
