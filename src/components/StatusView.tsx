@@ -1,4 +1,5 @@
 import { Box, Text } from 'ink';
+import { useMemo } from 'react';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -57,6 +58,10 @@ function checkAuth(profile: ProfileConfig): AuthStatus {
   }
 }
 
+function capCount(n: number): string {
+  return n > 99 ? '99+' : String(n);
+}
+
 function safeGetSharedElements(config: AimuxConfig): string[] {
   try {
     return getSharedElements(config);
@@ -68,8 +73,11 @@ function safeGetSharedElements(config: AimuxConfig): string[] {
 export function StatusView({ config }: Props) {
   const profiles = Object.entries(config.profiles);
   const authStatuses = new Map(profiles.map(([name, profile]) => [name, checkAuth(profile)]));
-  const autoModes = new Map(
-    profiles.map(([name, profile]) => [name, readProfileAutoMode(expandHome(profile.path))]),
+  // Memoized on config: each entry reads a settings.json synchronously, so we
+  // avoid re-reading every profile's file on every Ink re-render (resize/keypress).
+  const autoModes = useMemo(
+    () => new Map(profiles.map(([name, profile]) => [name, readProfileAutoMode(expandHome(profile.path))])),
+    [config],
   );
   const authCount = Array.from(authStatuses.values()).filter(isAuthenticated).length;
   const sharedEntries = safeGetSharedElements(config);
@@ -134,7 +142,7 @@ export function StatusView({ config }: Props) {
                 </Box>
                 <Box width={16}>
                   {autoMode.configured
-                    ? <Text color="cyan">✓ {autoMode.allowCount} allow</Text>
+                    ? <Text color="cyan">✓{capCount(autoMode.allowCount)} ✗{capCount(autoMode.softDenyCount)}</Text>
                     : <Text dimColor>—</Text>
                   }
                 </Box>
