@@ -58,3 +58,6 @@ export {
 
 export { summarizeUsage, parseSinceDuration, totalTokens } from './usage.js';
 export type { ProfileUsageSummary, UsageOptions, UsageTotals } from './usage.js';
+
+export { readProfileAutoMode } from './autoMode.js';
+export type { AutoModeStatus } from './autoMode.js';
