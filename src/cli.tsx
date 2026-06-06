@@ -432,23 +432,27 @@ program
             // CLAUDE_CONFIG_DIR. The transcript is read from the shared
             // projects/ folder and billing follows the picked profile.
             //
-            // If the session is currently live as a background agent under
-            // a DIFFERENT profile, claude refuses a plain --resume because
-            // two concurrent writers would corrupt the transcript. In that
-            // case, add --fork-session so claude branches a copy: same
-            // history, new session-id, runs under the chosen profile's
-            // subscription. This is the killer cross-profile workflow.
+            // If the session is currently live as a background agent, claude
+            // refuses a plain --resume because two concurrent writers would
+            // corrupt the transcript — and this holds whether the agent runs
+            // under the same profile or a different one. In that case, add
+            // --fork-session so claude branches a copy: same history, new
+            // session-id, runs under the chosen profile's subscription. The
+            // cross-profile case is the killer workflow; the same-profile case
+            // is the common "I just dispatched it and want to look" path.
             void attachSession; // kept exported for future per-profile attach
             const cwdForSession =
               action.cwd && existsSyncFn(action.cwd) ? action.cwd : undefined;
-            const needsFork =
-              action.isBackground &&
-              !!action.bgProfile &&
-              action.bgProfile !== action.profile;
+            const needsFork = action.isBackground;
             if (needsFork) {
+              const crossProfile =
+                !!action.bgProfile && action.bgProfile !== action.profile;
               console.error(
-                `Session is live as a background agent under "${action.bgProfile}". ` +
-                `Forking a copy that will run under "${action.profile}" (new session-id, same history).`,
+                crossProfile
+                  ? `Session is live as a background agent under "${action.bgProfile}". ` +
+                      `Forking a copy that will run under "${action.profile}" (new session-id, same history).`
+                  : `Session is live as a background agent. ` +
+                      `Forking a copy under "${action.profile}" (new session-id, same history).`,
               );
             }
             const code = await resumeSession(
