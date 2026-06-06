@@ -4,7 +4,7 @@
   "description": "Local AI workspace orchestrator — manage multiple AI CLI subscriptions with shared knowledge and isolated auth",
   "type": "module",
   "bin": {
-    "aimux": "./dist/cli.js"
+    "aimux": "dist/cli.js"
   },
   "scripts": {
     "dev": "tsx src/cli.tsx",
