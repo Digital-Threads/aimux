@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import type { AimuxConfig } from '../types/index.js';
 import { unifyAllSessions, type UnifiedSession } from '../core/unifiedSessions.js';
@@ -7,6 +7,9 @@ import { loadActiveProfile, saveActiveProfile } from '../core/activeProfile.js';
 import { profileColor } from '../core/profileColors.js';
 import { watchSessions } from '../core/sessionWatcher.js';
 import { loadPinned, togglePinned } from '../core/pinnedSessions.js';
+import { expandHome } from '../core/paths.js';
+import { classifyProfile, fetchRateLimits, type RateLimitStatus, type ProfileKind } from '../core/limits.js';
+import { summarizeUsage, totalTokens, type ProfileUsageSummary } from '../core/usage.js';
 
 export type AgentsAction =
   | { type: 'exit' }
@@ -177,6 +180,72 @@ function findGroupKey(rows: DisplayRow[], idx: number): string | undefined {
   return undefined;
 }
 
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function pctColor(p: number): string {
+  return p >= 80 ? 'red' : p >= 60 ? 'yellow' : 'green';
+}
+
+// Per-profile status strip under the agents header: subscription profiles show
+// live 5h/7d rate-limit utilization; API-endpoint profiles show tokens + $.
+function ProfilesStatusBar({
+  config,
+  kinds,
+  rateLimits,
+  usage,
+  loading,
+}: {
+  config: AimuxConfig;
+  kinds: Map<string, ProfileKind>;
+  rateLimits: Map<string, RateLimitStatus | null>;
+  usage: Map<string, ProfileUsageSummary>;
+  loading: boolean;
+}) {
+  const names = Object.keys(config.profiles);
+  return (
+    <Box>
+      <Text dimColor>profiles: </Text>
+      {names.map((name, i) => {
+        const kind = kinds.get(name) ?? 'none';
+        const color = profileColor(name) ?? undefined;
+        let body: ReactNode;
+        if (kind === 'oauth') {
+          const rl = rateLimits.get(name);
+          if (rl === undefined) {
+            body = <Text dimColor>{loading ? '…' : '—'}</Text>;
+          } else if (rl === null) {
+            body = <Text dimColor>—</Text>;
+          } else {
+            body = (
+              <Text>
+                5h <Text color={pctColor(rl.fiveHourPct)}>{rl.fiveHourPct}%</Text>
+                {' / '}7d <Text color={pctColor(rl.weeklyPct)}>{rl.weeklyPct}%</Text>
+              </Text>
+            );
+          }
+        } else if (kind === 'api') {
+          const u = usage.get(name);
+          const tok = u ? totalTokens(u) : 0;
+          const cost = u?.estimatedCostUsd ?? 0;
+          body = <Text dimColor>{`${fmtTokens(tok)}·$${cost.toFixed(2)}`}</Text>;
+        } else {
+          body = <Text dimColor>—</Text>;
+        }
+        return (
+          <Text key={name}>
+            {i > 0 ? <Text dimColor> · </Text> : null}
+            <Text color={color} bold>{name}</Text> {body}
+          </Text>
+        );
+      })}
+    </Box>
+  );
+}
+
 export function AgentsView({ config, onAction }: Props) {
   const { exit } = useApp();
 
@@ -259,7 +328,57 @@ export function AgentsView({ config, onAction }: Props) {
     }
   }, [activeProfile]);
 
-  const refresh = () => setSessions(unifyAllSessions(config, { windowDays }));
+  // Per-profile status for the header strip. Kinds + token/$ usage are derived
+  // synchronously from local files; the 5h/7d rate limits need a live probe so
+  // they load asynchronously and refresh on `r` via limitsNonce.
+  const profileKinds = useMemo(() => {
+    const m = new Map<string, ProfileKind>();
+    for (const [name, p] of Object.entries(config.profiles)) {
+      m.set(name, classifyProfile(p, expandHome(p.path)));
+    }
+    return m;
+  }, [config]);
+
+  const profileUsage = useMemo(() => {
+    const m = new Map<string, ProfileUsageSummary>();
+    try {
+      for (const s of summarizeUsage(config)) m.set(s.profile, s);
+    } catch {
+      // best-effort — panel falls back to em-dash when usage is unavailable
+    }
+    return m;
+  }, [config]);
+
+  const [rateLimits, setRateLimits] = useState<Map<string, RateLimitStatus | null>>(new Map());
+  const [limitsLoading, setLimitsLoading] = useState(false);
+  const [limitsNonce, setLimitsNonce] = useState(0);
+
+  useEffect(() => {
+    const oauth = Object.entries(config.profiles).filter(
+      ([name]) => profileKinds.get(name) === 'oauth',
+    );
+    if (oauth.length === 0) return;
+    let cancelled = false;
+    setLimitsLoading(true);
+    Promise.all(
+      oauth.map(async ([name, p]) => {
+        const status = await fetchRateLimits(p, expandHome(p.path));
+        return [name, status] as const;
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setRateLimits(new Map(entries));
+      setLimitsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [config, profileKinds, limitsNonce]);
+
+  const refresh = () => {
+    setSessions(unifyAllSessions(config, { windowDays }));
+    setLimitsNonce((n) => n + 1);
+  };
 
   const loadAllHistory = () => {
     setWindowDays(Infinity);
@@ -513,6 +632,14 @@ export function AgentsView({ config, onAction }: Props) {
           <Text dimColor>  [p] change · [Shift+P] one-off · [?] help</Text>
         </Text>
       </Box>
+
+      <ProfilesStatusBar
+        config={config}
+        kinds={profileKinds}
+        rateLimits={rateLimits}
+        usage={profileUsage}
+        loading={limitsLoading}
+      />
 
       {mode === 'filter' && (
         <Box>

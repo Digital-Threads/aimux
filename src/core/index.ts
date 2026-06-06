@@ -61,3 +61,9 @@ export type { ProfileUsageSummary, UsageOptions, UsageTotals } from './usage.js'
 
 export { readProfileAutoMode } from './autoMode.js';
 export type { AutoModeStatus } from './autoMode.js';
+
+export { fetchRateLimits, parseRateLimitHeaders, classifyProfile } from './limits.js';
+export type { RateLimitStatus, ProfileKind } from './limits.js';
+
+export { estimateCost, resolvePricing, hasPricing } from './pricing.js';
+export type { ModelPricing } from './pricing.js';
