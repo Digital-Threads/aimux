@@ -285,6 +285,7 @@ export function AgentsView({ config, onAction }: Props) {
     // tasks with no real interactive activity. Keep anything that's
     // currently working / needs input regardless of event count.
     return sessions.filter((s) => {
+      if (s.isBackground) return true; // never hide live/dispatched bg agents
       if (s.state === 'working' || s.state === 'needs_input') return true;
       if (s.events >= 5) return true;
       return false;
