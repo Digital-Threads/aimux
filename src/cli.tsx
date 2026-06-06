@@ -428,38 +428,28 @@ program
             running = false;
             break;
           case 'attach': {
-            // Use `claude --resume <id>` with the chosen profile's
-            // CLAUDE_CONFIG_DIR. The transcript is read from the shared
-            // projects/ folder and billing follows the picked profile.
-            //
-            // If the session is currently live as a background agent, claude
-            // refuses a plain --resume because two concurrent writers would
-            // corrupt the transcript — and this holds whether the agent runs
-            // under the same profile or a different one. In that case, add
-            // --fork-session so claude branches a copy: same history, new
-            // session-id, runs under the chosen profile's subscription. The
-            // cross-profile case is the killer workflow; the same-profile case
-            // is the common "I just dispatched it and want to look" path.
-            void attachSession; // kept exported for future per-profile attach
+            // A session that is live as a background agent must be JOINED, not
+            // resumed: `claude attach <short>` connects to the running agent in
+            // this terminal (exactly what claude prints as "open in this
+            // terminal"). A plain --resume would be refused (two writers corrupt
+            // the transcript) or fork a stale copy. A live agent is owned by the
+            // profile it was dispatched under, so we attach via bgProfile.
+            if (action.isBackground && action.bgShort && action.bgProfile) {
+              const code = await attachSession(config, action.bgProfile, action.bgShort);
+              recordSessionUsage(action.sessionId, action.bgProfile);
+              if (code !== 0) console.error(`Attach exited with code ${code}`);
+              break;
+            }
+            // Not live: resume the transcript under the chosen profile. The
+            // transcript is read from the shared projects/ folder and billing
+            // follows the picked profile.
             const cwdForSession =
               action.cwd && existsSyncFn(action.cwd) ? action.cwd : undefined;
-            const needsFork = action.isBackground;
-            if (needsFork) {
-              const crossProfile =
-                !!action.bgProfile && action.bgProfile !== action.profile;
-              console.error(
-                crossProfile
-                  ? `Session is live as a background agent under "${action.bgProfile}". ` +
-                      `Forking a copy that will run under "${action.profile}" (new session-id, same history).`
-                  : `Session is live as a background agent. ` +
-                      `Forking a copy under "${action.profile}" (new session-id, same history).`,
-              );
-            }
             const code = await resumeSession(
               config,
               action.profile,
               action.sessionId,
-              { cwd: cwdForSession, forkSession: needsFork },
+              { cwd: cwdForSession },
             );
             recordSessionUsage(action.sessionId, action.profile);
             if (code !== 0) console.error(`Resume exited with code ${code}`);
