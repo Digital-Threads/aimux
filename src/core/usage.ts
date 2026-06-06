@@ -5,6 +5,7 @@ import { expandHome } from './paths.js';
 import { loadSessionHistory } from './sessionHistory.js';
 import { buildProfileSessionMap } from './profileSessionMap.js';
 import { parseSessionJsonl, quickFirstLineType } from './sessionScanner.js';
+import { estimateCost } from './pricing.js';
 
 export interface UsageTotals {
   inputTokens: number;
@@ -74,12 +75,31 @@ function numberValue(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
-function addUsage(summary: ProfileUsageSummary, usage: UsagePayload): void {
-  summary.inputTokens += numberValue(usage.input_tokens);
-  summary.cacheCreationInputTokens += numberValue(usage.cache_creation_input_tokens);
-  summary.cacheReadInputTokens += numberValue(usage.cache_read_input_tokens);
-  summary.outputTokens += numberValue(usage.output_tokens);
-  summary.estimatedCostUsd += numberValue(usage.estimated_cost_usd ?? usage.cost_usd);
+function addUsage(summary: ProfileUsageSummary, usage: UsagePayload, model: string): void {
+  const inputTokens = numberValue(usage.input_tokens);
+  const cacheCreationInputTokens = numberValue(usage.cache_creation_input_tokens);
+  const cacheReadInputTokens = numberValue(usage.cache_read_input_tokens);
+  const outputTokens = numberValue(usage.output_tokens);
+  summary.inputTokens += inputTokens;
+  summary.cacheCreationInputTokens += cacheCreationInputTokens;
+  summary.cacheReadInputTokens += cacheReadInputTokens;
+  summary.outputTokens += outputTokens;
+  // Subscription transcripts carry no cost; fall back to the price table.
+  // When a provider does emit a cost field, trust it over the estimate.
+  const transcriptCost = numberValue(usage.estimated_cost_usd ?? usage.cost_usd);
+  summary.estimatedCostUsd +=
+    transcriptCost > 0
+      ? transcriptCost
+      : estimateCost(
+          {
+            inputTokens,
+            cacheCreationInputTokens,
+            cacheReadInputTokens,
+            outputTokens,
+            estimatedCostUsd: 0,
+          },
+          model,
+        );
 }
 
 function resolveLineTime(line: TranscriptLine, fallbackMs: number): number {
@@ -196,8 +216,8 @@ export function summarizeUsage(config: AimuxConfig, options: UsageOptions = {}):
         }
         const summary = summaries.get(profile)!;
         summary.requests += 1;
-        addUsage(summary, usage);
         const model = formatModel(line.message?.model);
+        addUsage(summary, usage, model);
         summary.models.set(model, (summary.models.get(model) ?? 0) + 1);
         sessionSets.get(profile)!.add(sessionId);
       }

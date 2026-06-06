@@ -196,6 +196,47 @@ describe('summarizeUsage', () => {
     expect(totalTokens(work)).toBe(0);
   });
 
+  it('derives estimated cost from the price table when transcripts lack cost', () => {
+    writeProfileSession('work', 'session-a', 1000);
+    writeTranscript('-tmp-project', 'session-a', [
+      assistantLine('session-a', 'req-1', {
+        input_tokens: 1_000_000,
+        output_tokens: 1_000_000,
+      }),
+    ]);
+
+    const work = summarizeUsage(makeConfig()).find((s) => s.profile === 'work')!;
+    // assistantLine() uses model claude-opus-4-7 = $15 in + $75 out per 1M.
+    expect(work.estimatedCostUsd).toBeCloseTo(90, 6);
+  });
+
+  it('prefers transcript cost over the price-table estimate when present', () => {
+    writeProfileSession('work', 'session-a', 1000);
+    writeTranscript('-tmp-project', 'session-a', [
+      assistantLine('session-a', 'req-1', {
+        input_tokens: 1_000_000,
+        output_tokens: 1_000_000,
+        estimated_cost_usd: 0.5,
+      }),
+    ]);
+
+    const work = summarizeUsage(makeConfig()).find((s) => s.profile === 'work')!;
+    expect(work.estimatedCostUsd).toBe(0.5);
+  });
+
+  it('leaves cost at 0 when the model has no price entry', () => {
+    writeProfileSession('work', 'session-a', 1000);
+    const line = assistantLine('session-a', 'req-x', {
+      input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
+    });
+    line.message.model = 'mystery-model-x';
+    writeTranscript('-tmp-project', 'session-a', [line]);
+
+    const work = summarizeUsage(makeConfig()).find((s) => s.profile === 'work')!;
+    expect(work.estimatedCostUsd).toBe(0);
+  });
+
   it('filters by profile and since timestamp', () => {
     writeProfileSession('main', 'session-main', 1000);
     writeProfileSession('work', 'session-work', 1000);
