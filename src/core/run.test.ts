@@ -52,6 +52,32 @@ describe('buildRunParams', () => {
     expect(params.args).toContain('--verbose');
   });
 
+  it('passes profile fallback_model as --fallback-model', () => {
+    const params = buildRunParams(makeConfig({ fallback_model: 'claude-haiku-4-5' }), 'own');
+    expect(params.args).toContain('--fallback-model');
+    expect(params.args).toContain('claude-haiku-4-5');
+  });
+
+  it('omits --fallback-model when not set', () => {
+    const params = buildRunParams(makeConfig(), 'work');
+    expect(params.args).not.toContain('--fallback-model');
+  });
+
+  it('skips --fallback-model when first extra arg is a subcommand', () => {
+    const params = buildRunParams(makeConfig({ fallback_model: 'claude-haiku-4-5' }), 'own', {
+      extraArgs: ['agents'],
+    });
+    expect(params.args).not.toContain('--fallback-model');
+  });
+
+  it('does not add --fallback-model when user passed one in extra args', () => {
+    const params = buildRunParams(makeConfig({ fallback_model: 'claude-haiku-4-5' }), 'own', {
+      extraArgs: ['--fallback-model', 'claude-sonnet-4-6'],
+    });
+    expect(params.args.filter((a) => a === '--fallback-model')).toHaveLength(1);
+    expect(params.args).not.toContain('claude-haiku-4-5');
+  });
+
   it('throws for unknown profile', () => {
     expect(() => buildRunParams(makeConfig(), 'unknown')).toThrow('not found');
   });

@@ -1,6 +1,8 @@
 export interface ProfileConfig {
   cli: string;
   model?: string;
+  /** Fallback model tried when the primary is overloaded/unavailable (claude --fallback-model). */
+  fallback_model?: string;
   path: string;
   is_source?: boolean;
   /** Non-secret env vars injected into the spawned CLI; overrides `.env` on conflict. */

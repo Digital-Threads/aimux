@@ -117,10 +117,14 @@ export function buildRunParams(
   const firstExtra = extraArgs[0];
   const isSubcommand = looksLikeSubcommand(firstExtra);
   const userPassedModel = extraArgs.some((a) => a === '--model' || a === '-m');
+  const userPassedFallback = extraArgs.some((a) => a === '--fallback-model');
 
   const args: string[] = [];
   if (model && !isSubcommand && !userPassedModel) {
     args.push('--model', model);
+  }
+  if (profile.fallback_model && !isSubcommand && !userPassedFallback) {
+    args.push('--fallback-model', profile.fallback_model);
   }
   if (extraArgs.length > 0) {
     args.push(...extraArgs);

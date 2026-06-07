@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect, type ReactNode } from 'react';
+import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import type { AimuxConfig } from '../types/index.js';
-import { unifyAllSessions, type UnifiedSession } from '../core/unifiedSessions.js';
+import { unifyAllSessions, cachedUnifiedSessions, type UnifiedSession } from '../core/unifiedSessions.js';
+import { dispatchSessionAsync, stopSessionAsync } from '../core/sessionActions.js';
 import { formatSmartTimestamp, shortenPath, type SessionState } from '../core/sessions.js';
 import { loadActiveProfile, saveActiveProfile } from '../core/activeProfile.js';
 import { profileColor } from '../core/profileColors.js';
@@ -11,6 +12,9 @@ import { expandHome } from '../core/paths.js';
 import { classifyProfile, fetchRateLimits, type RateLimitStatus, type ProfileKind } from '../core/limits.js';
 import { summarizeUsage, totalTokens, type ProfileUsageSummary } from '../core/usage.js';
 
+// Only interactive actions that need the tty are escalated to the host loop
+// (which unmounts Ink and hands over the terminal). Background ops — dispatch
+// and stop — run in-place inside the component and never reach here.
 export type AgentsAction =
   | { type: 'exit' }
   | {
@@ -21,9 +25,7 @@ export type AgentsAction =
       isBackground: boolean;
       bgShort?: string;
       bgProfile?: string;
-    }
-  | { type: 'dispatch'; profile: string; prompt: string }
-  | { type: 'stop'; profile: string; short: string };
+    };
 
 interface Props {
   config: AimuxConfig;
@@ -47,18 +49,21 @@ interface GroupHeader {
 
 type DisplayRow = SessionRow | GroupHeader;
 
+// Glyphs mirror claude's agents view: ⏺ running · ◌ queued/idle · ✔ done ·
+// ✘ failed. `working` rows render an animated braille spinner instead of the
+// static dot (see SPINNER_FRAMES); this is the fallback when not animating.
 const STATE_ICON: Record<SessionState, string> = {
-  working: '✽',
-  needs_input: '⚠',
-  idle: '○',
-  done: '✻',
-  failed: '✗',
-  stopped: '⏸',
-  unknown: '·',
+  working: '⏺',
+  needs_input: '◌',
+  idle: '◌',
+  done: '✔',
+  failed: '✘',
+  stopped: '◌',
+  unknown: '◌',
 };
 
 const STATE_COLOR: Record<SessionState, string | undefined> = {
-  working: 'cyan',
+  working: 'green',
   needs_input: 'yellow',
   idle: 'gray',
   done: 'green',
@@ -68,14 +73,17 @@ const STATE_COLOR: Record<SessionState, string | undefined> = {
 };
 
 const STATE_LABEL: Record<SessionState, string> = {
-  working: 'working',
-  needs_input: 'needs input',
-  idle: 'idle',
-  done: 'done',
-  failed: 'failed',
-  stopped: 'stopped',
+  working: 'Running',
+  needs_input: 'Needs input',
+  idle: 'Idle',
+  done: 'Completed',
+  failed: 'Failed',
+  stopped: 'Stopped',
   unknown: '—',
 };
+
+// claude's spinner: braille frames advanced every 80ms.
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 const STATE_ORDER: SessionState[] = ['needs_input', 'working', 'idle', 'done', 'failed', 'stopped', 'unknown'];
 
@@ -263,8 +271,10 @@ export function AgentsView({ config, onAction }: Props) {
 
   const [activeProfile, setActiveProfile] = useState<string>(initialActive);
   const [windowDays, setWindowDays] = useState<number>(7);
-  const [sessions, setSessions] = useState<UnifiedSession[]>(() =>
-    unifyAllSessions(config, { windowDays: 7 }),
+  // Paint instantly from the in-process cache on a re-mount (return from an
+  // attached session); a fresh scan runs right after via the mount effect.
+  const [sessions, setSessions] = useState<UnifiedSession[]>(
+    () => cachedUnifiedSessions() ?? unifyAllSessions(config, { windowDays: 7 }),
   );
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [groupMode, setGroupMode] = useState<GroupMode>('recency');
@@ -277,7 +287,13 @@ export function AgentsView({ config, onAction }: Props) {
   const [profilePickerIdx, setProfilePickerIdx] = useState(0);
   const [showAll, setShowAll] = useState(false);
   const [viewportTop, setViewportTop] = useState(0);
+  const [toast, setToast] = useState('');
+  const [spinnerFrame, setSpinnerFrame] = useState(0);
   const VISIBLE_ROWS = 15;
+
+  // Keep the selection glued to a session id across live refreshes so the
+  // cursor doesn't drift when the list reorders or grows underneath it.
+  const selectedIdRef = useRef<string | undefined>(undefined);
 
   const visibleSessions = useMemo(() => {
     if (showAll || filter) return sessions;
@@ -306,6 +322,16 @@ export function AgentsView({ config, onAction }: Props) {
       setCursor(0);
       setViewportTop(0);
       return;
+    }
+    // Re-pin the cursor to the previously selected session id after the list
+    // changes underneath us (live refresh), so the selection doesn't jump.
+    const wantId = selectedIdRef.current;
+    if (wantId) {
+      const idx = rows.findIndex((r) => r.kind === 'session' && r.session.sessionId === wantId);
+      if (idx >= 0) {
+        if (idx !== cursor) setCursor(idx);
+        return;
+      }
     }
     if (cursor >= rows.length || rows[cursor]?.kind !== 'session') {
       setCursor(firstSessionIndex(rows));
@@ -340,15 +366,32 @@ export function AgentsView({ config, onAction }: Props) {
     return m;
   }, [config]);
 
-  const profileUsage = useMemo(() => {
-    const m = new Map<string, ProfileUsageSummary>();
-    try {
-      for (const s of summarizeUsage(config)) m.set(s.profile, s);
-    } catch {
-      // best-effort — panel falls back to em-dash when usage is unavailable
+  // Token/$ usage is shown ONLY for API-endpoint profiles. summarizeUsage()
+  // reads every transcript in projects/ (seconds on a busy machine), so we
+  // (a) skip it entirely when there are no API profiles, and (b) compute it
+  // off the render path so it never blocks the first paint or a re-mount.
+  const [profileUsage, setProfileUsage] = useState<Map<string, ProfileUsageSummary>>(new Map());
+  useEffect(() => {
+    const hasApi = Array.from(profileKinds.values()).some((k) => k === 'api');
+    if (!hasApi) {
+      setProfileUsage(new Map());
+      return;
     }
-    return m;
-  }, [config]);
+    let cancelled = false;
+    const id = setTimeout(() => {
+      const m = new Map<string, ProfileUsageSummary>();
+      try {
+        for (const s of summarizeUsage(config)) m.set(s.profile, s);
+      } catch {
+        // best-effort — panel falls back to em-dash when usage is unavailable
+      }
+      if (!cancelled) setProfileUsage(m);
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }, [config, profileKinds]);
 
   const [rateLimits, setRateLimits] = useState<Map<string, RateLimitStatus | null>>(new Map());
   const [limitsLoading, setLimitsLoading] = useState(false);
@@ -381,6 +424,38 @@ export function AgentsView({ config, onAction }: Props) {
     setLimitsNonce((n) => n + 1);
   };
 
+  // A freshly dispatched bg session's transcript is written by the daemon a
+  // beat after `--bg` returns, so a single refresh can miss it. Re-scan a few
+  // times to surface it promptly without waiting on the file watcher.
+  const refreshBurst = () => {
+    [400, 1000, 2200].forEach((ms) =>
+      setTimeout(() => setSessions(unifyAllSessions(config, { windowDays })), ms),
+    );
+  };
+
+  const runDispatch = (profile: string, prompt: string) => {
+    setToast(`dispatching to ${profile}…`);
+    dispatchSessionAsync(config, profile, prompt)
+      .then((res) => {
+        const short = res.stdout.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').match(/\b[0-9a-f]{8}\b/)?.[0];
+        setToast(res.code === 0 ? `✓ backgrounded${short ? ` · ${short}` : ''}` : '✗ dispatch failed');
+        refresh();
+        refreshBurst();
+      })
+      .catch((err: Error) => setToast(`✗ dispatch failed: ${err.message}`));
+  };
+
+  const runStop = (profile: string, short: string) => {
+    setToast(`stopping ${short}…`);
+    stopSessionAsync(config, profile, short)
+      .then((res) => {
+        setToast(res.code === 0 ? `✓ stopped ${short}` : `✗ stop failed`);
+        refresh();
+        refreshBurst();
+      })
+      .catch((err: Error) => setToast(`✗ stop failed: ${err.message}`));
+  };
+
   const loadAllHistory = () => {
     setWindowDays(Infinity);
     setSessions(unifyAllSessions(config, { windowDays: Infinity }));
@@ -395,6 +470,50 @@ export function AgentsView({ config, onAction }: Props) {
     }, 700);
     return stop;
   }, [config, windowDays]);
+
+  // Live polling like claude's daemon view: while any session is actively
+  // working/awaiting input, re-scan every 1.5s so state transitions and newly
+  // dispatched agents appear without a keypress. When everything is idle we
+  // stop polling and lean on the (cheaper) file watcher to avoid burning IO.
+  const hasActiveSession = useMemo(
+    () => sessions.some((s) => s.state === 'working' || s.state === 'needs_input'),
+    [sessions],
+  );
+
+  // On (re)mount, reconcile the cached seed with a fresh scan (cheap once the
+  // per-file parse cache is warm). Runs once; live updates come from the
+  // watcher + poll below.
+  useEffect(() => {
+    setSessions(unifyAllSessions(config, { windowDays }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (mode !== 'list') return;
+    if (!hasActiveSession) return;
+    const id = setInterval(() => {
+      setSessions(unifyAllSessions(config, { windowDays }));
+    }, 2000);
+    return () => clearInterval(id);
+  }, [mode, hasActiveSession, config, windowDays]);
+
+  // Spinner animation for working rows — claude's 80ms braille cadence. Only
+  // runs while something is actually working, so an idle list costs no ticks.
+  useEffect(() => {
+    if (mode !== 'list') return;
+    if (!hasActiveSession) return;
+    const id = setInterval(() => {
+      setSpinnerFrame((f) => (f + 1) % SPINNER_FRAMES.length);
+    }, 80);
+    return () => clearInterval(id);
+  }, [mode, hasActiveSession]);
+
+  // Transient status toast (dispatch/stop feedback) auto-clears after a few seconds.
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(''), 4000);
+    return () => clearTimeout(id);
+  }, [toast]);
 
   const moveCursor = (delta: number) => {
     if (rows.length === 0) return;
@@ -438,6 +557,7 @@ export function AgentsView({ config, onAction }: Props) {
 
   const currentRow = rows[cursor];
   const currentSession = currentRow?.kind === 'session' ? currentRow.session : undefined;
+  selectedIdRef.current = currentSession?.sessionId;
 
   const doAttach = (profile: string) => {
     if (!currentSession) return;
@@ -520,14 +640,12 @@ export function AgentsView({ config, onAction }: Props) {
       }
       if (key.return) {
         if (dispatchPrompt.trim()) {
-          onAction({
-            type: 'dispatch',
-            profile: dispatchProfileDraft,
-            prompt: dispatchPrompt.trim(),
-          });
+          // Dispatch is a background op — run it off-screen and refresh the
+          // list in place. Tearing down the TUI here is what dumped the raw
+          // `backgrounded · <short>` banner into the scrollback.
+          runDispatch(dispatchProfileDraft, dispatchPrompt.trim());
           setDispatchPrompt('');
           setMode('list');
-          exit();
         }
         return;
       }
@@ -561,8 +679,7 @@ export function AgentsView({ config, onAction }: Props) {
       setMode('pickActiveProfile');
     } else if (input === 's') {
       if (currentSession?.isBackground && currentSession.bgProfile) {
-        onAction({ type: 'stop', profile: currentSession.bgProfile, short: currentSession.short });
-        exit();
+        runStop(currentSession.bgProfile, currentSession.short);
       }
     } else if (input === 'g') {
       setGroupMode((m) =>
@@ -615,22 +732,20 @@ export function AgentsView({ config, onAction }: Props) {
 
   const now = Date.now();
   const home = process.env.HOME ?? '';
+  const rule = '─'.repeat(Math.max(8, (process.stdout.columns ?? 80) - 2));
 
   return (
     <Box flexDirection="column" paddingX={1}>
+      <Text dimColor>{rule}</Text>
       <Box justifyContent="space-between">
+        <Text bold color="cyan">aimux agents</Text>
         <Text>
-          <Text bold color="cyan">aimux agents</Text>
+          <Text bold color={profileColor(activeProfile) ?? 'magenta'}>★ {activeProfile}</Text>
           <Text dimColor>
-            {' · '}
-            {sessions.length} sessions · group: {groupMode}
-            {Number.isFinite(windowDays) ? ` · window: ${windowDays}d` : ' · window: all'}
-            {filter ? ` · filter: ${filter}` : ''}
+            {'  '}
+            {sessions.length} sessions · {Number.isFinite(windowDays) ? `${windowDays}d` : 'all'} · {groupMode}
+            {filter ? ` · /${filter}` : ''}
           </Text>
-        </Text>
-        <Text>
-          active: <Text bold color={profileColor(activeProfile) ?? 'magenta'}>★ {activeProfile}</Text>
-          <Text dimColor>  [p] change · [Shift+P] one-off · [?] help</Text>
         </Text>
       </Box>
 
@@ -642,6 +757,8 @@ export function AgentsView({ config, onAction }: Props) {
         loading={limitsLoading}
       />
 
+      <Text dimColor>{rule}</Text>
+
       {mode === 'filter' && (
         <Box>
           <Text color="yellow">/ </Text>
@@ -650,12 +767,18 @@ export function AgentsView({ config, onAction }: Props) {
         </Box>
       )}
 
+      {toast && (
+        <Box>
+          <Text color={toast.startsWith('✗') ? 'red' : 'green'}>{toast}</Text>
+        </Box>
+      )}
+
       <Text> </Text>
 
       <Box flexDirection="row" gap={2}>
         <Box flexDirection="column" flexGrow={1}>
       {viewportTop > 0 && (
-        <Text dimColor>▲ {viewportTop} more above (↑ to scroll)</Text>
+        <Text dimColor>  ↑ {viewportTop} more above</Text>
       )}
 
       {rows.slice(viewportTop, viewportTop + VISIBLE_ROWS).map((row, relIdx) => {
@@ -673,7 +796,7 @@ export function AgentsView({ config, onAction }: Props) {
 
         const isSel = idx === cursor;
         const s = row.session;
-        const icon = STATE_ICON[s.state];
+        const icon = s.state === 'working' ? SPINNER_FRAMES[spinnerFrame] : STATE_ICON[s.state];
         const color = STATE_COLOR[s.state];
         const age = formatSmartTimestamp(s.updatedAtMs, now);
         const cwd = shortenPath(s.cwd, home);
@@ -686,9 +809,12 @@ export function AgentsView({ config, onAction }: Props) {
             <Box gap={1}>
               <Text color={isSel ? 'cyan' : undefined}>{isSel ? '❯' : ' '}</Text>
               <Text color={color}>{icon}</Text>
+              <Box width={9}>
+                <Text dimColor>{s.short}</Text>
+              </Box>
               <Box width={50}>
                 {pinned.has(s.sessionId) && <Text color="yellow">★ </Text>}
-                <Text bold={isSel} wrap="truncate">{s.name}</Text>
+                <Text bold={isSel} color={isSel ? 'cyan' : undefined} wrap="truncate">{s.name}</Text>
               </Box>
               <Box width={22}>
                 <Text dimColor wrap="truncate">{cwd}</Text>
@@ -713,7 +839,7 @@ export function AgentsView({ config, onAction }: Props) {
       {(() => {
         const remaining = Math.max(0, rows.length - viewportTop - VISIBLE_ROWS);
         return remaining > 0 ? (
-          <Text dimColor>▼ {remaining} more below (↓ to scroll)</Text>
+          <Text dimColor>  ↓ {remaining} more below</Text>
         ) : null;
       })()}
 
@@ -732,10 +858,10 @@ export function AgentsView({ config, onAction }: Props) {
         )}
       </Box>
 
-      <Text> </Text>
+      <Text dimColor>{rule}</Text>
       <Box>
-        <Text dimColor>
-          [↑↓] nav  [→/⏎] attach via [{activeProfile}]  [Shift+P] one-off  [␣] peek  [n] new  [s] stop  [*] pin  [g] group  [a] {showAll ? 'hide noise' : 'show all'}  [L] load older  [c] collapse  [/] filter  [r] refresh  [?] help  [q] quit
+        <Text dimColor italic wrap="truncate-end">
+          ↑↓ nav · →/⏎ attach via {activeProfile} · n new · s stop · ␣ peek · g group · a {showAll ? 'hide noise' : 'show all'} · / filter · p profile · ? help · q quit
         </Text>
       </Box>
     </Box>

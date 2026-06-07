@@ -24,7 +24,7 @@ export interface UnifiedSession {
   isBackground: boolean;
 }
 
-function deriveName(intent: string, sessionId: string): string {
+export function deriveName(intent: string, sessionId: string): string {
   if (intent) {
     const firstLine = intent.split('\n')[0].trim();
     if (firstLine) return firstLine.length > 60 ? firstLine.slice(0, 60) + '…' : firstLine;
@@ -112,5 +112,16 @@ export function unifyAllSessions(
     }
   }
 
-  return Array.from(bySessionId.values()).sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+  const result = Array.from(bySessionId.values()).sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+  lastUnified = result;
+  return result;
+}
+
+// Last computed list, kept in-process so a re-mount (e.g. returning from an
+// attached session) can paint instantly from cache before its own fresh scan
+// completes — instead of blocking the first frame on a cold ~150ms scan.
+let lastUnified: UnifiedSession[] | null = null;
+
+export function cachedUnifiedSessions(): UnifiedSession[] | null {
+  return lastUnified;
 }
