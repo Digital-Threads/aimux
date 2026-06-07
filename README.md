@@ -90,6 +90,10 @@ aimux usage --all       # all known transcript usage
 # Set default model per profile (quote model names with special chars)
 aimux profile update w -m claude-opus-4-6
 aimux profile update o -m "claude-opus-4-6[1m]"
+
+# Set a fallback model, tried automatically when the primary is overloaded/unavailable
+aimux profile update w --fallback-model claude-sonnet-4-6
+aimux profile update w --unset-fallback-model   # remove it
 ```
 
 ## Commands
@@ -109,6 +113,8 @@ aimux profile update o -m "claude-opus-4-6[1m]"
 | `aimux profile add <name>` | Create new profile with symlinks |
 | `aimux profile add <name> --api` | Create a 3rd-party API profile (interactive endpoint + token prompt) |
 | `aimux profile update <name>` | Update model/cli settings |
+| `aimux profile update <name> --fallback-model <model>` | Set a fallback model, used when the primary is overloaded/unavailable |
+| `aimux profile update <name> --unset-fallback-model` | Remove the fallback model |
 | `aimux profile update <name> -e KEY=VALUE` | Set an env var in the profile `.env` file |
 | `aimux profile update <name> --unset-env KEY` | Remove an env var from the profile `.env` file |
 | `aimux profile list` | List all profiles |
