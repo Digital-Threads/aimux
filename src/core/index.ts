@@ -67,3 +67,6 @@ export type { RateLimitStatus, ProfileKind } from './limits.js';
 
 export { estimateCost, resolvePricing, hasPricing } from './pricing.js';
 export type { ModelPricing } from './pricing.js';
+
+export { unifyAllSessions, cachedUnifiedSessions, deriveName } from './unifiedSessions.js';
+export type { UnifiedSession } from './unifiedSessions.js';

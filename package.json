@@ -6,6 +6,10 @@
   "bin": {
     "aimux": "dist/cli.js"
   },
+  "exports": {
+    ".": "./dist/cli.js",
+    "./core": "./dist/core/index.js"
+  },
   "scripts": {
     "dev": "tsx src/cli.tsx",
     "build": "tsc -p tsconfig.build.json",
