@@ -7,6 +7,8 @@ export interface InteractiveSession {
   sessionId: string;
   cwd: string;
   intent: string;
+  /** Explicit session title: user `/rename` (custom-title) or claude's ai-title. */
+  title: string;
   cwdHashDir: string;
   createdAtMs: number;
   updatedAtMs: number;
@@ -28,6 +30,8 @@ interface LineCandidate {
   entrypoint?: string;
   timestamp?: string;
   operation?: string;
+  customTitle?: string;
+  aiTitle?: string;
   message?: { role?: string; content?: string | unknown };
 }
 
@@ -72,6 +76,9 @@ export function isMetaPrompt(text: string): boolean {
 const MAX_SCAN_LINES = 40;
 const HEAD_READ_BYTES = 128 * 1024;
 const FULL_READ_THRESHOLD = 256 * 1024;
+// Title lines are appended near the end; the last 64KB reliably covers the most
+// recent custom-title/ai-title without paying to re-read the whole transcript.
+const TAIL_READ_BYTES = 64 * 1024;
 
 function readHeadOrFull(filePath: string, totalSize: number): string {
   if (totalSize <= FULL_READ_THRESHOLD) {
@@ -100,10 +107,51 @@ function readHeadOrFull(filePath: string, totalSize: number): string {
   }
 }
 
+function readTail(filePath: string, totalSize: number, bytes: number): string {
+  let fd: number | undefined;
+  try {
+    fd = openSync(filePath, 'r');
+    const len = Math.min(bytes, totalSize);
+    const buf = Buffer.alloc(len);
+    const n = readSync(fd, buf, 0, len, Math.max(0, totalSize - len));
+    return buf.subarray(0, n).toString('utf-8');
+  } catch {
+    return '';
+  } finally {
+    if (fd !== undefined) {
+      try {
+        closeSync(fd);
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+// claude appends `{"type":"custom-title","customTitle":…}` (set via /rename) and
+// `{"type":"ai-title","aiTitle":…}` lines as the title changes. Last one wins;
+// a user rename (custom) always beats the generated ai-title.
+function scanTitles(lines: string[], acc: { custom: string; ai: string }): void {
+  for (const line of lines) {
+    if (!line) continue;
+    if (line.includes('"custom-title"')) {
+      const o = safeParse(line);
+      if (o?.type === 'custom-title' && typeof o.customTitle === 'string' && o.customTitle.trim()) {
+        acc.custom = o.customTitle.trim();
+      }
+    } else if (line.includes('"ai-title"')) {
+      const o = safeParse(line);
+      if (o?.type === 'ai-title' && typeof o.aiTitle === 'string' && o.aiTitle.trim()) {
+        acc.ai = o.aiTitle.trim();
+      }
+    }
+  }
+}
+
 export function parseSessionJsonl(
   path: string,
   totalSize?: number,
-): Pick<InteractiveSession, 'cwd' | 'intent' | 'createdAtMs' | 'events'> & {
+): Pick<InteractiveSession, 'cwd' | 'intent' | 'title' | 'createdAtMs' | 'events'> & {
   isSubagent: boolean;
 } {
   let cwd = '';
@@ -118,12 +166,12 @@ export function parseSessionJsonl(
     try {
       raw = readFileSync(path, 'utf-8');
     } catch {
-      return { cwd, intent, createdAtMs, events, isSubagent: true };
+      return { cwd, intent, title: '', createdAtMs, events, isSubagent: true };
     }
   } else {
     raw = readHeadOrFull(path, totalSize);
     if (!raw) {
-      return { cwd, intent, createdAtMs, events, isSubagent: true };
+      return { cwd, intent, title: '', createdAtMs, events, isSubagent: true };
     }
   }
 
@@ -168,13 +216,25 @@ export function parseSessionJsonl(
     }
   }
 
+  // Title (custom-title / ai-title) is appended as the session goes — often
+  // far past the head we scan for intent. Scan all lines we already have, then
+  // (for head-only reads) the tail, since the latest title lives at the end.
+  const titleAcc = { custom: '', ai: '' };
+  scanTitles(lines, titleAcc);
+  if (isPartial && totalSize !== undefined) {
+    const tail = readTail(path, totalSize, TAIL_READ_BYTES);
+    if (tail) scanTitles(tail.split('\n'), titleAcc);
+  }
+  const rawTitle = titleAcc.custom || titleAcc.ai;
+  const title = rawTitle.length > 80 ? rawTitle.slice(0, 80) + '…' : rawTitle;
+
   // Sub-agent sessions: dominated by queue-operation entries, no external
   // human-typed user message. Classifier / memory / task-journal sub-agents
   // each get their own jsonl in projects/ but should not appear in the
   // user-facing session list.
   const isSubagent = hasQueueOperation && !hasExternalUserMessage;
 
-  return { cwd, intent, createdAtMs, events, isSubagent };
+  return { cwd, intent, title, createdAtMs, events, isSubagent };
 }
 
 export function quickFirstLineType(filePath: string): string | null {
@@ -210,7 +270,7 @@ export function quickFirstLineType(filePath: string): string | null {
 interface ScanCacheEntry {
   mtimeMs: number;
   size: number;
-  result: { cwd: string; intent: string; createdAtMs: number; events: number } | null;
+  result: { cwd: string; intent: string; title: string; createdAtMs: number; events: number } | null;
 }
 const scanCache = new Map<string, ScanCacheEntry>();
 
@@ -272,6 +332,7 @@ export function scanInteractiveSessions(
           sessionId,
           cwd: cached.result.cwd || decodeHashedCwd(cwdHashDir),
           intent: cached.result.intent,
+          title: cached.result.title,
           cwdHashDir,
           createdAtMs: cached.result.createdAtMs || stat.birthtimeMs || stat.mtimeMs,
           updatedAtMs: stat.mtimeMs,
@@ -296,6 +357,7 @@ export function scanInteractiveSessions(
       const result = {
         cwd: parsed.cwd,
         intent: parsed.intent,
+        title: parsed.title,
         createdAtMs: parsed.createdAtMs,
         events: parsed.events,
       };
@@ -304,6 +366,7 @@ export function scanInteractiveSessions(
         sessionId,
         cwd: parsed.cwd || decodeHashedCwd(cwdHashDir),
         intent: parsed.intent,
+        title: parsed.title,
         cwdHashDir,
         createdAtMs: parsed.createdAtMs || stat.birthtimeMs || stat.mtimeMs,
         updatedAtMs: stat.mtimeMs,

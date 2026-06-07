@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] - 2026-06-07
+
+### Added
+- **Session names from Claude titles.** The agents list now shows a session's
+  real title — a user `/rename` (custom-title) takes precedence, otherwise
+  Claude's generated ai-title — instead of the raw first prompt. Falls back to
+  the first prompt, then a short session id. Titles are read from the end of the
+  transcript (where Claude appends them) with a bounded tail read, so the default
+  7-day scan stays fast.
+
+### Fixed
+- **Escape sequence no longer leaks into a re-attached session.** The terminal's
+  Device-Attributes response is drained before handing the tty to Claude, and
+  stdin is restored to a clean paused state afterward so the agents TUI no longer
+  freezes on return from a session.
+
 ## [0.10.0] - 2026-06-07
 
 ### Added

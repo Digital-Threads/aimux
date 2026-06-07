@@ -13,12 +13,50 @@ function buildEnv(config: AimuxConfig, profileName: string): NodeJS.ProcessEnv {
   return env;
 }
 
-export function attachSession(
+/**
+ * Swallow any buffered/in-flight terminal-query response (e.g. a Device-
+ * Attributes reply `\x1b[?...c`) before handing the tty to an interactive child,
+ * so it isn't read as typed input (the stray ";...c" in the prompt on re-attach).
+ *
+ * CRITICAL: we briefly raw + resume + consume, then **pause()** and lower raw
+ * again so stdin is left in a clean, non-flowing state. An earlier version
+ * omitted the pause() and left stdin flowing, which broke the next Ink mount's
+ * raw-mode grab and froze the TUI on return. Keep the pause().
+ */
+function prepareTtyForHandoff(): Promise<void> {
+  const s = process.stdin;
+  if (!s.isTTY || typeof s.setRawMode !== 'function') return Promise.resolve();
+  return new Promise((resolve) => {
+    const swallow = (): void => {
+      /* discard query-response bytes */
+    };
+    try {
+      s.setRawMode(true);
+      s.on('data', swallow);
+      s.resume();
+    } catch {
+      // best-effort
+    }
+    setTimeout(() => {
+      try {
+        s.off('data', swallow);
+        s.pause();
+        s.setRawMode(false);
+      } catch {
+        // best-effort
+      }
+      resolve();
+    }, 120);
+  });
+}
+
+export async function attachSession(
   config: AimuxConfig,
   profileName: string,
   sessionShort: string,
 ): Promise<number> {
   const profile = getProfile(config, profileName);
+  await prepareTtyForHandoff();
   return new Promise((resolve, reject) => {
     const child = spawn(profile.cli, ['attach', sessionShort], {
       stdio: 'inherit',
@@ -132,7 +170,7 @@ export function respawnSession(
   };
 }
 
-export function resumeSession(
+export async function resumeSession(
   config: AimuxConfig,
   profileName: string,
   sessionId: string,
@@ -141,6 +179,7 @@ export function resumeSession(
   const profile = getProfile(config, profileName);
   const args = ['--resume', sessionId];
   if (options.forkSession) args.push('--fork-session');
+  await prepareTtyForHandoff();
   return new Promise((resolve, reject) => {
     const child = spawn(profile.cli, args, {
       stdio: 'inherit',

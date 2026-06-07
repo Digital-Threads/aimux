@@ -24,7 +24,9 @@ export interface UnifiedSession {
   isBackground: boolean;
 }
 
-export function deriveName(intent: string, sessionId: string): string {
+export function deriveName(intent: string, sessionId: string, title?: string): string {
+  // An explicit title (user /rename, else claude's ai-title) always wins.
+  if (title && title.trim()) return title.trim();
   if (intent) {
     const firstLine = intent.split('\n')[0].trim();
     if (firstLine) return firstLine.length > 60 ? firstLine.slice(0, 60) + '…' : firstLine;
@@ -60,7 +62,7 @@ export function unifyAllSessions(
     bySessionId.set(s.sessionId, {
       sessionId: s.sessionId,
       short: shortId(s.sessionId),
-      name: deriveName(s.intent, s.sessionId),
+      name: deriveName(s.intent, s.sessionId, s.title),
       intent: s.intent,
       cwd: s.cwd,
       cwdHashDir: s.cwdHashDir,
