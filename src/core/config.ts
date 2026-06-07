@@ -49,7 +49,7 @@ export function createDefaultConfig(sharedSource: string): AimuxConfig {
 export function addProfile(
   config: AimuxConfig,
   name: string,
-  options: { cli?: string; model?: string },
+  options: { cli?: string; model?: string; fallbackModel?: string },
 ): AimuxConfig {
   if (config.profiles[name]) {
     throw new Error(`Profile '${name}' already exists`);
@@ -61,6 +61,7 @@ export function addProfile(
     [name]: {
       cli: options.cli ?? 'claude',
       model: options.model,
+      fallback_model: options.fallbackModel,
       path: profilePath,
     },
   };
@@ -135,6 +136,9 @@ export function validateConfig(config: unknown): string[] {
       }
       if (p.model !== undefined && typeof p.model !== 'string') {
         errors.push(`Profile '${name}': model must be a string`);
+      }
+      if (p.fallback_model !== undefined && typeof p.fallback_model !== 'string') {
+        errors.push(`Profile '${name}': fallback_model must be a string`);
       }
       if (p.env !== undefined) {
         if (!p.env || typeof p.env !== 'object' || Array.isArray(p.env)) {

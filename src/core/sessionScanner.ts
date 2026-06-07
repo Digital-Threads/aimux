@@ -56,12 +56,16 @@ function extractText(content: unknown): string {
   return '';
 }
 
-function isMetaPrompt(text: string): boolean {
+export function isMetaPrompt(text: string): boolean {
   if (!text) return true;
   if (text.startsWith('<local-command-caveat>')) return true;
+  if (text.startsWith('<local-command-stdout>')) return true;
+  if (text.startsWith('<local-command-stderr>')) return true;
   if (text.startsWith('<command-name>')) return true;
   if (text.startsWith('<command-message>')) return true;
   if (text.startsWith('<system-reminder>')) return true;
+  // Compaction-continuation summary injected on resume — not a human prompt.
+  if (text.startsWith('This session is being continued from a previous c')) return true;
   return false;
 }
 
@@ -198,6 +202,18 @@ export function quickFirstLineType(filePath: string): string | null {
   }
 }
 
+// Per-file parse cache keyed by path. A jsonl's intent/cwd/subagent-ness only
+// changes when the file does, so we re-parse only when (mtime,size) move. This
+// keeps the live-refresh poll and the re-mount after attach cheap (a cold scan
+// of ~44 sessions is ~150ms; a warm re-scan is a handful of stat() calls).
+// `result: null` memoizes "skip this file" (subagent / queue-driven).
+interface ScanCacheEntry {
+  mtimeMs: number;
+  size: number;
+  result: { cwd: string; intent: string; createdAtMs: number; events: number } | null;
+}
+const scanCache = new Map<string, ScanCacheEntry>();
+
 export function scanInteractiveSessions(
   config: AimuxConfig,
   opts: ScanOptions = {},
@@ -246,13 +262,44 @@ export function scanInteractiveSessions(
       // The user surfaces them on demand via [L] (windowDays = Infinity).
       if (!insideWindow) continue;
 
+      // Warm path: file unchanged since last scan → reuse the parsed result
+      // (or the memoized skip) without opening it. updatedAtMs still tracks the
+      // live mtime, so an active session's timestamp stays fresh.
+      const cached = scanCache.get(filePath);
+      if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+        if (cached.result === null) continue;
+        sessions.push({
+          sessionId,
+          cwd: cached.result.cwd || decodeHashedCwd(cwdHashDir),
+          intent: cached.result.intent,
+          cwdHashDir,
+          createdAtMs: cached.result.createdAtMs || stat.birthtimeMs || stat.mtimeMs,
+          updatedAtMs: stat.mtimeMs,
+          events: cached.result.events,
+        });
+        continue;
+      }
+
       // Fast subagent reject: first line of a queue-driven session is
       // a queue-operation. Real interactive sessions start with
       // permission-mode / file-history-snapshot / user / etc.
-      if (quickFirstLineType(filePath) === 'queue-operation') continue;
+      if (quickFirstLineType(filePath) === 'queue-operation') {
+        scanCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, result: null });
+        continue;
+      }
 
       const parsed = parseSessionJsonl(filePath, stat.size);
-      if (parsed.isSubagent) continue;
+      if (parsed.isSubagent) {
+        scanCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, result: null });
+        continue;
+      }
+      const result = {
+        cwd: parsed.cwd,
+        intent: parsed.intent,
+        createdAtMs: parsed.createdAtMs,
+        events: parsed.events,
+      };
+      scanCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, result });
       sessions.push({
         sessionId,
         cwd: parsed.cwd || decodeHashedCwd(cwdHashDir),

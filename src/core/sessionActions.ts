@@ -62,6 +62,59 @@ export function stopSession(
   };
 }
 
+/**
+ * Dispatch a background session WITHOUT touching the terminal. stdin is ignored
+ * and stdout/stderr are captured (never inherited), so this can run while an Ink
+ * TUI stays mounted — the caller refreshes its list instead of tearing down.
+ */
+export function dispatchSessionAsync(
+  config: AimuxConfig,
+  profileName: string,
+  prompt: string,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const profile = getProfile(config, profileName);
+  const args = profile.fallback_model
+    ? ['--fallback-model', profile.fallback_model, '--bg', prompt]
+    : ['--bg', prompt];
+  return new Promise((resolve, reject) => {
+    const child = spawn(profile.cli, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: buildEnv(config, profileName),
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (d) => {
+      stdout += d.toString();
+    });
+    child.stderr?.on('data', (d) => {
+      stderr += d.toString();
+    });
+    child.on('error', (err) => reject(new Error(`Failed to dispatch: ${err.message}`)));
+    child.on('exit', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+  });
+}
+
+/** Stop a background session off-screen (captured stdio), keeping the TUI alive. */
+export function stopSessionAsync(
+  config: AimuxConfig,
+  profileName: string,
+  sessionShort: string,
+): Promise<{ code: number; stderr: string }> {
+  const profile = getProfile(config, profileName);
+  return new Promise((resolve, reject) => {
+    const child = spawn(profile.cli, ['stop', sessionShort], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: buildEnv(config, profileName),
+    });
+    let stderr = '';
+    child.stderr?.on('data', (d) => {
+      stderr += d.toString();
+    });
+    child.on('error', (err) => reject(new Error(`Failed to stop: ${err.message}`)));
+    child.on('exit', (code) => resolve({ code: code ?? 1, stderr }));
+  });
+}
+
 export function respawnSession(
   config: AimuxConfig,
   profileName: string,

@@ -386,8 +386,6 @@ program
       const {
         attachSession,
         resumeSession,
-        dispatchSession,
-        stopSession,
       } = await import('./core/sessionActions.js');
       const { recordSessionUsage } = await import('./core/sessionHistory.js');
 
@@ -401,9 +399,7 @@ program
             isBackground: boolean;
             bgShort?: string;
             bgProfile?: string;
-          }
-        | { type: 'dispatch'; profile: string; prompt: string }
-        | { type: 'stop'; profile: string; short: string };
+          };
 
       const { existsSync: existsSyncFn } = await import('node:fs');
 
@@ -455,17 +451,6 @@ program
             if (code !== 0) console.error(`Resume exited with code ${code}`);
             break;
           }
-          case 'dispatch': {
-            const result = dispatchSession(config, action.profile, action.prompt);
-            if (result.stdout) process.stdout.write(result.stdout);
-            if (result.stderr) process.stderr.write(result.stderr);
-            break;
-          }
-          case 'stop': {
-            const result = stopSession(config, action.profile, action.short);
-            if (result.stderr) process.stderr.write(result.stderr);
-            break;
-          }
         }
       }
       process.exit(0);
@@ -483,9 +468,10 @@ program
       .argument('<name>', 'Profile name')
       .option('--no-auth', 'Skip authentication')
       .option('-m, --model <model>', 'Default model for this profile')
+      .option('--fallback-model <model>', 'Fallback model when the primary is overloaded/unavailable')
       .option('--api', 'Configure a 3rd-party API endpoint instead of a Claude subscription')
       .description('Add a new profile')
-      .action(async (name: string, options: { auth: boolean; model?: string; api?: boolean }) => {
+      .action(async (name: string, options: { auth: boolean; model?: string; fallbackModel?: string; api?: boolean }) => {
         try {
           const config = requireConfig();
 
@@ -503,7 +489,7 @@ program
             apiVars = await collectApiCredentials();
           }
 
-          const updated = addProfile(config, name, { model: options.model });
+          const updated = addProfile(config, name, { model: options.model, fallbackModel: options.fallbackModel });
           saveConfig(updated);
           const profilePath = ensureProfileDir(updated, name);
           const sync = syncProfile(updated, name);
@@ -546,16 +532,20 @@ program
     new Command('update')
       .argument('<name>', 'Profile name')
       .option('-m, --model <model>', 'Set default model')
+      .option('--fallback-model <model>', 'Set fallback model (used when primary is overloaded/unavailable)')
+      .option('--unset-fallback-model', 'Remove the fallback model')
       .option('--cli <cli>', 'Set CLI command')
       .option('-e, --env <KEY=VALUE>', 'Set an env var in the profile .env file (repeatable)', collectRepeatable, [])
       .option('--unset-env <KEY>', 'Remove an env var from the profile .env file (repeatable)', collectRepeatable, [])
       .description('Update profile settings')
-      .action((name: string, options: { model?: string; cli?: string; env: string[]; unsetEnv: string[] }) => {
+      .action((name: string, options: { model?: string; fallbackModel?: string; unsetFallbackModel?: boolean; cli?: string; env: string[]; unsetEnv: string[] }) => {
         try {
           const config = requireConfig();
           const resolved = resolveProfile(config, name);
           const profile = config.profiles[resolved];
           if (options.model) profile.model = options.model;
+          if (options.fallbackModel) profile.fallback_model = options.fallbackModel;
+          if (options.unsetFallbackModel) delete profile.fallback_model;
           if (options.cli) profile.cli = options.cli;
           config.profiles[resolved] = profile;
           saveConfig(config);
@@ -567,6 +557,8 @@ program
 
           console.log(`✓ Profile '${resolved}' updated`);
           if (options.model) console.log(`  model: ${options.model}`);
+          if (options.fallbackModel) console.log(`  fallback model: ${options.fallbackModel}`);
+          if (options.unsetFallbackModel) console.log('  fallback model removed');
           if (options.cli) console.log(`  cli: ${options.cli}`);
           if (envChange?.set.length) console.log(`  .env set: ${envChange.set.join(', ')}`);
           if (envChange?.unset.length) console.log(`  .env unset: ${envChange.unset.join(', ')}`);
@@ -621,6 +613,7 @@ program
           config = addProfile(config, name, {
             cli: srcProfile.cli,
             model: options.model ?? srcProfile.model,
+            fallbackModel: srcProfile.fallback_model,
           });
           saveConfig(config);
 
