@@ -46,4 +46,12 @@ describe('deriveName', () => {
   it('falls back to a short session id when intent is empty', () => {
     expect(deriveName('', 'abcd1234efgh')).toBe('session-abcd1234');
   });
+
+  it('prefers an explicit title (custom /rename or ai-title) over the intent', () => {
+    expect(deriveName('Fix the login bug', 'abcd1234', '[TP] 6k saved')).toBe('[TP] 6k saved');
+  });
+
+  it('ignores a blank title and falls back to intent', () => {
+    expect(deriveName('Fix the login bug', 'abcd1234', '   ')).toBe('Fix the login bug');
+  });
 });
