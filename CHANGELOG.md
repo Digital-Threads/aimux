@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.11.1] - 2026-06-08
+
+### Fixed
+- **Attaching now honors the chosen profile.** A live background agent is owned
+  by the profile it was dispatched under, and aimux always joined via that owner
+  — so switching profile with `p` (e.g. after a subscription ran out) had no
+  effect and the row kept showing the old profile. Now, when the chosen/active
+  profile differs from the owner, aimux stops the owner's live agent and resumes
+  the shared transcript under the chosen profile (billing and `last:` follow it).
+  When the chosen profile matches the owner, it still joins the live agent as
+  before. To simply join another profile's live agent, make that profile active
+  first.
+
 ## [0.11.0] - 2026-06-07
 
 ### Added
