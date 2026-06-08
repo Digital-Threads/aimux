@@ -70,3 +70,5 @@ export type { ModelPricing } from './pricing.js';
 
 export { unifyAllSessions, cachedUnifiedSessions, deriveName } from './unifiedSessions.js';
 export type { UnifiedSession } from './unifiedSessions.js';
+
+export { loadActiveProfile, saveActiveProfile, getActiveProfilePath } from './activeProfile.js';
