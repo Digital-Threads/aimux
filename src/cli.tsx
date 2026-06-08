@@ -383,24 +383,12 @@ program
 
       const { render } = await import('ink');
       const { AgentsView } = await import('./components/AgentsView.js');
-      const {
-        attachSession,
-        resumeSession,
-        stopSession,
-      } = await import('./core/sessionActions.js');
+      const { resumeSession } = await import('./core/sessionActions.js');
       const { recordSessionUsage } = await import('./core/sessionHistory.js');
 
       type PendingAction =
         | { type: 'exit' }
-        | {
-            type: 'attach';
-            profile: string;
-            sessionId: string;
-            cwd: string;
-            isBackground: boolean;
-            bgShort?: string;
-            bgProfile?: string;
-          };
+        | { type: 'attach'; profile: string; sessionId: string; cwd: string; live: boolean };
 
       const { existsSync: existsSyncFn } = await import('node:fs');
 
@@ -425,44 +413,14 @@ program
             running = false;
             break;
           case 'attach': {
-            const cwdForSession =
-              action.cwd && existsSyncFn(action.cwd) ? action.cwd : undefined;
-
-            // A session that is live as a background agent is owned by the
-            // profile it was dispatched under (its daemon/credentials). When the
-            // chosen profile MATCHES the owner, JOIN it: `claude attach <short>`
-            // connects to the running agent in this terminal. A plain --resume
-            // would be refused (two writers corrupt the transcript).
-            if (
-              action.isBackground &&
-              action.bgShort &&
-              action.bgProfile &&
-              action.profile === action.bgProfile
-            ) {
-              const code = await attachSession(config, action.bgProfile, action.bgShort);
-              recordSessionUsage(action.sessionId, action.bgProfile);
-              if (code !== 0) console.error(`Attach exited with code ${code}`);
-              break;
-            }
-
-            // Live, but the user picked a DIFFERENT profile (e.g. the owner's
-            // subscription ran out and they switched via `p`). The chosen
-            // profile must win: stop the owner's live agent so it stops writing,
-            // then resume the shared transcript under the chosen profile. Without
-            // the stop, two writers would corrupt the transcript.
-            if (action.isBackground && action.bgShort && action.bgProfile) {
-              const stop = stopSession(config, action.bgProfile, action.bgShort);
-              if (stop.stderr) process.stderr.write(stop.stderr);
-            }
-
-            // Resume the transcript under the chosen profile. The transcript is
-            // read from the shared projects/ folder and billing follows it.
-            const code = await resumeSession(
-              config,
-              action.profile,
-              action.sessionId,
-              { cwd: cwdForSession },
-            );
+            // Same as `aimux run <profile> --resume <id>`: resume the shared
+            // transcript under the chosen profile. A live session needs
+            // --fork-session (claude refuses to resume a running one otherwise).
+            const cwd = action.cwd && existsSyncFn(action.cwd) ? action.cwd : undefined;
+            const code = await resumeSession(config, action.profile, action.sessionId, {
+              cwd,
+              forkSession: action.live,
+            });
             recordSessionUsage(action.sessionId, action.profile);
             if (code !== 0) console.error(`Resume exited with code ${code}`);
             break;

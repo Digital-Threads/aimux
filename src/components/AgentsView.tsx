@@ -12,20 +12,9 @@ import { expandHome } from '../core/paths.js';
 import { classifyProfile, fetchRateLimits, type RateLimitStatus, type ProfileKind } from '../core/limits.js';
 import { summarizeUsage, totalTokens, type ProfileUsageSummary } from '../core/usage.js';
 
-// Only interactive actions that need the tty are escalated to the host loop
-// (which unmounts Ink and hands over the terminal). Background ops — dispatch
-// and stop — run in-place inside the component and never reach here.
 export type AgentsAction =
   | { type: 'exit' }
-  | {
-      type: 'attach';
-      profile: string;
-      sessionId: string;
-      cwd: string;
-      isBackground: boolean;
-      bgShort?: string;
-      bgProfile?: string;
-    };
+  | { type: 'attach'; profile: string; sessionId: string; cwd: string; live: boolean };
 
 interface Props {
   config: AimuxConfig;
@@ -566,9 +555,11 @@ export function AgentsView({ config, onAction }: Props) {
       profile,
       sessionId: currentSession.sessionId,
       cwd: currentSession.cwd,
-      isBackground: currentSession.isBackground,
-      bgShort: currentSession.short,
-      bgProfile: currentSession.bgProfile,
+      live:
+        currentSession.isBackground &&
+        currentSession.state !== 'done' &&
+        currentSession.state !== 'failed' &&
+        currentSession.state !== 'stopped',
     });
     exit();
   };
