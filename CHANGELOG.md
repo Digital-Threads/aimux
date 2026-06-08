@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.12.0] - 2026-06-08
+
+### Added
+- `core` barrel now re-exports `loadActiveProfile`, `saveActiveProfile`, and
+  `getActiveProfilePath` from `@digital-threads/aimux/core`. Additive — lets
+  external consumers read/switch the active profile through the public API
+  without deep-importing. No behavior change.
+
 ## [0.11.2] - 2026-06-08
 
 ### Changed
