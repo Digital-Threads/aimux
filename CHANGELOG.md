@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.11.2] - 2026-06-08
+
+### Changed
+- **Attaching a session from the agents view now mirrors the terminal.** It runs
+  `claude --resume <id>` under the active profile — exactly like
+  `aimux run <profile> --resume <id>` — so the chosen profile (and its
+  subscription) always wins. A still-running background agent is continued with
+  `--fork-session` (claude requires it for a live session); a finished or
+  interactive session resumes in place under the chosen profile, same session id.
+  Removed the previous join/stop special-casing that could land you back on the
+  original (possibly exhausted) subscription.
+
 ## [0.11.1] - 2026-06-08
 
 ### Fixed
