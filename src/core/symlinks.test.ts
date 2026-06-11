@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync, readlinkSync, symlinkSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import {
+  mkdirSync, rmSync, writeFileSync, readFileSync, readlinkSync, symlinkSync,
+  readdirSync, lstatSync, existsSync,
+} from 'node:fs';
+import { join, sep, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setAimuxDir } from './paths.js';
 import { createDefaultConfig, addProfile } from './config.js';
@@ -12,6 +15,7 @@ import {
   syncAllProfiles,
   checkProfileHealth,
   checkAllProfiles,
+  rewritePluginPaths,
 } from './symlinks.js';
 
 const TEST_DIR = join(tmpdir(), `aimux-symlink-test-${Date.now()}`);
@@ -236,5 +240,222 @@ describe('checkAllProfiles', () => {
     const reports = checkAllProfiles(config);
     expect(reports.size).toBe(2);
     expect(reports.get('work')!.valid).toContain('settings.json');
+  });
+});
+
+const SENTINEL = '.aimux-managed';
+
+function seedSharedPlugins() {
+  const pdir = join(SHARED_DIR, 'plugins');
+  mkdirSync(join(pdir, 'marketplaces', 'mk1'), { recursive: true });
+  writeFileSync(join(pdir, 'marketplaces', 'mk1', '.marker'), 'mk1');
+  mkdirSync(join(pdir, 'cache', 'mk1', 'p1'), { recursive: true });
+  mkdirSync(join(pdir, 'data'), { recursive: true });
+  const extDir = join(TEST_DIR, 'external-ext');
+  mkdirSync(extDir, { recursive: true });
+  writeFileSync(join(pdir, 'known_marketplaces.json'), JSON.stringify({
+    mk1: { installLocation: join(pdir, 'marketplaces', 'mk1'), source: { source: 'github', repo: 'a/b' } },
+    ext: { installLocation: extDir, source: { source: 'directory', path: extDir } },
+  }, null, 2));
+  writeFileSync(join(pdir, 'installed_plugins.json'), JSON.stringify({
+    version: 1,
+    plugins: { 'p1@mk1': [{ installLocation: join(pdir, 'cache', 'mk1', 'p1'), projectPath: join(TEST_DIR, 'someproject') }] },
+  }, null, 2));
+  return { pdir, extDir };
+}
+
+describe('rewritePluginPaths', () => {
+  const from = join('/src', 'plugins');
+  const to = join('/dst', 'plugins');
+
+  it('rewrites an exact prefix match', () => {
+    expect(rewritePluginPaths(from, from, to)).toBe(to);
+  });
+
+  it('rewrites a path under the prefix', () => {
+    expect(rewritePluginPaths(join(from, 'marketplaces', 'x'), from, to))
+      .toBe(join(to, 'marketplaces', 'x'));
+  });
+
+  it('leaves non-matching strings untouched', () => {
+    expect(rewritePluginPaths('/home/user/project', from, to)).toBe('/home/user/project');
+    // not a path-segment boundary -> must NOT match
+    expect(rewritePluginPaths('/src/pluginsX/y', from, to)).toBe('/src/pluginsX/y');
+  });
+
+  it('recurses objects/arrays and leaves non-strings', () => {
+    const input = { a: join(from, 'm'), b: [join(from, 'n'), 5, true, null], c: { d: '/other' } };
+    expect(rewritePluginPaths(input, from, to)).toEqual({
+      a: join(to, 'm'), b: [join(to, 'n'), 5, true, null], c: { d: '/other' },
+    });
+  });
+});
+
+describe('syncProfile plugins layout', () => {
+  it('builds a real plugins dir with symlinked content and projected json', () => {
+    seedShared(['settings.json']);
+    const { pdir, extDir } = seedSharedPlugins();
+    const config = makeConfig();
+    const result = syncProfile(config, 'work');
+
+    const ppdir = join(PROFILES_DIR, 'work', 'plugins');
+    expect(lstatSync(ppdir).isSymbolicLink()).toBe(false);
+    expect(lstatSync(ppdir).isDirectory()).toBe(true);
+    expect(result.created).toContain('plugins');
+    expect(existsSync(join(ppdir, SENTINEL))).toBe(true);
+
+    expect(lstatSync(join(ppdir, 'marketplaces')).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(join(ppdir, 'marketplaces'))).toBe(join(pdir, 'marketplaces'));
+    expect(lstatSync(join(ppdir, 'cache')).isSymbolicLink()).toBe(true);
+
+    expect(lstatSync(join(ppdir, 'known_marketplaces.json')).isSymbolicLink()).toBe(false);
+    const km = JSON.parse(readFileSync(join(ppdir, 'known_marketplaces.json'), 'utf8'));
+    expect(km.mk1.installLocation).toBe(join(ppdir, 'marketplaces', 'mk1'));
+    expect(km.ext.installLocation).toBe(extDir);
+
+    const ip = JSON.parse(readFileSync(join(ppdir, 'installed_plugins.json'), 'utf8'));
+    expect(ip.plugins['p1@mk1'][0].installLocation).toBe(join(ppdir, 'cache', 'mk1', 'p1'));
+    expect(ip.plugins['p1@mk1'][0].projectPath).toBe(join(TEST_DIR, 'someproject'));
+
+    // projected installLocation satisfies claude's prefix check
+    const base = resolve(join(ppdir, 'marketplaces'));
+    const o = resolve(km.mk1.installLocation);
+    expect(o === base || o.startsWith(base + sep)).toBe(true);
+  });
+
+  it('is idempotent on re-sync', () => {
+    seedShared(['settings.json']);
+    seedSharedPlugins();
+    const config = makeConfig();
+    syncProfile(config, 'work');
+    const result2 = syncProfile(config, 'work');
+
+    const ppdir = join(PROFILES_DIR, 'work', 'plugins');
+    expect(result2.conflicts).not.toContain('plugins');
+    expect(existsSync(join(ppdir, SENTINEL))).toBe(true);
+    const km = JSON.parse(readFileSync(join(ppdir, 'known_marketplaces.json'), 'utf8'));
+    expect(km.mk1.installLocation).toBe(join(ppdir, 'marketplaces', 'mk1'));
+  });
+
+  it('converts an old whole-dir plugins symlink to the new layout', () => {
+    seedShared(['settings.json']);
+    const { pdir } = seedSharedPlugins();
+    const config = makeConfig();
+    const workDir = join(PROFILES_DIR, 'work');
+    mkdirSync(workDir, { recursive: true });
+    symlinkSync(pdir, join(workDir, 'plugins'));
+
+    syncProfile(config, 'work');
+
+    const ppdir = join(workDir, 'plugins');
+    expect(lstatSync(ppdir).isSymbolicLink()).toBe(false);
+    expect(existsSync(join(ppdir, SENTINEL))).toBe(true);
+    expect(lstatSync(join(ppdir, 'marketplaces')).isSymbolicLink()).toBe(true);
+  });
+
+  it('back-merges a profile-local marketplace into source', () => {
+    seedShared(['settings.json']);
+    const { pdir } = seedSharedPlugins();
+    const config = makeConfig();
+    syncProfile(config, 'work');
+
+    const ppdir = join(PROFILES_DIR, 'work', 'plugins');
+    const km = JSON.parse(readFileSync(join(ppdir, 'known_marketplaces.json'), 'utf8'));
+    km.localmk = { installLocation: join(ppdir, 'marketplaces', 'localmk'), source: { source: 'github', repo: 'c/d' } };
+    writeFileSync(join(ppdir, 'known_marketplaces.json'), JSON.stringify(km, null, 2));
+
+    syncProfile(config, 'work');
+
+    const srcKm = JSON.parse(readFileSync(join(pdir, 'known_marketplaces.json'), 'utf8'));
+    expect(srcKm.localmk).toBeDefined();
+    expect(srcKm.localmk.installLocation).toBe(join(pdir, 'marketplaces', 'localmk'));
+    expect(srcKm.mk1.installLocation).toBe(join(pdir, 'marketplaces', 'mk1'));
+
+    const km2 = JSON.parse(readFileSync(join(ppdir, 'known_marketplaces.json'), 'utf8'));
+    expect(km2.localmk.installLocation).toBe(join(ppdir, 'marketplaces', 'localmk'));
+  });
+
+  it('never overwrites an existing source key on back-merge (main wins)', () => {
+    seedShared(['settings.json']);
+    const { pdir } = seedSharedPlugins();
+    const config = makeConfig();
+    syncProfile(config, 'work');
+
+    const ppdir = join(PROFILES_DIR, 'work', 'plugins');
+    const km = JSON.parse(readFileSync(join(ppdir, 'known_marketplaces.json'), 'utf8'));
+    km.mk1.source.repo = 'hacked/repo';
+    writeFileSync(join(ppdir, 'known_marketplaces.json'), JSON.stringify(km, null, 2));
+
+    syncProfile(config, 'work');
+
+    const srcKm = JSON.parse(readFileSync(join(pdir, 'known_marketplaces.json'), 'utf8'));
+    expect(srcKm.mk1.source.repo).toBe('a/b');
+  });
+
+  it('flags a user-owned plugins dir (no sentinel) as a conflict and leaves it', () => {
+    seedShared(['settings.json']);
+    seedSharedPlugins();
+    const config = makeConfig();
+    const ppdir = join(PROFILES_DIR, 'work', 'plugins');
+    mkdirSync(ppdir, { recursive: true });
+    writeFileSync(join(ppdir, 'mine.txt'), 'user data');
+
+    const result = syncProfile(config, 'work');
+
+    expect(result.conflicts).toContain('plugins');
+    expect(existsSync(join(ppdir, 'mine.txt'))).toBe(true);
+    expect(existsSync(join(ppdir, SENTINEL))).toBe(false);
+  });
+
+  it('builds symlinks when source plugins has no json files', () => {
+    seedShared(['settings.json']);
+    mkdirSync(join(SHARED_DIR, 'plugins', 'marketplaces'), { recursive: true });
+    const config = makeConfig();
+
+    const result = syncProfile(config, 'work');
+
+    const ppdir = join(PROFILES_DIR, 'work', 'plugins');
+    expect(result.created).toContain('plugins');
+    expect(lstatSync(join(ppdir, 'marketplaces')).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(ppdir, 'known_marketplaces.json'))).toBe(false);
+  });
+
+  it('prunes its own dangling symlinks but leaves a user symlink', () => {
+    seedShared(['settings.json']);
+    const { pdir } = seedSharedPlugins();
+    const config = makeConfig();
+    syncProfile(config, 'work');
+
+    const ppdir = join(PROFILES_DIR, 'work', 'plugins');
+    // an aimux-style link whose source entry no longer exists
+    symlinkSync(join(pdir, 'gone'), join(ppdir, 'gone'));
+    // a user's own link pointing outside the source (dangling)
+    symlinkSync(join(TEST_DIR, 'user-thing'), join(ppdir, 'user-link'));
+
+    syncProfile(config, 'work');
+
+    const entries = readdirSync(ppdir);
+    expect(entries).not.toContain('gone');
+    expect(entries).toContain('user-link');
+    expect(lstatSync(join(ppdir, 'user-link')).isSymbolicLink()).toBe(true);
+  });
+
+  it('does not build a plugins layout for the source profile', () => {
+    seedShared(['settings.json']);
+    seedSharedPlugins();
+    const config = makeConfig();
+    const result = syncProfile(config, 'main');
+    expect(result.created).not.toContain('plugins');
+  });
+
+  it('checkProfileHealth treats a managed plugins dir as valid', () => {
+    seedShared(['settings.json']);
+    seedSharedPlugins();
+    const config = makeConfig();
+    syncProfile(config, 'work');
+
+    const report = checkProfileHealth(config, 'work');
+    expect(report.valid).toContain('plugins');
+    expect(report.conflicts).not.toContain('plugins');
   });
 });

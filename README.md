@@ -147,6 +147,11 @@ All profile commands support **prefix matching**: `aimux run w` → `work`, `aim
       agents/ → ~/.claude/agents      ← symlink (shared)
       skills/ → ~/.claude/skills      ← symlink (shared)
       memory/ → ~/.claude/memory      ← symlink (shared)
+      plugins/                        ← real dir (shared content, per-profile metadata)
+        marketplaces/ → ~/.claude/plugins/marketplaces   ← symlink (shared)
+        cache/        → ~/.claude/plugins/cache           ← symlink (shared)
+        known_marketplaces.json       ← real file (paths point inside this profile)
+        installed_plugins.json        ← real file (paths point inside this profile)
       .credentials.json               ← real file (private)
       .claude.json                    ← real file (private)
     own/
@@ -154,6 +159,15 @@ All profile commands support **prefix matching**: `aimux run w` → `work`, `aim
 ```
 
 When you run `aimux run work`, it sets `CLAUDE_CONFIG_DIR=~/.aimux/profiles/work` and launches the CLI. Claude sees a complete config directory — shared content via symlinks, private auth locally.
+
+**Plugins** are shared too, but Claude validates that a marketplace's `installLocation`
+lives inside the active config directory. So each profile gets a real `plugins/`
+directory: the heavy content (`marketplaces/`, `cache/`) is symlinked to the shared
+`~/.claude/plugins`, while `known_marketplaces.json` and `installed_plugins.json` are
+real, path-rewritten copies. `~/.claude` stays the source of truth — install or update
+plugins from your main profile (or with `CLAUDE_CONFIG_DIR=~/.claude claude plugin …`)
+and every profile picks them up on its next run. A plugin installed from inside a
+profile is merged back into the shared source automatically.
 
 ## Per-profile environment variables
 
