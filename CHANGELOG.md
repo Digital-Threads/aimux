@@ -4,7 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [0.12.0] - 2026-06-08
+## [0.13.0] - 2026-06-11
+
+### Fixed
+- **Plugin marketplaces no longer fail validation under a profile.** Newer Claude
+  Code checks that each marketplace's `installLocation` is literally inside
+  `$CLAUDE_CONFIG_DIR/plugins/marketplaces` (string prefix, not realpath). Because
+  aimux symlinked the whole `plugins/` directory to the shared `~/.claude/plugins`,
+  the shared `known_marketplaces.json` carried `~/.claude/...` paths that don't match
+  a profile's config dir — so `/plugin` refresh/update reported
+  `corrupted installLocation` and showed stale versions. Plugins still loaded, but
+  could not be refreshed from within a profile.
+
+### Changed
+- **Per-profile plugin metadata.** A profile's `plugins/` is now a real directory:
+  content (`marketplaces/`, `cache/`, `data/`, …) is still symlinked to the shared
+  source so plugin bytes stay shared, but `known_marketplaces.json` and
+  `installed_plugins.json` are real, path-projected copies whose `installLocation`
+  values point inside the profile. The shared source (`~/.claude/plugins`) remains the
+  source of truth; the projection is regenerated on sync. A plugin installed from
+  within a profile is back-merged (additively) into the source so it propagates to the
+  other profiles. Conversion is automatic and lazy on the next `aimux run`, idempotent,
+  and never touches the source profile (`~/.claude`); an older aimux treats the new
+  layout as a local override and leaves it intact.
 
 ### Added
 - `core` barrel now re-exports `loadActiveProfile`, `saveActiveProfile`, and
