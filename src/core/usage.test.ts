@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { AimuxConfig } from '../types/index.js';
 import { getAimuxDir, setAimuxDir } from './paths.js';
-import { summarizeUsage, parseSinceDuration, totalTokens } from './usage.js';
+import { summarizeUsage, usageBySession, parseSinceDuration, totalTokens } from './usage.js';
 
 const TEST_DIR = join(tmpdir(), `aimux-usage-test-${Date.now()}`);
 const NOW_TS = '2026-05-14T00:00:00.000Z';
@@ -255,6 +255,44 @@ describe('summarizeUsage', () => {
     expect(summaries.map((s) => s.profile)).toEqual(['work']);
     expect(summaries[0].requests).toBe(1);
     expect(summaries[0].inputTokens).toBe(200);
+  });
+});
+
+describe('usageBySession', () => {
+  it('breaks usage down per session with profile and totals', () => {
+    writeProfileSessions('work', [
+      { sessionId: 'session-a', modified: 1000 },
+      { sessionId: 'session-b', modified: 2000 },
+    ]);
+    writeTranscript('-tmp-project', 'session-a', [
+      assistantLine('session-a', 'req-1', { input_tokens: 10, output_tokens: 5 }),
+    ]);
+    writeTranscript('-tmp-project', 'session-b', [
+      assistantLine('session-b', 'req-2', { input_tokens: 100, output_tokens: 50 }),
+    ]);
+
+    const rows = usageBySession(makeConfig());
+    const a = rows.find((r) => r.sessionId === 'session-a')!;
+    const b = rows.find((r) => r.sessionId === 'session-b')!;
+    expect(a.profile).toBe('work');
+    expect(a.requests).toBe(1);
+    expect(totalTokens(a)).toBe(15);
+    expect(totalTokens(b)).toBe(150);
+  });
+
+  it('deduplicates repeated lines and respects the profile filter', () => {
+    writeProfileSessions('work', [{ sessionId: 'session-a', modified: 1000 }]);
+    writeProfileSessions('main', [{ sessionId: 'session-m', modified: 1000 }]);
+    const repeated = assistantLine('session-a', 'req-1', { input_tokens: 10, output_tokens: 5 });
+    writeTranscript('-tmp-project', 'session-a', [repeated, repeated]);
+    writeTranscript('-tmp-main', 'session-m', [
+      assistantLine('session-m', 'req-2', { input_tokens: 7, output_tokens: 3 }),
+    ]);
+
+    const rows = usageBySession(makeConfig(), { profile: 'work' });
+    expect(rows.map((r) => r.sessionId)).toEqual(['session-a']);
+    expect(rows[0].requests).toBe(1);
+    expect(rows[0].inputTokens).toBe(10);
   });
 });
 

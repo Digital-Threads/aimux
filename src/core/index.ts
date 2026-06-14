@@ -44,8 +44,8 @@ export {
 
 export type { DetectedDir, InitResult } from './init.js';
 
-export { buildRunParams, launchProfile, looksLikeSubcommand, parseDotenv, loadProfileEnv } from './run.js';
-export type { RunOptions, RunParams } from './run.js';
+export { buildRunParams, launchProfile, runProfileHeadless, looksLikeSubcommand, parseDotenv, loadProfileEnv } from './run.js';
+export type { RunOptions, RunParams, HeadlessOptions, HeadlessResult } from './run.js';
 
 export {
   collectApiCredentials,
@@ -56,8 +56,8 @@ export {
   API_MODEL_DEFAULTS,
 } from './apiProfile.js';
 
-export { summarizeUsage, parseSinceDuration, totalTokens } from './usage.js';
-export type { ProfileUsageSummary, UsageOptions, UsageTotals } from './usage.js';
+export { summarizeUsage, usageBySession, parseSinceDuration, totalTokens } from './usage.js';
+export type { ProfileUsageSummary, SessionUsageSummary, UsageOptions, UsageTotals } from './usage.js';
 
 export { readProfileAutoMode } from './autoMode.js';
 export type { AutoModeStatus } from './autoMode.js';
