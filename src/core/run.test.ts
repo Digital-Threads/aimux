@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { buildRunParams, looksLikeSubcommand, parseDotenv, loadProfileEnv } from './run.js';
+import { buildRunParams, runProfileHeadless, looksLikeSubcommand, parseDotenv, loadProfileEnv } from './run.js';
 import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 
 function makeConfig(ownExtras?: Partial<ProfileConfig>): AimuxConfig {
@@ -225,5 +225,46 @@ describe('looksLikeSubcommand', () => {
   it('rejects undefined/empty', () => {
     expect(looksLikeSubcommand(undefined)).toBe(false);
     expect(looksLikeSubcommand('')).toBe(false);
+  });
+});
+
+describe('runProfileHeadless', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'aimux-headless-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function stubConfig(): AimuxConfig {
+    return {
+      version: 1,
+      shared_source: dir,
+      profiles: { stub: { cli: 'node', path: dir } },
+      private: [],
+    };
+  }
+
+  it('captures stdout + exit code and injects task/workflow ids into env', async () => {
+    const script =
+      'process.stdout.write("OUT:" + process.env.LOOM_TASK_ID + ":" + process.env.LOOM_WORKFLOW_ID); process.exit(3);';
+    const res = await runProfileHeadless(stubConfig(), 'stub', {
+      extraArgs: ['-e', script],
+      taskId: 'tj-1',
+      workflowId: 'wf-1',
+    });
+    expect(res.exitCode).toBe(3);
+    expect(res.stdout).toBe('OUT:tj-1:wf-1');
+  });
+
+  it('captures stderr and leaves ids unset when not provided', async () => {
+    const script = 'process.stderr.write("ERR:" + String(process.env.LOOM_TASK_ID));';
+    const res = await runProfileHeadless(stubConfig(), 'stub', { extraArgs: ['-e', script] });
+    expect(res.exitCode).toBe(0);
+    expect(res.stderr).toBe('ERR:undefined');
+    expect(res.stdout).toBe('');
   });
 });

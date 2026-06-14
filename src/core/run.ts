@@ -179,3 +179,74 @@ export function launchProfile(
     });
   });
 }
+
+export interface HeadlessOptions extends RunOptions {
+  /** Stamped into the spawned session env as LOOM_TASK_ID (spine link). */
+  taskId?: string;
+  /** Stamped into the spawned session env as LOOM_WORKFLOW_ID (spine link). */
+  workflowId?: string;
+  /** Working directory for the spawned process. */
+  cwd?: string;
+  /** Written to the child's stdin, then stdin is closed. */
+  input?: string;
+}
+
+export interface HeadlessResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+/**
+ * Non-interactive launch: pipes stdio and captures stdout/stderr/exit instead of
+ * inheriting the terminal. `launchProfile` stays the interactive path, untouched.
+ *
+ * Injects LOOM_TASK_ID / LOOM_WORKFLOW_ID into the spawned session's env so that
+ * token-pilot and task-journal running inside it can tie their telemetry to the same
+ * task — the shared-ID "spine". CLI-agnostic: the caller supplies the print/prompt
+ * flags via `extraArgs` (e.g. `['-p', prompt]`), so this works for any AI CLI.
+ */
+export function runProfileHeadless(
+  config: AimuxConfig,
+  profileName: string,
+  options: HeadlessOptions = {},
+): Promise<HeadlessResult> {
+  const params = buildRunParams(config, profileName, options);
+  const env: NodeJS.ProcessEnv = { ...process.env, ...params.env };
+  if (options.taskId) env.LOOM_TASK_ID = options.taskId;
+  if (options.workflowId) env.LOOM_WORKFLOW_ID = options.workflowId;
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(params.cli, params.args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env,
+      cwd: options.cwd,
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (err) => {
+      reject(new Error(`Failed to launch ${params.cli}: ${err.message}`));
+    });
+
+    if (options.input !== undefined) {
+      child.stdin?.write(options.input);
+    }
+    child.stdin?.end();
+
+    // 'close' fires after stdio streams are flushed, so captured output is complete.
+    child.on('close', (code, signal) => {
+      const exitCode = signal
+        ? 128 + (signal === 'SIGINT' ? 2 : signal === 'SIGTERM' ? 15 : 1)
+        : code ?? 1;
+      resolve({ exitCode, stdout, stderr });
+    });
+  });
+}

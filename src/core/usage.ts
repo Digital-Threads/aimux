@@ -22,6 +22,12 @@ export interface ProfileUsageSummary extends UsageTotals {
   models: Map<string, number>;
 }
 
+export interface SessionUsageSummary extends UsageTotals {
+  sessionId: string;
+  profile: string;
+  requests: number;
+}
+
 export interface UsageOptions {
   sinceMs?: number;
   profile?: string;
@@ -75,7 +81,7 @@ function numberValue(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
-function addUsage(summary: ProfileUsageSummary, usage: UsagePayload, model: string): void {
+function addUsage(summary: UsageTotals, usage: UsagePayload, model: string): void {
   const inputTokens = numberValue(usage.input_tokens);
   const cacheCreationInputTokens = numberValue(usage.cache_creation_input_tokens);
   const cacheReadInputTokens = numberValue(usage.cache_read_input_tokens);
@@ -137,28 +143,30 @@ export function parseSinceDuration(input: string, nowMs = Date.now()): number {
   return nowMs - amount * multiplier;
 }
 
-export function summarizeUsage(config: AimuxConfig, options: UsageOptions = {}): ProfileUsageSummary[] {
+interface UsageRecord {
+  profile: string;
+  sessionId: string;
+  model: string;
+  usage: UsagePayload;
+}
+
+// Single scan of all transcripts → deduplicated per-request usage records. Shared by
+// summarizeUsage (group by profile) and usageBySession (group by session) so both stay
+// in sync and the scan/dedup logic lives in one place.
+function collectUsageRecords(config: AimuxConfig, options: UsageOptions = {}): UsageRecord[] {
   const projectsRoot = join(expandHome(config.shared_source), 'projects');
-  const summaries = new Map<string, ProfileUsageSummary>();
-  const sessionSets = new Map<string, Set<string>>();
+  const records: UsageRecord[] = [];
+  if (!existsSync(projectsRoot)) return records;
+
   const seenRequests = new Set<string>();
   const history = loadSessionHistory();
   const profileMap = buildProfileSessionMap(config);
-
-  for (const profile of Object.keys(config.profiles)) {
-    summaries.set(profile, emptySummary(profile));
-    sessionSets.set(profile, new Set<string>());
-  }
-
-  if (!existsSync(projectsRoot)) {
-    return Array.from(summaries.values()).filter((s) => !options.profile || s.profile === options.profile);
-  }
 
   let cwdDirs: string[];
   try {
     cwdDirs = readdirSync(projectsRoot);
   } catch {
-    return Array.from(summaries.values()).filter((s) => !options.profile || s.profile === options.profile);
+    return records;
   }
 
   for (const cwdDir of cwdDirs) {
@@ -210,18 +218,33 @@ export function summarizeUsage(config: AimuxConfig, options: UsageOptions = {}):
         if (seenRequests.has(key)) continue;
         seenRequests.add(key);
 
-        if (!summaries.has(profile)) {
-          summaries.set(profile, emptySummary(profile));
-          sessionSets.set(profile, new Set<string>());
-        }
-        const summary = summaries.get(profile)!;
-        summary.requests += 1;
-        const model = formatModel(line.message?.model);
-        addUsage(summary, usage, model);
-        summary.models.set(model, (summary.models.get(model) ?? 0) + 1);
-        sessionSets.get(profile)!.add(sessionId);
+        records.push({ profile, sessionId, model: formatModel(line.message?.model), usage });
       }
     }
+  }
+
+  return records;
+}
+
+export function summarizeUsage(config: AimuxConfig, options: UsageOptions = {}): ProfileUsageSummary[] {
+  const summaries = new Map<string, ProfileUsageSummary>();
+  const sessionSets = new Map<string, Set<string>>();
+
+  for (const profile of Object.keys(config.profiles)) {
+    summaries.set(profile, emptySummary(profile));
+    sessionSets.set(profile, new Set<string>());
+  }
+
+  for (const rec of collectUsageRecords(config, options)) {
+    if (!summaries.has(rec.profile)) {
+      summaries.set(rec.profile, emptySummary(rec.profile));
+      sessionSets.set(rec.profile, new Set<string>());
+    }
+    const summary = summaries.get(rec.profile)!;
+    summary.requests += 1;
+    addUsage(summary, rec.usage, rec.model);
+    summary.models.set(rec.model, (summary.models.get(rec.model) ?? 0) + 1);
+    sessionSets.get(rec.profile)!.add(rec.sessionId);
   }
 
   for (const [profile, sessions] of sessionSets) {
@@ -234,10 +257,42 @@ export function summarizeUsage(config: AimuxConfig, options: UsageOptions = {}):
     .sort((a, b) => {
       if (a.profile === 'unknown') return 1;
       if (b.profile === 'unknown') return -1;
-      const totalA = a.inputTokens + a.cacheCreationInputTokens + a.cacheReadInputTokens + a.outputTokens;
-      const totalB = b.inputTokens + b.cacheCreationInputTokens + b.cacheReadInputTokens + b.outputTokens;
-      return totalB - totalA || a.profile.localeCompare(b.profile);
+      return totalTokens(b) - totalTokens(a) || a.profile.localeCompare(b.profile);
     });
+}
+
+function emptySessionSummary(sessionId: string, profile: string): SessionUsageSummary {
+  return {
+    sessionId,
+    profile,
+    requests: 0,
+    inputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    outputTokens: 0,
+    estimatedCostUsd: 0,
+  };
+}
+
+// Per-session usage breakdown — same deduplicated transcript scan as summarizeUsage but
+// keyed by session_id, so Loom can attribute spend to a task once task↔session_id is
+// linked (the "spent" source for exact per-task cost).
+export function usageBySession(config: AimuxConfig, options: UsageOptions = {}): SessionUsageSummary[] {
+  const sessions = new Map<string, SessionUsageSummary>();
+
+  for (const rec of collectUsageRecords(config, options)) {
+    let summary = sessions.get(rec.sessionId);
+    if (!summary) {
+      summary = emptySessionSummary(rec.sessionId, rec.profile);
+      sessions.set(rec.sessionId, summary);
+    }
+    summary.requests += 1;
+    addUsage(summary, rec.usage, rec.model);
+  }
+
+  return Array.from(sessions.values()).sort(
+    (a, b) => totalTokens(b) - totalTokens(a) || a.sessionId.localeCompare(b.sessionId),
+  );
 }
 
 export function totalTokens(summary: UsageTotals): number {
