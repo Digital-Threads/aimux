@@ -4,6 +4,48 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.15.0] - 2026-06-19
+
+### Added
+- **Live-session core API (`openSession`).** The persistent sibling of
+  `runProfileHeadless`: keeps ONE Claude process alive under a profile and drives a
+  multi-turn conversation over the verified stream-json protocol. It owns every
+  Claude-CLI detail (the `-p` print flags, stream-json framing,
+  `--session-id`/`--resume`, `--settings`/`--mcp-config`/permission flags) so a
+  consumer asks for a *session on a profile*, never a command line. Supports
+  `send`/`interject`, per-turn cost and permission-denial reporting, assistant
+  streaming with tool labels, a reply watchdog, and dead-process recovery so a stuck
+  turn never hangs the caller. `relocate(toProfile)` switches account mid-session
+  (rate-limit recovery) via `--resume`, preserving the conversation — the core
+  multi-subscription domain. Also injects `LOOM_TASK_ID`/`LOOM_WORKFLOW_ID` (the
+  shared-ID "spine"), same as the headless path.
+- `core` barrel now re-exports `openSession`, `buildSessionArgs` and the
+  `OpenSessionOptions` / `SessionEvent` / `TurnResult` / `LiveSession` types.
+
+### Backward compatibility
+- Purely additive. The new module is lazy — nothing in the interactive CLI imports
+  it, and it has no import-time side effects — so standalone `aimux` behavior is
+  unchanged. No existing export or signature was touched.
+
+## [0.14.0] - 2026-06-14
+
+### Added
+- **`runProfileHeadless()` core API.** Non-interactive launch: pipes stdio and
+  captures `stdout`/`stderr`/`exitCode` instead of inheriting the terminal. The
+  interactive `launchProfile` is untouched. Injects `LOOM_TASK_ID`/`LOOM_WORKFLOW_ID`
+  into the spawned session env so token-pilot / task-journal telemetry can tie to the
+  same task (the shared-ID "spine"). CLI-agnostic — the caller passes print/prompt
+  flags via `extraArgs`.
+- **`usageBySession()` core API.** Per-session usage breakdown (the "spent" source for
+  exact per-task cost). Internals refactored into a shared `collectUsageRecords`
+  scanner so per-profile and per-session views stay in sync; `summarizeUsage` output
+  is unchanged.
+
+### Backward compatibility
+- No existing behavior changes. New env vars are read only in the new headless path
+  (no env → identical behavior); `launchProfile` / `summarizeUsage` public output is
+  untouched.
+
 ## [0.13.0] - 2026-06-11
 
 ### Fixed
