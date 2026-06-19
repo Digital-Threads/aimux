@@ -46,6 +46,8 @@ export type { DetectedDir, InitResult } from './init.js';
 
 export { buildRunParams, launchProfile, runProfileHeadless, looksLikeSubcommand, parseDotenv, loadProfileEnv } from './run.js';
 export type { RunOptions, RunParams, HeadlessOptions, HeadlessResult } from './run.js';
+export { openSession, buildSessionArgs } from './liveSession.js';
+export type { OpenSessionOptions, SessionEvent, TurnResult, LiveSession } from './liveSession.js';
 
 export {
   collectApiCredentials,
