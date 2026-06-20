@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   loadConfig, saveConfig, addProfile, removeProfile, expandHome,
-  ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs,
+  ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs, detectCodex,
   syncProfile, syncAllProfiles, checkAllProfiles,
   launchProfile, getLastProfile, recordHistory, getProfile,
   looksLikeSubcommand, adapterFor,
@@ -149,9 +149,17 @@ program
   .option('-s, --source <path>', 'Path to shared source directory (default: auto-detect)')
   .action((options: { source?: string }) => {
     try {
+      const codexHint = () => {
+        if (detectCodex()) {
+          console.log('\nCodex detected (~/.codex). Add a Codex profile with:');
+          console.log('  aimux profile add codework --cli codex');
+        }
+      };
+
       if (options.source) {
         const result = initFromSource(options.source);
         console.log(`✓ Initialized with source: ${result.source}`);
+        codexHint();
         return;
       }
 
@@ -174,6 +182,7 @@ program
         const copied = p.privatesCopied.length > 0 ? `, private: ${p.privatesCopied.join(', ')}` : '';
         console.log(`  ${p.name}: ${p.sync.created.length} symlinks created${copied}`);
       }
+      codexHint();
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);
