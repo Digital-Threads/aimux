@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 import { getProfile } from './config.js';
 import { expandHome } from './paths.js';
+import { looksLikeSubcommand } from './subcommand.js';
 
 export interface RunOptions {
   model?: string;
@@ -96,13 +97,7 @@ export interface RunParams {
   profilePath: string;
 }
 
-const SUBCOMMAND_TOKEN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
-
-export function looksLikeSubcommand(arg: string | undefined): boolean {
-  if (!arg) return false;
-  if (arg.startsWith('-')) return false;
-  return SUBCOMMAND_TOKEN.test(arg);
-}
+export { looksLikeSubcommand } from './subcommand.js';
 
 export function buildRunParams(
   config: AimuxConfig,
