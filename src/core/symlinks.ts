@@ -7,6 +7,8 @@ import { join, resolve, sep, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { AimuxConfig } from '../types/index.js';
 import { expandHome } from './paths.js';
+import { sourceFor } from './config.js';
+import { adapterFor } from './adapters/index.js';
 
 export interface SyncResult {
   created: string[];
@@ -275,9 +277,10 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
     };
   }
 
-  const sourcePath = expandHome(config.shared_source);
+  const adapter = adapterFor(profile.cli);
+  const sourcePath = expandHome(sourceFor(config, profile.cli));
   const profilePath = expandHome(profile.path);
-  const privateSet = new Set(config.private);
+  const configPrivate = new Set(config.private);
 
   if (!existsSync(profilePath)) {
     mkdirSync(profilePath, { recursive: true });
@@ -298,7 +301,7 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
     const targetInProfile = join(profilePath, entry);
     const sourceTarget = join(sourcePath, entry);
 
-    if (privateSet.has(entry)) {
+    if (!adapter.isShared(entry, configPrivate)) {
       result.private.push(entry);
       continue;
     }
@@ -356,9 +359,10 @@ export function checkProfileHealth(config: AimuxConfig, profileName: string): He
 
   if (profile.is_source) return report;
 
-  const sourcePath = expandHome(config.shared_source);
+  const adapter = adapterFor(profile.cli);
+  const sourcePath = expandHome(sourceFor(config, profile.cli));
   const profilePath = expandHome(profile.path);
-  const privateSet = new Set(config.private);
+  const configPrivate = new Set(config.private);
 
   if (!existsSync(profilePath)) {
     report.missing.push('(profile directory)');
@@ -369,7 +373,7 @@ export function checkProfileHealth(config: AimuxConfig, profileName: string): He
   const profileEntries = readdirSync(profilePath);
 
   for (const entry of sourceEntries) {
-    if (privateSet.has(entry)) continue;
+    if (!adapter.isShared(entry, configPrivate)) continue;
 
     const targetInProfile = join(profilePath, entry);
     if (!lstatExists(targetInProfile)) {
@@ -406,7 +410,7 @@ export function checkProfileHealth(config: AimuxConfig, profileName: string): He
   }
 
   for (const entry of profileEntries) {
-    if (privateSet.has(entry)) continue;
+    if (!adapter.isShared(entry, configPrivate)) continue;
     if (!sourceEntries.has(entry)) {
       const stat = lstatSync(join(profilePath, entry));
       if (stat.isSymbolicLink()) {

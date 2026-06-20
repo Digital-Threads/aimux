@@ -2,14 +2,13 @@ import { spawn, spawnSync } from 'node:child_process';
 import type { AimuxConfig } from '../types/index.js';
 import { getProfile } from './config.js';
 import { expandHome } from './paths.js';
+import { adapterFor } from './adapters/index.js';
 
 function buildEnv(config: AimuxConfig, profileName: string): NodeJS.ProcessEnv {
   const profile = getProfile(config, profileName);
   const profilePath = expandHome(profile.path);
   const env: NodeJS.ProcessEnv = { ...process.env };
-  if (!profile.is_source) {
-    env.CLAUDE_CONFIG_DIR = profilePath;
-  }
+  Object.assign(env, adapterFor(profile.cli).configDirEnv(profilePath, profile.is_source === true));
   return env;
 }
 
@@ -127,8 +126,7 @@ export async function resumeSession(
   options: { cwd?: string; forkSession?: boolean } = {},
 ): Promise<number> {
   const profile = getProfile(config, profileName);
-  const args = ['--resume', sessionId];
-  if (options.forkSession) args.push('--fork-session');
+  const args = adapterFor(profile.cli).resumeArgs(sessionId, { fork: options.forkSession });
   await prepareTtyForHandoff();
   return new Promise((resolve, reject) => {
     const child = spawn(profile.cli, args, {

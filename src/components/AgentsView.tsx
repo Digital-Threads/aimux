@@ -14,7 +14,7 @@ import { summarizeUsage, totalTokens, type ProfileUsageSummary } from '../core/u
 
 export type AgentsAction =
   | { type: 'exit' }
-  | { type: 'attach'; profile: string; sessionId: string; cwd: string; live: boolean };
+  | { type: 'attach'; profile: string; sessionId: string; cwd: string; live: boolean; cli: string };
 
 interface Props {
   config: AimuxConfig;
@@ -555,6 +555,7 @@ export function AgentsView({ config, onAction }: Props) {
       profile,
       sessionId: currentSession.sessionId,
       cwd: currentSession.cwd,
+      cli: currentSession.cli,
       live:
         currentSession.isBackground &&
         currentSession.state !== 'done' &&
@@ -805,6 +806,7 @@ export function AgentsView({ config, onAction }: Props) {
               </Box>
               <Box width={50}>
                 {pinned.has(s.sessionId) && <Text color="yellow">★ </Text>}
+                {s.cli !== 'claude' && <Text color="magenta">{s.cli} </Text>}
                 <Text bold={isSel} color={isSel ? 'cyan' : undefined} wrap="truncate">{s.name}</Text>
               </Box>
               <Box width={22}>

@@ -8,10 +8,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   loadConfig, saveConfig, addProfile, removeProfile, expandHome,
-  ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs,
+  ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs, detectCodex,
   syncProfile, syncAllProfiles, checkAllProfiles,
   launchProfile, getLastProfile, recordHistory, getProfile,
-  looksLikeSubcommand,
+  looksLikeSubcommand, adapterFor,
   summarizeUsage, parseSinceDuration, totalTokens,
   loadProfileEnv, collectApiCredentials, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson,
 } from './core/index.js';
@@ -149,9 +149,17 @@ program
   .option('-s, --source <path>', 'Path to shared source directory (default: auto-detect)')
   .action((options: { source?: string }) => {
     try {
+      const codexHint = () => {
+        if (detectCodex()) {
+          console.log('\nCodex detected (~/.codex). Add a Codex profile with:');
+          console.log('  aimux profile add codework --cli codex');
+        }
+      };
+
       if (options.source) {
         const result = initFromSource(options.source);
         console.log(`✓ Initialized with source: ${result.source}`);
+        codexHint();
         return;
       }
 
@@ -174,6 +182,7 @@ program
         const copied = p.privatesCopied.length > 0 ? `, private: ${p.privatesCopied.join(', ')}` : '';
         console.log(`  ${p.name}: ${p.sync.created.length} symlinks created${copied}`);
       }
+      codexHint();
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);
@@ -388,7 +397,7 @@ program
 
       type PendingAction =
         | { type: 'exit' }
-        | { type: 'attach'; profile: string; sessionId: string; cwd: string; live: boolean };
+        | { type: 'attach'; profile: string; sessionId: string; cwd: string; live: boolean; cli: string };
 
       const { existsSync: existsSyncFn } = await import('node:fs');
 
@@ -413,6 +422,18 @@ program
             running = false;
             break;
           case 'attach': {
+            // Cross-CLI attach (e.g. a claude session under a codex profile) is NOT a
+            // native resume — the transcripts are mutually unreadable. That is the
+            // summary-handoff path (`aimux handoff`), shipped separately. Guard it here.
+            const targetCli = getProfile(config, action.profile).cli;
+            if (targetCli !== action.cli) {
+              console.error(
+                `Cannot resume a ${action.cli} session under a ${targetCli} profile — ` +
+                `cross-CLI continuation uses summary handoff (coming via 'aimux handoff'). ` +
+                `Attach via a ${action.cli} profile instead.`,
+              );
+              break;
+            }
             // Same as `aimux run <profile> --resume <id>`: resume the shared
             // transcript under the chosen profile. A live session needs
             // --fork-session (claude refuses to resume a running one otherwise).
@@ -444,8 +465,9 @@ program
       .option('-m, --model <model>', 'Default model for this profile')
       .option('--fallback-model <model>', 'Fallback model when the primary is overloaded/unavailable')
       .option('--api', 'Configure a 3rd-party API endpoint instead of a Claude subscription')
+      .option('--cli <cli>', 'CLI for this profile (claude, codex, …)', 'claude')
       .description('Add a new profile')
-      .action(async (name: string, options: { auth: boolean; model?: string; fallbackModel?: string; api?: boolean }) => {
+      .action(async (name: string, options: { auth: boolean; model?: string; fallbackModel?: string; api?: boolean; cli?: string }) => {
         try {
           const config = requireConfig();
 
@@ -463,7 +485,7 @@ program
             apiVars = await collectApiCredentials();
           }
 
-          const updated = addProfile(config, name, { model: options.model, fallbackModel: options.fallbackModel });
+          const updated = addProfile(config, name, { cli: options.cli, model: options.model, fallbackModel: options.fallbackModel });
           saveConfig(updated);
           const profilePath = ensureProfileDir(updated, name);
           const sync = syncProfile(updated, name);
@@ -639,6 +661,24 @@ program
   });
 
 program
+  .command('handoff <sessionId>')
+  .description('Continue a session under another profile/CLI via summary handoff')
+  .requiredOption('--to <profile>', 'Target profile to continue the session under')
+  .action(async (sessionId: string, options: { to: string }) => {
+    try {
+      const config = requireConfig();
+      const toProfile = resolveProfile(config, options.to);
+      const { handoffSession } = await import('./core/handoff.js');
+      console.log(`Summarizing session '${sessionId}' and handing off to '${toProfile}'…`);
+      const res = await handoffSession(config, sessionId, toProfile);
+      if (res.exitCode !== 0) console.error(`Handoff target exited with code ${res.exitCode}`);
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
   .command('doctor')
   .description('Health check — find broken symlinks, missing shared entries, and local conflicts')
   .action(() => {
@@ -687,24 +727,23 @@ program
           const config = requireConfig();
           const resolved = resolveProfile(config, profile);
           const p = getProfile(config, resolved);
+          const adapter = adapterFor(p.cli);
           const profilePath = expandHome(p.path);
           const env: Record<string, string> = loadProfileEnv(p, profilePath);
-          if (!p.is_source) {
-            env.CLAUDE_CONFIG_DIR = profilePath;
-          }
+          Object.assign(env, adapter.configDirEnv(profilePath, p.is_source === true));
           const permWarning = checkDotenvPermissions(profilePath);
           if (permWarning) {
             console.error(`\x1b[33m⚠ ${permWarning}\x1b[0m`);
           }
           console.log(`Launching auth for profile '${resolved}'...`);
-          const result = spawnSync(p.cli, ['auth', 'login'], {
+          const result = spawnSync(p.cli, adapter.authArgs(), {
             stdio: 'inherit',
             env: { ...process.env, ...env },
           });
           if (result.error) {
             throw new Error(`Failed to launch ${p.cli}: ${result.error.message}`);
           }
-          const hasAuth = existsSync(join(profilePath, '.credentials.json'));
+          const hasAuth = existsSync(join(profilePath, adapter.credentialsFile()));
           if (hasAuth) {
             console.log(`✓ Profile '${resolved}' authenticated`);
           }

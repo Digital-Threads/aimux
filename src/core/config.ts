@@ -3,6 +3,7 @@ import { parse, stringify } from 'yaml';
 import type { AimuxConfig, ProfileConfig, HistoryEntry } from '../types/index.js';
 import { DEFAULT_CONFIG, DEFAULT_PRIVATE_ELEMENTS } from '../types/index.js';
 import { getConfigPath, getHistoryPath, getAimuxDir, getProfilesDir, expandHome } from './paths.js';
+import { adapterFor } from './adapters/index.js';
 
 export function loadConfig(): AimuxConfig | null {
   const configPath = getConfigPath();
@@ -54,17 +55,23 @@ export function addProfile(
   if (config.profiles[name]) {
     throw new Error(`Profile '${name}' already exists`);
   }
+  const cli = options.cli ?? 'claude';
   const profilePath = `~/.aimux/profiles/${name}`;
   const updated = { ...config };
   updated.profiles = {
     ...config.profiles,
     [name]: {
-      cli: options.cli ?? 'claude',
+      cli,
       model: options.model,
       fallback_model: options.fallbackModel,
       path: profilePath,
     },
   };
+  // A non-claude CLI needs its own source-of-truth registered so sharing resolves to
+  // the right dir (not the legacy claude shared_source). Default to the adapter's source.
+  if (cli !== 'claude' && !config.shared_sources?.[cli]) {
+    updated.shared_sources = { ...config.shared_sources, [cli]: adapterFor(cli).defaultSource() };
+  }
   return updated;
 }
 
@@ -96,6 +103,13 @@ export function getSourceProfile(config: AimuxConfig): [string, ProfileConfig] {
     throw new Error('No source profile found in config');
   }
   return entry;
+}
+
+/** Resolve the source-of-truth dir for a CLI. Per-CLI `shared_sources` wins; absence
+ *  falls back to the legacy single `shared_source` (the claude source), preserving
+ *  pre-multi-CLI behavior. */
+export function sourceFor(config: AimuxConfig, cli: string): string {
+  return config.shared_sources?.[cli] ?? config.shared_source;
 }
 
 export function validateConfig(config: unknown): string[] {

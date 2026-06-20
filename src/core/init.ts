@@ -70,6 +70,26 @@ export function detectClaudeDirs(): DetectedDir[] {
   return claudeDirs;
 }
 
+/** Detect a Codex source dir (~/.codex) by its config markers. Returns the path or null.
+ *  Used to pre-register `shared_sources.codex` at init so codex profiles resolve to it. */
+export function detectCodex(): string | null {
+  const codexPath = join(homedir(), '.codex');
+  if (!existsSync(codexPath)) return null;
+  try {
+    if (!lstatSync(codexPath).isDirectory()) return null;
+  } catch {
+    return null;
+  }
+  const CODEX_MARKERS = ['config.toml', 'auth.json', 'sessions', 'skills'];
+  let contents: string[];
+  try {
+    contents = readdirSync(codexPath);
+  } catch {
+    return null;
+  }
+  return contents.some((item) => CODEX_MARKERS.includes(item)) ? codexPath : null;
+}
+
 export function initFromSource(
   sourcePath: string,
   extraProfiles?: Array<{ name: string; existingPath?: string; model?: string }>,
@@ -97,6 +117,13 @@ export function initFromSource(
     },
     private: [...DEFAULT_PRIVATE_ELEMENTS],
   };
+
+  // Pre-register a detected Codex source so `aimux profile add <name> --cli codex`
+  // resolves sharing to ~/.codex. Profiles stay opt-in (created explicitly).
+  const codexSource = detectCodex();
+  if (codexSource) {
+    config.shared_sources = { claude: resolvedSource, codex: codexSource };
+  }
 
   const result: InitResult = {
     configCreated: true,

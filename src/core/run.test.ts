@@ -268,3 +268,22 @@ describe('runProfileHeadless', () => {
     expect(res.stdout).toBe('');
   });
 });
+
+describe('buildRunParams — claude invariant (characterization)', () => {
+  it('produces the model flag and CLAUDE_CONFIG_DIR exactly as before', () => {
+    const p = buildRunParams(makeConfig(), 'work');
+    expect(p.cli).toBe('claude');
+    expect(p.args).toEqual(['--model', 'claude-opus-4-6']);
+    expect(p.env.CLAUDE_CONFIG_DIR).toBe('/home/user/.aimux/profiles/work');
+  });
+
+  it('suppresses the model flag for a subcommand and appends extraArgs', () => {
+    const p = buildRunParams(makeConfig(), 'work', { extraArgs: ['mcp', 'list'] });
+    expect(p.args).toEqual(['mcp', 'list']);
+  });
+
+  it('honors a user-passed --model over the profile default', () => {
+    const p = buildRunParams(makeConfig(), 'work', { extraArgs: ['--model', 'claude-sonnet-4-6'] });
+    expect(p.args).toEqual(['--model', 'claude-sonnet-4-6']);
+  });
+});

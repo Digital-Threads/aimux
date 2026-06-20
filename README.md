@@ -112,6 +112,8 @@ aimux profile update w --unset-fallback-model   # remove it
 | `aimux agents` | Multi-profile agent view — see and manage claude background sessions across **all** profiles in one TUI |
 | `aimux profile add <name>` | Create new profile with symlinks |
 | `aimux profile add <name> --api` | Create a 3rd-party API profile (interactive endpoint + token prompt) |
+| `aimux profile add <name> --cli codex` | Create a profile for another AI CLI (e.g. Codex) |
+| `aimux handoff <sessionId> --to <profile>` | Continue a session under another profile/CLI via summary handoff |
 | `aimux profile update <name>` | Update model/cli settings |
 | `aimux profile update <name> --fallback-model <model>` | Set a fallback model, used when the primary is overloaded/unavailable |
 | `aimux profile update <name> --unset-fallback-model` | Remove the fallback model |
@@ -168,6 +170,52 @@ real, path-rewritten copies. `~/.claude` stays the source of truth — install o
 plugins from your main profile (or with `CLAUDE_CONFIG_DIR=~/.claude claude plugin …`)
 and every profile picks them up on its next run. A plugin installed from inside a
 profile is merged back into the shared source automatically.
+
+## Multiple AI CLIs (Codex)
+
+aimux isn't claude-only. A profile's `cli` field selects which AI CLI it runs, so you
+can keep claude **and** Codex subscriptions side by side — same shared brain, isolated
+auth — and even hand a live conversation from one to the other when a limit hits.
+
+```bash
+aimux profile add codework --cli codex   # a Codex profile
+aimux auth login codework                # runs `codex login` under an isolated CODEX_HOME
+aimux run codework                        # launches Codex with the right model flag
+aimux agents                              # claude + codex sessions in one view (CLI-badged)
+```
+
+- **Isolation per CLI.** Each CLI gets its own config-dir env (`CLAUDE_CONFIG_DIR` /
+  `CODEX_HOME`), so subscriptions never collide.
+- **Per-CLI source-of-truth.** `shared_sources` maps each CLI to its source
+  (`claude → ~/.claude`, `codex → ~/.codex`); the legacy `shared_source` stays as the
+  claude alias.
+- **Per-CLI sharing.** claude shares everything except `private`; Codex shares a
+  knowledge allowlist (`skills`, `rules`, `memories`) and keeps `auth.json` /
+  `config.toml` / `sessions/` private. (Codex plugin sharing is a planned follow-up.)
+- **claude is untouched.** Multi-CLI is strictly opt-in — without a non-claude profile
+  nothing changes.
+
+### Cross-CLI handoff (limit failover)
+
+Hit a subscription limit mid-session? Continue it under another CLI:
+
+```bash
+aimux handoff <sessionId> --to codework
+```
+
+The two CLIs' transcripts are mutually unreadable, so this is a **summary handoff**, not
+a native resume: aimux reads the source transcript, summarizes it with the target
+profile (self-contained — the target CLI does the summarizing), then launches the target
+seeded with that summary. Same-CLI continuation (claude↔claude, codex↔codex) still uses
+native resume (`aimux run <profile> --resume <id>`). Note: the *conversation context*
+carries over, not the model — the target continues with its own model.
+
+### Other models via an endpoint
+
+DeepSeek, local models (Ollama/LM Studio), and other Anthropic-compatible providers work
+today through an API profile (`aimux profile add <name> --api`, see below) by pointing
+`ANTHROPIC_BASE_URL` at the provider or a proxy. (Costs shown by `aimux usage` are
+estimated against claude pricing and will be off for other models.)
 
 ## Per-profile environment variables
 
