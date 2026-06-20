@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 import { getProfile } from './config.js';
 import { expandHome } from './paths.js';
-import { looksLikeSubcommand } from './subcommand.js';
+import { adapterFor } from './adapters/index.js';
 
 export interface RunOptions {
   model?: string;
@@ -107,28 +107,27 @@ export function buildRunParams(
   const profile = getProfile(config, profileName);
   const profilePath = expandHome(profile.path);
   const model = options.model ?? profile.model;
+  const adapter = adapterFor(profile.cli);
 
   const extraArgs = options.extraArgs ?? [];
   const firstExtra = extraArgs[0];
-  const isSubcommand = looksLikeSubcommand(firstExtra);
+  const isSubcommand = adapter.isSubcommand(firstExtra);
   const userPassedModel = extraArgs.some((a) => a === '--model' || a === '-m');
   const userPassedFallback = extraArgs.some((a) => a === '--fallback-model');
 
-  const args: string[] = [];
-  if (model && !isSubcommand && !userPassedModel) {
-    args.push('--model', model);
-  }
-  if (profile.fallback_model && !isSubcommand && !userPassedFallback) {
-    args.push('--fallback-model', profile.fallback_model);
-  }
+  const args: string[] = adapter.modelArgs({
+    model,
+    fallbackModel: profile.fallback_model,
+    isSubcommand,
+    userPassedModel,
+    userPassedFallback,
+  });
   if (extraArgs.length > 0) {
     args.push(...extraArgs);
   }
 
   const env: Record<string, string> = loadProfileEnv(profile, profilePath);
-  if (!profile.is_source) {
-    env.CLAUDE_CONFIG_DIR = profilePath;
-  }
+  Object.assign(env, adapter.configDirEnv(profilePath, profile.is_source === true));
 
   return {
     cli: profile.cli,
