@@ -1,6 +1,8 @@
 import type { AimuxConfig } from '../types/index.js';
 import { listAllSessions, type SessionState } from './sessions.js';
 import { scanInteractiveSessions } from './sessionScanner.js';
+import { scanCodexInteractive } from './codexSessionScanner.js';
+import { sourceFor } from './config.js';
 import { loadSessionHistory, type SessionHistoryEntry } from './sessionHistory.js';
 import { buildProfileSessionMap } from './profileSessionMap.js';
 
@@ -9,6 +11,8 @@ export interface UnifiedSession {
   short: string;
   name: string;
   intent: string;
+  /** Which CLI produced this session (claude | codex | …). */
+  cli: string;
   cwd: string;
   cwdHashDir?: string;
   state: SessionState;
@@ -64,6 +68,7 @@ export function unifyAllSessions(
       short: shortId(s.sessionId),
       name: deriveName(s.intent, s.sessionId, s.title),
       intent: s.intent,
+      cli: 'claude',
       cwd: s.cwd,
       cwdHashDir: s.cwdHashDir,
       state: 'unknown',
@@ -75,6 +80,34 @@ export function unifyAllSessions(
       isInteractive: true,
       isBackground: false,
     });
+  }
+
+  // Seed codex interactive sessions from each codex source-of-truth. Tagged cli:'codex'
+  // so the agents view can label and route actions per CLI.
+  const codexClis = new Set(
+    Object.values(config.profiles).map((p) => p.cli).filter((c) => c === 'codex'),
+  );
+  for (const cli of codexClis) {
+    for (const s of scanCodexInteractive(sourceFor(config, cli), { windowDays: opts.windowDays, now: Date.now() })) {
+      if (bySessionId.has(s.sessionId)) continue;
+      bySessionId.set(s.sessionId, {
+        sessionId: s.sessionId,
+        short: shortId(s.sessionId),
+        name: deriveName(s.intent, s.sessionId, s.title),
+        intent: s.intent,
+        cli,
+        cwd: s.cwd,
+        cwdHashDir: s.cwdHashDir,
+        state: 'unknown',
+        detail: '',
+        updatedAtMs: s.updatedAtMs,
+        createdAtMs: s.createdAtMs,
+        events: s.events,
+        lastProfile: resolveLastProfile(s.sessionId),
+        isInteractive: true,
+        isBackground: false,
+      });
+    }
   }
 
   // Augment with background sessions from any profile's jobs/state.json.
@@ -99,6 +132,7 @@ export function unifyAllSessions(
           short: bg.short || shortId(bg.sessionId),
           name: bg.name,
           intent: bg.intent,
+          cli: config.profiles[profileName]?.cli ?? 'claude',
           cwd: bg.cwd,
           state: bg.state,
           detail: bg.detail,
