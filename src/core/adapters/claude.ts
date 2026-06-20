@@ -48,4 +48,6 @@ export const claudeAdapter: CliAdapter = {
   headlessArgs(prompt) {
     return ['-p', prompt];
   },
+
+  headlessCaptureToFile: false,
 };

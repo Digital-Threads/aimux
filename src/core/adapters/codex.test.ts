@@ -77,3 +77,18 @@ describe('resumeArgs', () => {
     expect(adapterFor('claude').resumeArgs('id-1', { fork: true })).toEqual(['--resume', 'id-1', '--fork-session']);
   });
 });
+
+describe('headlessArgs (summarizer capture)', () => {
+  it('claude prints to stdout via -p', () => {
+    const c = adapterFor('claude');
+    expect(c.headlessArgs('hi')).toEqual(['-p', 'hi']);
+    expect(c.headlessCaptureToFile).toBe(false);
+  });
+
+  it('codex writes the final message to outFile via exec --output-last-message', () => {
+    const a = adapterFor('codex');
+    expect(a.headlessCaptureToFile).toBe(true);
+    expect(a.headlessArgs('hi', '/tmp/out.txt')).toEqual(['exec', '--output-last-message', '/tmp/out.txt', 'hi']);
+    expect(a.headlessArgs('hi')).toEqual(['exec', 'hi']);
+  });
+});

@@ -40,7 +40,13 @@ export interface CliAdapter {
    *  codex: `resume <id>`). */
   resumeArgs(sessionId: string, opts?: { fork?: boolean }): string[];
 
-  /** Args for a non-interactive one-shot with a prompt, captured via runProfileHeadless
-   *  (claude: `-p <prompt>`; codex: `exec <prompt>`). Used by the cross-CLI summarizer. */
-  headlessArgs(prompt: string): string[];
+  /** Args for a non-interactive one-shot with a prompt, captured via runProfileHeadless.
+   *  claude prints the answer to stdout (`-p <prompt>`); codex's stdout is noisy, so it
+   *  writes just the final message to `outFile` (`exec --output-last-message <f> <prompt>`).
+   *  Used by the cross-CLI summarizer. */
+  headlessArgs(prompt: string, outFile?: string): string[];
+
+  /** True when headless output must be read from `outFile` (codex) rather than stdout
+   *  (claude). The summarizer uses this to capture a clean result. */
+  headlessCaptureToFile: boolean;
 }

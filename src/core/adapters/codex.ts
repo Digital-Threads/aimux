@@ -45,7 +45,11 @@ export const codexAdapter: CliAdapter = {
     return ['resume', sessionId];
   },
 
-  headlessArgs(prompt) {
-    return ['exec', prompt];
+  headlessArgs(prompt, outFile) {
+    // codex exec stdout is noisy (header, token counts, echo). --output-last-message
+    // writes ONLY the final assistant message, so the summarizer reads a clean result.
+    return outFile ? ['exec', '--output-last-message', outFile, prompt] : ['exec', prompt];
   },
+
+  headlessCaptureToFile: true,
 };

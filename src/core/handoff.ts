@@ -1,5 +1,7 @@
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { randomBytes } from 'node:crypto';
 import type { AimuxConfig } from '../types/index.js';
 import { expandHome } from './paths.js';
 import { sourceFor, getProfile } from './config.js';
@@ -92,6 +94,20 @@ const defaultDeps: HandoffDeps = {
   readTranscript,
   async summarize(config, viaProfile, prompt) {
     const adapter = adapterFor(getProfile(config, viaProfile).cli);
+    if (adapter.headlessCaptureToFile) {
+      // codex: read the clean final message from a temp file (stdout is noisy).
+      const outFile = join(tmpdir(), `aimux-handoff-${process.pid}-${randomBytes(4).toString('hex')}.txt`);
+      try {
+        await runProfileHeadless(config, viaProfile, { extraArgs: adapter.headlessArgs(prompt, outFile) });
+        return existsSync(outFile) ? readFileSync(outFile, 'utf-8').trim() : '';
+      } finally {
+        try {
+          unlinkSync(outFile);
+        } catch {
+          /* best-effort cleanup */
+        }
+      }
+    }
     const res = await runProfileHeadless(config, viaProfile, { extraArgs: adapter.headlessArgs(prompt) });
     return res.stdout.trim();
   },
