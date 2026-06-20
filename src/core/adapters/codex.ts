@@ -44,4 +44,8 @@ export const codexAdapter: CliAdapter = {
     // codex resume <uuid>; codex has no fork-on-resume flag.
     return ['resume', sessionId];
   },
+
+  headlessArgs(prompt) {
+    return ['exec', prompt];
+  },
 };

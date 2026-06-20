@@ -44,4 +44,8 @@ export const claudeAdapter: CliAdapter = {
     if (opts?.fork) args.push('--fork-session');
     return args;
   },
+
+  headlessArgs(prompt) {
+    return ['-p', prompt];
+  },
 };

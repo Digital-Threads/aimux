@@ -76,4 +76,7 @@ export type { ModelPricing } from './pricing.js';
 export { unifyAllSessions, cachedUnifiedSessions, deriveName } from './unifiedSessions.js';
 export type { UnifiedSession } from './unifiedSessions.js';
 
+export { handoffSession, buildHandoffPrompt, buildSummarizePrompt, readTranscript } from './handoff.js';
+export type { HandoffDeps, HandoffResult } from './handoff.js';
+
 export { loadActiveProfile, saveActiveProfile, getActiveProfilePath } from './activeProfile.js';

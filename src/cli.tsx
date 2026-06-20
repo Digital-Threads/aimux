@@ -652,6 +652,24 @@ program
   });
 
 program
+  .command('handoff <sessionId>')
+  .description('Continue a session under another profile/CLI via summary handoff')
+  .requiredOption('--to <profile>', 'Target profile to continue the session under')
+  .action(async (sessionId: string, options: { to: string }) => {
+    try {
+      const config = requireConfig();
+      const toProfile = resolveProfile(config, options.to);
+      const { handoffSession } = await import('./core/handoff.js');
+      console.log(`Summarizing session '${sessionId}' and handing off to '${toProfile}'…`);
+      const res = await handoffSession(config, sessionId, toProfile);
+      if (res.exitCode !== 0) console.error(`Handoff target exited with code ${res.exitCode}`);
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
   .command('doctor')
   .description('Health check — find broken symlinks, missing shared entries, and local conflicts')
   .action(() => {

@@ -39,4 +39,8 @@ export interface CliAdapter {
   /** Args to resume an existing session by id (claude: `--resume <id>` [+ `--fork-session`];
    *  codex: `resume <id>`). */
   resumeArgs(sessionId: string, opts?: { fork?: boolean }): string[];
+
+  /** Args for a non-interactive one-shot with a prompt, captured via runProfileHeadless
+   *  (claude: `-p <prompt>`; codex: `exec <prompt>`). Used by the cross-CLI summarizer. */
+  headlessArgs(prompt: string): string[];
 }
