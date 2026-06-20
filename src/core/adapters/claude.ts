@@ -26,4 +26,16 @@ export const claudeAdapter: CliAdapter = {
   isShared(entry, configPrivate) {
     return !configPrivate.has(entry);
   },
+
+  authArgs() {
+    return ['auth', 'login'];
+  },
+
+  credentialsFile() {
+    return '.credentials.json';
+  },
+
+  defaultSource() {
+    return '~/.claude';
+  },
 };

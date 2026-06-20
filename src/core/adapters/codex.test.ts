@@ -46,3 +46,22 @@ describe('codexAdapter run-path', () => {
     expect(a.configDirEnv('/home/u/.codex', true)).toEqual({});
   });
 });
+
+describe('codexAdapter auth/source metadata', () => {
+  it('logs in via "codex login" and proves auth via auth.json', () => {
+    const a = adapterFor('codex');
+    expect(a.authArgs()).toEqual(['login']);
+    expect(a.credentialsFile()).toBe('auth.json');
+  });
+
+  it('defaults its source-of-truth to ~/.codex', () => {
+    expect(adapterFor('codex').defaultSource()).toBe('~/.codex');
+  });
+
+  it('claude keeps its auth/source metadata', () => {
+    const c = adapterFor('claude');
+    expect(c.authArgs()).toEqual(['auth', 'login']);
+    expect(c.credentialsFile()).toBe('.credentials.json');
+    expect(c.defaultSource()).toBe('~/.claude');
+  });
+});

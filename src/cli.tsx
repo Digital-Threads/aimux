@@ -11,7 +11,7 @@ import {
   ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs,
   syncProfile, syncAllProfiles, checkAllProfiles,
   launchProfile, getLastProfile, recordHistory, getProfile,
-  looksLikeSubcommand,
+  looksLikeSubcommand, adapterFor,
   summarizeUsage, parseSinceDuration, totalTokens,
   loadProfileEnv, collectApiCredentials, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson,
 } from './core/index.js';
@@ -444,8 +444,9 @@ program
       .option('-m, --model <model>', 'Default model for this profile')
       .option('--fallback-model <model>', 'Fallback model when the primary is overloaded/unavailable')
       .option('--api', 'Configure a 3rd-party API endpoint instead of a Claude subscription')
+      .option('--cli <cli>', 'CLI for this profile (claude, codex, …)', 'claude')
       .description('Add a new profile')
-      .action(async (name: string, options: { auth: boolean; model?: string; fallbackModel?: string; api?: boolean }) => {
+      .action(async (name: string, options: { auth: boolean; model?: string; fallbackModel?: string; api?: boolean; cli?: string }) => {
         try {
           const config = requireConfig();
 
@@ -463,7 +464,7 @@ program
             apiVars = await collectApiCredentials();
           }
 
-          const updated = addProfile(config, name, { model: options.model, fallbackModel: options.fallbackModel });
+          const updated = addProfile(config, name, { cli: options.cli, model: options.model, fallbackModel: options.fallbackModel });
           saveConfig(updated);
           const profilePath = ensureProfileDir(updated, name);
           const sync = syncProfile(updated, name);
@@ -687,24 +688,23 @@ program
           const config = requireConfig();
           const resolved = resolveProfile(config, profile);
           const p = getProfile(config, resolved);
+          const adapter = adapterFor(p.cli);
           const profilePath = expandHome(p.path);
           const env: Record<string, string> = loadProfileEnv(p, profilePath);
-          if (!p.is_source) {
-            env.CLAUDE_CONFIG_DIR = profilePath;
-          }
+          Object.assign(env, adapter.configDirEnv(profilePath, p.is_source === true));
           const permWarning = checkDotenvPermissions(profilePath);
           if (permWarning) {
             console.error(`\x1b[33m⚠ ${permWarning}\x1b[0m`);
           }
           console.log(`Launching auth for profile '${resolved}'...`);
-          const result = spawnSync(p.cli, ['auth', 'login'], {
+          const result = spawnSync(p.cli, adapter.authArgs(), {
             stdio: 'inherit',
             env: { ...process.env, ...env },
           });
           if (result.error) {
             throw new Error(`Failed to launch ${p.cli}: ${result.error.message}`);
           }
-          const hasAuth = existsSync(join(profilePath, '.credentials.json'));
+          const hasAuth = existsSync(join(profilePath, adapter.credentialsFile()));
           if (hasAuth) {
             console.log(`✓ Profile '${resolved}' authenticated`);
           }

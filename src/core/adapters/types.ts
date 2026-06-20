@@ -23,4 +23,16 @@ export interface CliAdapter {
    *  claude shares everything except the config's private set (denylist); other CLIs
    *  may share only an allowlist of knowledge dirs. `configPrivate` is `config.private`. */
   isShared(entry: string, configPrivate: Set<string>): boolean;
+
+  /** Args to launch the CLI's interactive auth/login flow (claude: `auth login`;
+   *  codex: `login`). */
+  authArgs(): string[];
+
+  /** File inside the profile dir that proves the profile is authenticated
+   *  (claude: `.credentials.json`; codex: `auth.json`). */
+  credentialsFile(): string;
+
+  /** Default source-of-truth dir for this CLI, used when registering `shared_sources`
+   *  for a freshly added non-claude profile (claude: `~/.claude`; codex: `~/.codex`). */
+  defaultSource(): string;
 }

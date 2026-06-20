@@ -27,4 +27,16 @@ export const codexAdapter: CliAdapter = {
   isShared(entry) {
     return CODEX_SHARED_DIRS.has(entry);
   },
+
+  authArgs() {
+    return ['login'];
+  },
+
+  credentialsFile() {
+    return 'auth.json';
+  },
+
+  defaultSource() {
+    return '~/.codex';
+  },
 };
