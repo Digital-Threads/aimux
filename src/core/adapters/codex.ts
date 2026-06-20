@@ -39,4 +39,9 @@ export const codexAdapter: CliAdapter = {
   defaultSource() {
     return '~/.codex';
   },
+
+  resumeArgs(sessionId) {
+    // codex resume <uuid>; codex has no fork-on-resume flag.
+    return ['resume', sessionId];
+  },
 };

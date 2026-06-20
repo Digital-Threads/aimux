@@ -35,4 +35,8 @@ export interface CliAdapter {
   /** Default source-of-truth dir for this CLI, used when registering `shared_sources`
    *  for a freshly added non-claude profile (claude: `~/.claude`; codex: `~/.codex`). */
   defaultSource(): string;
+
+  /** Args to resume an existing session by id (claude: `--resume <id>` [+ `--fork-session`];
+   *  codex: `resume <id>`). */
+  resumeArgs(sessionId: string, opts?: { fork?: boolean }): string[];
 }

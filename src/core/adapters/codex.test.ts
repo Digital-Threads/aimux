@@ -65,3 +65,15 @@ describe('codexAdapter auth/source metadata', () => {
     expect(c.defaultSource()).toBe('~/.claude');
   });
 });
+
+describe('resumeArgs', () => {
+  it('codex resumes via "resume <id>" (no fork flag)', () => {
+    expect(adapterFor('codex').resumeArgs('uuid-1')).toEqual(['resume', 'uuid-1']);
+    expect(adapterFor('codex').resumeArgs('uuid-1', { fork: true })).toEqual(['resume', 'uuid-1']);
+  });
+
+  it('claude resumes via "--resume <id>" and adds --fork-session for a live session', () => {
+    expect(adapterFor('claude').resumeArgs('id-1')).toEqual(['--resume', 'id-1']);
+    expect(adapterFor('claude').resumeArgs('id-1', { fork: true })).toEqual(['--resume', 'id-1', '--fork-session']);
+  });
+});

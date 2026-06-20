@@ -38,4 +38,10 @@ export const claudeAdapter: CliAdapter = {
   defaultSource() {
     return '~/.claude';
   },
+
+  resumeArgs(sessionId, opts) {
+    const args = ['--resume', sessionId];
+    if (opts?.fork) args.push('--fork-session');
+    return args;
+  },
 };

@@ -388,7 +388,7 @@ program
 
       type PendingAction =
         | { type: 'exit' }
-        | { type: 'attach'; profile: string; sessionId: string; cwd: string; live: boolean };
+        | { type: 'attach'; profile: string; sessionId: string; cwd: string; live: boolean; cli: string };
 
       const { existsSync: existsSyncFn } = await import('node:fs');
 
@@ -413,6 +413,18 @@ program
             running = false;
             break;
           case 'attach': {
+            // Cross-CLI attach (e.g. a claude session under a codex profile) is NOT a
+            // native resume — the transcripts are mutually unreadable. That is the
+            // summary-handoff path (`aimux handoff`), shipped separately. Guard it here.
+            const targetCli = getProfile(config, action.profile).cli;
+            if (targetCli !== action.cli) {
+              console.error(
+                `Cannot resume a ${action.cli} session under a ${targetCli} profile — ` +
+                `cross-CLI continuation uses summary handoff (coming via 'aimux handoff'). ` +
+                `Attach via a ${action.cli} profile instead.`,
+              );
+              break;
+            }
             // Same as `aimux run <profile> --resume <id>`: resume the shared
             // transcript under the chosen profile. A live session needs
             // --fork-session (claude refuses to resume a running one otherwise).
