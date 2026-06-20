@@ -1,0 +1,48 @@
+import { describe, it, expect } from 'vitest';
+import { adapterFor } from './index.js';
+
+describe('codexAdapter run-path', () => {
+  it('is selected for cli "codex"', () => {
+    expect(adapterFor('codex').id).toBe('codex');
+  });
+
+  it('emits -m <model> when set and not a subcommand', () => {
+    const a = adapterFor('codex');
+    expect(
+      a.modelArgs({ model: 'gpt-5-codex', isSubcommand: false, userPassedModel: false, userPassedFallback: false }),
+    ).toEqual(['-m', 'gpt-5-codex']);
+  });
+
+  it('omits the model flag for a subcommand (e.g. exec)', () => {
+    const a = adapterFor('codex');
+    expect(
+      a.modelArgs({ model: 'gpt-5-codex', isSubcommand: true, userPassedModel: false, userPassedFallback: false }),
+    ).toEqual([]);
+  });
+
+  it('omits the model flag when the user already passed one', () => {
+    const a = adapterFor('codex');
+    expect(
+      a.modelArgs({ model: 'gpt-5-codex', isSubcommand: false, userPassedModel: true, userPassedFallback: false }),
+    ).toEqual([]);
+  });
+
+  it('ignores fallbackModel (codex has no --fallback-model)', () => {
+    const a = adapterFor('codex');
+    expect(
+      a.modelArgs({ model: 'm', fallbackModel: 'other', isSubcommand: false, userPassedModel: false, userPassedFallback: false }),
+    ).toEqual(['-m', 'm']);
+  });
+
+  it('isolates via CODEX_HOME for a non-source profile', () => {
+    const a = adapterFor('codex');
+    expect(a.configDirEnv('/home/u/.aimux/profiles/codework', false)).toEqual({
+      CODEX_HOME: '/home/u/.aimux/profiles/codework',
+    });
+  });
+
+  it('sets no config-dir env for a source profile', () => {
+    const a = adapterFor('codex');
+    expect(a.configDirEnv('/home/u/.codex', true)).toEqual({});
+  });
+});

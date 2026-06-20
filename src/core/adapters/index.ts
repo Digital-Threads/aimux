@@ -1,10 +1,12 @@
 import type { CliAdapter } from './types.js';
 import { claudeAdapter } from './claude.js';
+import { codexAdapter } from './codex.js';
 
 export type { CliAdapter } from './types.js';
 
 const REGISTRY: Record<string, CliAdapter> = {
   claude: claudeAdapter,
+  codex: codexAdapter,
 };
 
 /** Select the adapter for a profile's `cli`. Unknown/custom values fall back to the
