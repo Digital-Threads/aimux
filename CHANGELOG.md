@@ -4,6 +4,37 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Multi-CLI support (Codex first).** A profile can now run a different AI CLI, not
+  just claude, selected by its `cli` field. `aimux profile add <name> --cli codex`
+  creates a Codex profile; `aimux auth login <name>` runs `codex login` under an
+  isolated `CODEX_HOME`; `aimux run <name>` launches Codex with the right model flag.
+  claude profiles are byte-for-byte unchanged — multi-CLI is strictly opt-in.
+  - **Per-CLI source-of-truth.** `shared_sources: { claude: ~/.claude, codex: ~/.codex }`
+    (additive; the legacy `shared_source` remains as the claude alias). Each CLI shares
+    from its own source.
+  - **Per-CLI share regimen.** claude keeps its denylist (everything except `private`).
+    Codex shares an allowlist of knowledge dirs (`skills`, `rules`, `memories`) and
+    keeps creds/state (`auth.json`, `config.toml`, `sessions/`, …) private. Codex
+    *plugin* sharing is a planned fast-follow.
+  - **Codex in `aimux agents`.** Codex sessions are discovered (from rollout files) and
+    listed alongside claude sessions with a CLI badge. Resuming routes per CLI
+    (`codex resume <id>` vs `claude --resume <id>`).
+- **Cross-CLI handoff.** `aimux handoff <sessionId> --to <profile>` continues a session
+  under a different CLI when you hit a subscription limit. Because the two CLIs'
+  transcripts are mutually unreadable, this is a summary handoff, not a native resume:
+  aimux reads the source transcript, summarizes it with the target profile (fully
+  self-contained — no external orchestration), then launches the target seeded with the
+  summary. The same-CLI path (claude↔claude, codex↔codex) still uses native resume.
+- **Public core API:** `adapterFor`/`CliAdapter`, `sourceFor`, `handoffSession`,
+  `buildHandoffPrompt`, and `UnifiedSession.cli`. Additive.
+
+### Notes
+- Cross-CLI handoff carries the *conversation context*, not the model — the target CLI
+  continues with a different model. The transfer is a summary, not a verbatim replay.
+
 ## [0.15.0] - 2026-06-19
 
 ### Added
