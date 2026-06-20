@@ -18,4 +18,9 @@ export interface CliAdapter {
 
   /** Whether the first passthrough arg is a CLI subcommand (suppresses model flags). */
   isSubcommand(firstArg: string | undefined): boolean;
+
+  /** Whether a source-dir entry should be shared (symlinked) into profiles.
+   *  claude shares everything except the config's private set (denylist); other CLIs
+   *  may share only an allowlist of knowledge dirs. `configPrivate` is `config.private`. */
+  isShared(entry: string, configPrivate: Set<string>): boolean;
 }

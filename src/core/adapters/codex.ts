@@ -1,6 +1,11 @@
 import { looksLikeSubcommand } from '../subcommand.js';
 import type { CliAdapter } from './types.js';
 
+// Codex keeps creds/state in many top-level files (auth.json, config.toml, sessions/,
+// sqlite DBs, …). Sharing is an ALLOWLIST of knowledge dirs, not a denylist — so new
+// codex state files are never accidentally shared. Plugins are added in a later PR.
+const CODEX_SHARED_DIRS = new Set(['skills', 'rules', 'memories']);
+
 export const codexAdapter: CliAdapter = {
   id: 'codex',
 
@@ -17,5 +22,9 @@ export const codexAdapter: CliAdapter = {
 
   isSubcommand(firstArg) {
     return looksLikeSubcommand(firstArg);
+  },
+
+  isShared(entry) {
+    return CODEX_SHARED_DIRS.has(entry);
   },
 };

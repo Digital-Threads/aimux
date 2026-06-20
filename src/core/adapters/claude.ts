@@ -22,4 +22,8 @@ export const claudeAdapter: CliAdapter = {
   isSubcommand(firstArg) {
     return looksLikeSubcommand(firstArg);
   },
+
+  isShared(entry, configPrivate) {
+    return !configPrivate.has(entry);
+  },
 };
