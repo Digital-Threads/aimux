@@ -98,6 +98,13 @@ export function getSourceProfile(config: AimuxConfig): [string, ProfileConfig] {
   return entry;
 }
 
+/** Resolve the source-of-truth dir for a CLI. Per-CLI `shared_sources` wins; absence
+ *  falls back to the legacy single `shared_source` (the claude source), preserving
+ *  pre-multi-CLI behavior. */
+export function sourceFor(config: AimuxConfig, cli: string): string {
+  return config.shared_sources?.[cli] ?? config.shared_source;
+}
+
 export function validateConfig(config: unknown): string[] {
   const errors: string[] = [];
 

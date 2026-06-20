@@ -11,7 +11,12 @@ export interface ProfileConfig {
 
 export interface AimuxConfig {
   version: number;
+  /** Legacy single source (the claude source-of-truth). Always present for backward
+   *  compatibility; equivalent to `shared_sources.claude`. */
   shared_source: string;
+  /** Per-CLI source-of-truth dirs, keyed by `cli` (e.g. `claude` → ~/.claude,
+   *  `codex` → ~/.codex). Additive; absence falls back to `shared_source`. */
+  shared_sources?: Record<string, string>;
   profiles: Record<string, ProfileConfig>;
   private: string[];
 }

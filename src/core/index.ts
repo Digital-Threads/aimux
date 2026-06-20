@@ -6,6 +6,7 @@ export {
   removeProfile,
   getProfile,
   getSourceProfile,
+  sourceFor,
   validateConfig,
   loadHistory,
   saveHistory,
