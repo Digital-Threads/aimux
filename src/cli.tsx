@@ -759,12 +759,16 @@ program
       .action(() => {
         try {
           const config = requireConfig();
-          const authFiles = ['.credentials.json', '.claude.json', 'policy-limits.json', 'mcp-needs-auth-cache.json', 'remote-settings.json'];
 
           for (const [name, profile] of Object.entries(config.profiles)) {
             const pPath = expandHome(profile.path);
             const tag = profile.is_source ? ' (source)' : '';
-            console.log(`${name}${tag}:`);
+            const credFile = adapterFor(profile.cli).credentialsFile();
+            // The credential file is the auth signal; claude has extra state files worth surfacing.
+            const authFiles = profile.cli === 'claude'
+              ? [credFile, '.claude.json', 'policy-limits.json', 'mcp-needs-auth-cache.json', 'remote-settings.json']
+              : [credFile];
+            console.log(`${name} [${profile.cli}]${tag}:`);
             for (const file of authFiles) {
               const exists = existsSync(join(pPath, file));
               console.log(`  ${exists ? '✓' : '✗'} ${file}`);

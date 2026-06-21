@@ -8,6 +8,7 @@ import { expandHome } from '../core/paths.js';
 import { loadProfileEnv } from '../core/run.js';
 import { readProfileAutoMode } from '../core/autoMode.js';
 import { getSharedElements, checkAllProfiles } from '../core/symlinks.js';
+import { adapterFor } from '../core/adapters/index.js';
 
 interface Props {
   config: AimuxConfig;
@@ -36,7 +37,7 @@ function checkAuth(profile: ProfileConfig): AuthStatus {
     }
   }
 
-  if (existsSync(join(profilePath, '.credentials.json'))) {
+  if (existsSync(join(profilePath, adapterFor(profile.cli).credentialsFile()))) {
     return { kind: 'oauth', active: true };
   }
 
