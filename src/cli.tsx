@@ -13,7 +13,7 @@ import {
   launchProfile, getLastProfile, recordHistory, getProfile,
   looksLikeSubcommand, adapterFor,
   summarizeUsage, parseSinceDuration, totalTokens,
-  loadProfileEnv, collectApiCredentials, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson,
+  loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson,
 } from './core/index.js';
 
 function collectRepeatable(value: string, previous: string[]): string[] {
@@ -465,9 +465,10 @@ program
       .option('-m, --model <model>', 'Default model for this profile')
       .option('--fallback-model <model>', 'Fallback model when the primary is overloaded/unavailable')
       .option('--api', 'Configure a 3rd-party API endpoint instead of a Claude subscription')
+      .option('--provider <name>', 'Anthropic-compatible provider preset (deepseek, kimi, glm, qwen, minimax, mimo)')
       .option('--cli <cli>', 'CLI for this profile (claude, codex, …)', 'claude')
       .description('Add a new profile')
-      .action(async (name: string, options: { auth: boolean; model?: string; fallbackModel?: string; api?: boolean; cli?: string }) => {
+      .action(async (name: string, options: { auth: boolean; model?: string; fallbackModel?: string; api?: boolean; provider?: string; cli?: string }) => {
         try {
           const config = requireConfig();
 
@@ -480,7 +481,16 @@ program
           // Collect credentials BEFORE mutating config/disk so a Ctrl+C
           // mid-prompt leaves no half-created profile behind.
           let apiVars: Record<string, string> | undefined;
-          if (options.api) {
+          if (options.provider) {
+            const preset = PROVIDER_PRESETS[options.provider.toLowerCase()];
+            if (!preset) {
+              throw new Error(
+                `Unknown provider '${options.provider}'. Available: ${Object.keys(PROVIDER_PRESETS).join(', ')}`,
+              );
+            }
+            console.log(`Configure ${preset.label} (${preset.baseUrl}) — enter your API token:`);
+            apiVars = await collectProviderCredentials(preset);
+          } else if (options.api) {
             console.log('Configure API endpoint (leave blank to use default):');
             apiVars = await collectApiCredentials();
           }
