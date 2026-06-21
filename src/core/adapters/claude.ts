@@ -50,4 +50,12 @@ export const claudeAdapter: CliAdapter = {
   },
 
   headlessCaptureToFile: false,
+
+  globalArgs() {
+    return [];
+  },
+
+  extraLinks() {
+    return [];
+  },
 };

@@ -331,6 +331,31 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
     }
   }
 
+  // Per-CLI extra symlinks (codex config overlay + plugin content) — names that do not
+  // exist as source entries, so they are created beyond the readdir loop above.
+  for (const { link, target } of adapter.extraLinks(sourcePath)) {
+    const linkPath = join(profilePath, link);
+    if (lstatExists(linkPath)) {
+      const st = lstatSync(linkPath);
+      if (st.isSymbolicLink()) {
+        if (resolve(profilePath, readlinkSync(linkPath)) === resolve(target)) {
+          result.skipped.push(link);
+        } else {
+          unlinkSync(linkPath);
+          symlinkSync(target, linkPath);
+          result.repaired.push(link);
+        }
+      } else {
+        result.conflicts.push(link);
+      }
+      continue;
+    }
+    if (existsSync(target)) {
+      symlinkSync(target, linkPath);
+      result.created.push(link);
+    }
+  }
+
   return result;
 }
 
@@ -417,6 +442,19 @@ export function checkProfileHealth(config: AimuxConfig, profileName: string): He
         report.orphaned.push(entry);
       }
     }
+  }
+
+  // Per-CLI extra symlinks (codex overlay + plugins). They are not source entries, so
+  // they're validated here rather than in the loops above.
+  for (const { link, target } of adapter.extraLinks(sourcePath)) {
+    const linkPath = join(profilePath, link);
+    if (!lstatExists(linkPath)) {
+      report.missing.push(link);
+      continue;
+    }
+    const st = lstatSync(linkPath);
+    const ok = st.isSymbolicLink() && resolve(profilePath, readlinkSync(linkPath)) === resolve(target) && existsSync(linkPath);
+    report[ok ? 'valid' : 'broken'].push(link);
   }
 
   return report;

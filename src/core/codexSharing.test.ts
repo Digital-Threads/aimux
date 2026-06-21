@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync, lstatSync, existsSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync, lstatSync, existsSync, readlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setAimuxDir } from './paths.js';
@@ -26,7 +26,7 @@ function config(): AimuxConfig {
 
 beforeEach(() => {
   // Codex source with a mix of knowledge dirs, shared transcripts, and private state.
-  for (const d of ['skills', 'rules', 'memories', 'sessions']) {
+  for (const d of ['skills', 'rules', 'memories', 'sessions', 'plugins']) {
     mkdirSync(join(CODEX_SRC, d), { recursive: true });
   }
   writeFileSync(join(CODEX_SRC, 'session_index.jsonl'), '');
@@ -60,9 +60,23 @@ describe('codex profile sharing (allowlist)', () => {
     const profileDir = join(PROFILES, 'codework');
     const result = syncProfile(config(), 'codework');
 
+    // config.toml stays private — settings are shared via the separate overlay symlink.
     for (const f of ['auth.json', 'config.toml', 'history.jsonl']) {
       expect(existsSync(join(profileDir, f)), `${f} must not be linked`).toBe(false);
       expect(result.private, `${f} reported private`).toContain(f);
     }
+  });
+
+  it('creates the config overlay (aimux.config.toml) and plugins symlink from the source', () => {
+    const profileDir = join(PROFILES, 'codework');
+    syncProfile(config(), 'codework');
+
+    const overlay = join(profileDir, 'aimux.config.toml');
+    expect(lstatSync(overlay).isSymbolicLink(), 'overlay should be a symlink').toBe(true);
+    expect(readlinkSync(overlay)).toBe(join(CODEX_SRC, 'config.toml'));
+
+    const plugins = join(profileDir, 'plugins');
+    expect(lstatSync(plugins).isSymbolicLink(), 'plugins should be a symlink').toBe(true);
+    expect(readlinkSync(plugins)).toBe(join(CODEX_SRC, 'plugins'));
   });
 });

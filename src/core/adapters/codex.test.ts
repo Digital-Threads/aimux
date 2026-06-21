@@ -67,9 +67,9 @@ describe('codexAdapter auth/source metadata', () => {
 });
 
 describe('resumeArgs', () => {
-  it('codex resumes via "resume <id>" (no fork flag)', () => {
-    expect(adapterFor('codex').resumeArgs('uuid-1')).toEqual(['resume', 'uuid-1']);
-    expect(adapterFor('codex').resumeArgs('uuid-1', { fork: true })).toEqual(['resume', 'uuid-1']);
+  it('codex resumes via "-p aimux resume <id>" (overlay; no fork flag)', () => {
+    expect(adapterFor('codex').resumeArgs('uuid-1')).toEqual(['-p', 'aimux', 'resume', 'uuid-1']);
+    expect(adapterFor('codex').resumeArgs('uuid-1', { fork: true })).toEqual(['-p', 'aimux', 'resume', 'uuid-1']);
   });
 
   it('claude resumes via "--resume <id>" and adds --fork-session for a live session', () => {
@@ -85,10 +85,40 @@ describe('headlessArgs (summarizer capture)', () => {
     expect(c.headlessCaptureToFile).toBe(false);
   });
 
-  it('codex writes the final message to outFile via exec --output-last-message', () => {
+  it('codex writes the final message to outFile via exec --output-last-message (with overlay)', () => {
     const a = adapterFor('codex');
     expect(a.headlessCaptureToFile).toBe(true);
-    expect(a.headlessArgs('hi', '/tmp/out.txt')).toEqual(['exec', '--output-last-message', '/tmp/out.txt', 'hi']);
-    expect(a.headlessArgs('hi')).toEqual(['exec', 'hi']);
+    expect(a.headlessArgs('hi', '/tmp/out.txt')).toEqual(['-p', 'aimux', 'exec', '--output-last-message', '/tmp/out.txt', 'hi']);
+    expect(a.headlessArgs('hi')).toEqual(['-p', 'aimux', 'exec', 'hi']);
+  });
+});
+
+describe('codex overlay (globalArgs + extraLinks)', () => {
+  it('injects -p aimux for runtime invocations (interactive, exec, resume) but not management', () => {
+    const a = adapterFor('codex');
+    expect(a.globalArgs(undefined)).toEqual(['-p', 'aimux']); // interactive
+    expect(a.globalArgs('--model')).toEqual(['-p', 'aimux']); // leading flag
+    expect(a.globalArgs('resume')).toEqual(['-p', 'aimux']);
+    expect(a.globalArgs('exec')).toEqual(['-p', 'aimux']);
+    expect(a.globalArgs('plugin')).toEqual([]); // management subcommand rejects -p
+    expect(a.globalArgs('doctor')).toEqual([]);
+    expect(a.globalArgs('login')).toEqual([]);
+  });
+
+  it('claude injects no global args', () => {
+    expect(adapterFor('claude').globalArgs(undefined)).toEqual([]);
+    expect(adapterFor('claude').globalArgs('mcp')).toEqual([]);
+  });
+
+  it('codex extra links: overlay config + plugins from the source', () => {
+    const links = adapterFor('codex').extraLinks('/home/u/.codex');
+    expect(links).toEqual([
+      { link: 'aimux.config.toml', target: '/home/u/.codex/config.toml' },
+      { link: 'plugins', target: '/home/u/.codex/plugins' },
+    ]);
+  });
+
+  it('claude has no extra links', () => {
+    expect(adapterFor('claude').extraLinks('/home/u/.claude')).toEqual([]);
   });
 });

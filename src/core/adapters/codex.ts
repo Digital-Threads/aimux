@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { looksLikeSubcommand } from '../subcommand.js';
 import type { CliAdapter } from './types.js';
 
@@ -8,8 +9,27 @@ import type { CliAdapter } from './types.js';
 //   - session transcripts: sessions/ + session_index.jsonl — the codex analogue of
 //     claude's shared projects/. Sharing them is what lets you switch codex
 //     subscriptions and `codex resume` the SAME session under another profile.
-// Plugins are added in a later PR.
+// Settings + plugins are shared via the config OVERLAY (see extraLinks/globalArgs):
+// `config.toml` itself stays PRIVATE (codex churns it with trust-levels/runtime state),
+// but a symlinked `aimux.config.toml` overlay — which codex only READS, never writes —
+// carries the source's model/features/[plugins]/[marketplaces] when layered via `-p aimux`.
 const CODEX_SHARED_ENTRIES = new Set(['skills', 'rules', 'memories', 'sessions', 'session_index.jsonl']);
+
+// The overlay profile name: codex layers `$CODEX_HOME/<name>.config.toml` on top of the
+// base config when invoked with `-p <name>`. Verified: codex reads it, never writes it.
+const OVERLAY_PROFILE = 'aimux';
+
+// Codex subcommands that accept `-p` (runtime). Management subcommands (plugin, doctor,
+// login, logout, update, completion) reject it, so the overlay is skipped for them.
+const CODEX_RUNTIME_SUBCOMMANDS = new Set([
+  'exec', 'review', 'resume', 'archive', 'unarchive', 'fork', 'mcp', 'sandbox',
+]);
+
+function isRuntimeInvocation(firstArg: string | undefined): boolean {
+  if (!firstArg) return true; // interactive
+  if (firstArg.startsWith('-')) return true; // leading flag → interactive
+  return CODEX_RUNTIME_SUBCOMMANDS.has(firstArg);
+}
 
 export const codexAdapter: CliAdapter = {
   id: 'codex',
@@ -46,15 +66,29 @@ export const codexAdapter: CliAdapter = {
   },
 
   resumeArgs(sessionId) {
-    // codex resume <uuid>; codex has no fork-on-resume flag.
-    return ['resume', sessionId];
+    // codex resume <uuid> (runtime → carries the overlay); no fork-on-resume flag.
+    return ['-p', OVERLAY_PROFILE, 'resume', sessionId];
   },
 
   headlessArgs(prompt, outFile) {
     // codex exec stdout is noisy (header, token counts, echo). --output-last-message
     // writes ONLY the final assistant message, so the summarizer reads a clean result.
-    return outFile ? ['exec', '--output-last-message', outFile, prompt] : ['exec', prompt];
+    const head = ['-p', OVERLAY_PROFILE, 'exec'];
+    return outFile ? [...head, '--output-last-message', outFile, prompt] : [...head, prompt];
   },
 
   headlessCaptureToFile: true,
+
+  globalArgs(firstArg) {
+    return isRuntimeInvocation(firstArg) ? ['-p', OVERLAY_PROFILE] : [];
+  },
+
+  extraLinks(sourceDir) {
+    // Overlay (settings + plugin metadata) + plugin content. config.toml is read via the
+    // overlay symlink; codex never writes the overlay, so the symlink is safe.
+    return [
+      { link: `${OVERLAY_PROFILE}.config.toml`, target: join(sourceDir, 'config.toml') },
+      { link: 'plugins', target: join(sourceDir, 'plugins') },
+    ];
+  },
 };
