@@ -67,9 +67,12 @@ describe('codexAdapter auth/source metadata', () => {
 });
 
 describe('resumeArgs', () => {
-  it('codex resumes via "resume <id>" (no fork flag)', () => {
+  it('codex resumes via "resume <id>" (overlay added by globalArgs; no fork flag)', () => {
+    // resumeArgs no longer hardcodes -p; the single injection point is globalArgs(),
+    // which resumeSession prepends. globalArgs('resume') === ['-p','aimux'].
     expect(adapterFor('codex').resumeArgs('uuid-1')).toEqual(['resume', 'uuid-1']);
     expect(adapterFor('codex').resumeArgs('uuid-1', { fork: true })).toEqual(['resume', 'uuid-1']);
+    expect(adapterFor('codex').globalArgs('resume')).toEqual(['-p', 'aimux']);
   });
 
   it('claude resumes via "--resume <id>" and adds --fork-session for a live session', () => {
@@ -85,10 +88,46 @@ describe('headlessArgs (summarizer capture)', () => {
     expect(c.headlessCaptureToFile).toBe(false);
   });
 
-  it('codex writes the final message to outFile via exec --output-last-message', () => {
+  it('codex writes the final message to outFile via exec --output-last-message (overlay added by buildRunParams)', () => {
     const a = adapterFor('codex');
     expect(a.headlessCaptureToFile).toBe(true);
+    // No -p here: headlessArgs flows through buildRunParams, whose globalArgs('exec')
+    // injects `-p aimux`. Including it here would double it.
     expect(a.headlessArgs('hi', '/tmp/out.txt')).toEqual(['exec', '--output-last-message', '/tmp/out.txt', 'hi']);
     expect(a.headlessArgs('hi')).toEqual(['exec', 'hi']);
+  });
+
+  it('globalArgs injects the overlay for exec so the headless summarizer carries it once', () => {
+    expect(adapterFor('codex').globalArgs('exec')).toEqual(['-p', 'aimux']);
+  });
+});
+
+describe('codex overlay (globalArgs + extraLinks)', () => {
+  it('injects -p aimux for runtime invocations (interactive, exec, resume) but not management', () => {
+    const a = adapterFor('codex');
+    expect(a.globalArgs(undefined)).toEqual(['-p', 'aimux']); // interactive
+    expect(a.globalArgs('--model')).toEqual(['-p', 'aimux']); // leading flag
+    expect(a.globalArgs('resume')).toEqual(['-p', 'aimux']);
+    expect(a.globalArgs('exec')).toEqual(['-p', 'aimux']);
+    expect(a.globalArgs('plugin')).toEqual([]); // management subcommand rejects -p
+    expect(a.globalArgs('doctor')).toEqual([]);
+    expect(a.globalArgs('login')).toEqual([]);
+  });
+
+  it('claude injects no global args', () => {
+    expect(adapterFor('claude').globalArgs(undefined)).toEqual([]);
+    expect(adapterFor('claude').globalArgs('mcp')).toEqual([]);
+  });
+
+  it('codex extra links: overlay config + plugins from the source', () => {
+    const links = adapterFor('codex').extraLinks('/home/u/.codex');
+    expect(links).toEqual([
+      { link: 'aimux.config.toml', target: '/home/u/.codex/config.toml' },
+      { link: 'plugins', target: '/home/u/.codex/plugins' },
+    ]);
+  });
+
+  it('claude has no extra links', () => {
+    expect(adapterFor('claude').extraLinks('/home/u/.claude')).toEqual([]);
   });
 });

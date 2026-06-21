@@ -13,7 +13,7 @@ import {
   launchProfile, getLastProfile, recordHistory, getProfile,
   looksLikeSubcommand, adapterFor,
   summarizeUsage, parseSinceDuration, totalTokens,
-  loadProfileEnv, collectApiCredentials, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson,
+  loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson,
 } from './core/index.js';
 
 function collectRepeatable(value: string, previous: string[]): string[] {
@@ -465,9 +465,10 @@ program
       .option('-m, --model <model>', 'Default model for this profile')
       .option('--fallback-model <model>', 'Fallback model when the primary is overloaded/unavailable')
       .option('--api', 'Configure a 3rd-party API endpoint instead of a Claude subscription')
+      .option('--provider <name>', 'Anthropic-compatible provider preset (deepseek, kimi, glm, qwen, minimax, mimo)')
       .option('--cli <cli>', 'CLI for this profile (claude, codex, …)', 'claude')
       .description('Add a new profile')
-      .action(async (name: string, options: { auth: boolean; model?: string; fallbackModel?: string; api?: boolean; cli?: string }) => {
+      .action(async (name: string, options: { auth: boolean; model?: string; fallbackModel?: string; api?: boolean; provider?: string; cli?: string }) => {
         try {
           const config = requireConfig();
 
@@ -480,7 +481,21 @@ program
           // Collect credentials BEFORE mutating config/disk so a Ctrl+C
           // mid-prompt leaves no half-created profile behind.
           let apiVars: Record<string, string> | undefined;
-          if (options.api) {
+          if (options.provider) {
+            // Provider presets are Anthropic-compatible endpoints — they run on the claude
+            // CLI. A non-claude --cli would ignore the ANTHROPIC_* env entirely.
+            if ((options.cli ?? 'claude') !== 'claude') {
+              throw new Error(`--provider works only with the claude CLI, not --cli ${options.cli}`);
+            }
+            const preset = PROVIDER_PRESETS[options.provider.toLowerCase()];
+            if (!preset) {
+              throw new Error(
+                `Unknown provider '${options.provider}'. Available: ${Object.keys(PROVIDER_PRESETS).join(', ')}`,
+              );
+            }
+            console.log(`Configure ${preset.label} (${preset.baseUrl}) — enter your API token:`);
+            apiVars = await collectProviderCredentials(preset);
+          } else if (options.api) {
             console.log('Configure API endpoint (leave blank to use default):');
             apiVars = await collectApiCredentials();
           }
@@ -759,12 +774,16 @@ program
       .action(() => {
         try {
           const config = requireConfig();
-          const authFiles = ['.credentials.json', '.claude.json', 'policy-limits.json', 'mcp-needs-auth-cache.json', 'remote-settings.json'];
 
           for (const [name, profile] of Object.entries(config.profiles)) {
             const pPath = expandHome(profile.path);
             const tag = profile.is_source ? ' (source)' : '';
-            console.log(`${name}${tag}:`);
+            const credFile = adapterFor(profile.cli).credentialsFile();
+            // The credential file is the auth signal; claude has extra state files worth surfacing.
+            const authFiles = profile.cli === 'claude'
+              ? [credFile, '.claude.json', 'policy-limits.json', 'mcp-needs-auth-cache.json', 'remote-settings.json']
+              : [credFile];
+            console.log(`${name} [${profile.cli}]${tag}:`);
             for (const file of authFiles) {
               const exists = existsSync(join(pPath, file));
               console.log(`  ${exists ? '✓' : '✗'} ${file}`);

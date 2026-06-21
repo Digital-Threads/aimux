@@ -49,4 +49,16 @@ export interface CliAdapter {
   /** True when headless output must be read from `outFile` (codex) rather than stdout
    *  (claude). The summarizer uses this to capture a clean result. */
   headlessCaptureToFile: boolean;
+
+  /** Global flags prepended to a `run` invocation (before the subcommand/model flags).
+   *  claude needs none; codex injects `-p aimux` for RUNTIME invocations so the shared
+   *  settings/plugins overlay layers on top. `firstArg` is the first passthrough arg,
+   *  used to skip non-runtime subcommands (plugin/doctor/login) that reject `-p`. */
+  globalArgs(firstArg: string | undefined): string[];
+
+  /** Extra symlinks to create in a profile beyond the shared source entries. Each is
+   *  `{ link }` (name inside the profile dir) → `{ target }` (absolute path). codex uses
+   *  this for its config overlay (`aimux.config.toml` → source `config.toml`) and plugin
+   *  content. `sourceDir` is the CLI's source-of-truth dir. */
+  extraLinks(sourceDir: string): Array<{ link: string; target: string }>;
 }

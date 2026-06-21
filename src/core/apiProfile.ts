@@ -14,6 +14,69 @@ export const API_MODEL_DEFAULTS = {
   ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5',
 } as const;
 
+export interface ProviderPreset {
+  label: string;
+  baseUrl: string;
+  /** Model mapped to ANTHROPIC_MODEL / opus / sonnet / haiku. Third-party providers
+   *  usually expose one strong model — set only `default` then; `opus`/`sonnet`/`haiku`
+   *  override per tier and otherwise fall back to `default`. */
+  models: { default: string; opus?: string; sonnet?: string; haiku?: string };
+}
+
+/**
+ * Ready-made Anthropic-compatible providers that run on the claude CLI by only
+ * changing ANTHROPIC_BASE_URL + token. Base URLs are stable; model names drift, so
+ * update with `aimux profile update <name> -e ANTHROPIC_MODEL=…` when a provider
+ * renames. (Verified 2026-06.)
+ */
+export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
+  deepseek: {
+    label: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/anthropic',
+    models: { default: 'deepseek-chat', opus: 'deepseek-reasoner' },
+  },
+  kimi: {
+    label: 'Kimi (Moonshot)',
+    baseUrl: 'https://api.moonshot.ai/anthropic',
+    models: { default: 'kimi-k2.5' },
+  },
+  glm: {
+    label: 'GLM (Z.ai)',
+    baseUrl: 'https://api.z.ai/api/anthropic',
+    models: { default: 'glm-5.1', haiku: 'glm-4.5-air' },
+  },
+  qwen: {
+    label: 'Qwen (Alibaba DashScope)',
+    baseUrl: 'https://dashscope-intl.aliyuncs.com/apps/anthropic',
+    models: { default: 'qwen3.6-plus' },
+  },
+  minimax: {
+    label: 'MiniMax',
+    baseUrl: 'https://api.minimax.io/anthropic',
+    models: { default: 'minimax-m2.7' },
+  },
+  mimo: {
+    label: 'Xiaomi MiMo',
+    baseUrl: 'https://api.xiaomimimo.com',
+    models: { default: 'mimo-v2-pro' },
+  },
+};
+
+/** The dotenv vars for a provider preset (+ token if given). Pure — used by both the
+ *  interactive `--provider` flow and tests. */
+export function providerEnv(preset: ProviderPreset, token?: string): Record<string, string> {
+  const m = preset.models;
+  const vars: Record<string, string> = {
+    ANTHROPIC_BASE_URL: preset.baseUrl,
+    ANTHROPIC_MODEL: m.default,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: m.opus ?? m.default,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: m.sonnet ?? m.default,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: m.haiku ?? m.default,
+  };
+  if (token) vars.ANTHROPIC_AUTH_TOKEN = token;
+  return vars;
+}
+
 /**
  * Sequential line reader over a single stdin consumer. Reading multiple
  * prompts via repeated `readline.createInterface()` drops buffered input on
@@ -167,6 +230,25 @@ export async function collectApiCredentials(): Promise<Record<string, string>> {
     }
 
     return vars;
+  } finally {
+    reader.close();
+  }
+}
+
+/**
+ * Provider-preset flow: fills base URL + model mapping from {@link PROVIDER_PRESETS}
+ * and prompts ONLY for the API token. Returns the env var map to persist.
+ */
+export async function collectProviderCredentials(preset: ProviderPreset): Promise<Record<string, string>> {
+  const reader = new StdinLineReader();
+  try {
+    const token = await reader.question(`  ${preset.label} API token:  `, true);
+    if (!token) {
+      // A base-URL preset without a token yields an unusable profile that `aimux status`
+      // would still report as healthy — fail loudly instead.
+      throw new Error('No API token entered — provider profile not created');
+    }
+    return providerEnv(preset, token);
   } finally {
     reader.close();
   }

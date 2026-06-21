@@ -115,13 +115,14 @@ export function buildRunParams(
   const userPassedModel = extraArgs.some((a) => a === '--model' || a === '-m');
   const userPassedFallback = extraArgs.some((a) => a === '--fallback-model');
 
-  const args: string[] = adapter.modelArgs({
+  const args: string[] = adapter.globalArgs(firstExtra);
+  args.push(...adapter.modelArgs({
     model,
     fallbackModel: profile.fallback_model,
     isSubcommand,
     userPassedModel,
     userPassedFallback,
-  });
+  }));
   if (extraArgs.length > 0) {
     args.push(...extraArgs);
   }

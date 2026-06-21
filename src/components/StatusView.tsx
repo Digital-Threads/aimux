@@ -8,6 +8,7 @@ import { expandHome } from '../core/paths.js';
 import { loadProfileEnv } from '../core/run.js';
 import { readProfileAutoMode } from '../core/autoMode.js';
 import { getSharedElements, checkAllProfiles } from '../core/symlinks.js';
+import { adapterFor } from '../core/adapters/index.js';
 
 interface Props {
   config: AimuxConfig;
@@ -36,8 +37,14 @@ function checkAuth(profile: ProfileConfig): AuthStatus {
     }
   }
 
-  if (existsSync(join(profilePath, '.credentials.json'))) {
+  if (existsSync(join(profilePath, adapterFor(profile.cli).credentialsFile()))) {
     return { kind: 'oauth', active: true };
+  }
+
+  // The OAuth-status probe is claude-specific (`claude auth status` JSON, CLAUDE_CONFIG_DIR).
+  // For other CLIs the credential-file check above is the verdict — no doomed subprocess.
+  if (profile.cli !== 'claude') {
+    return { kind: 'none' };
   }
 
   const probeEnv: Record<string, string> = {};

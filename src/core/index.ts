@@ -55,12 +55,16 @@ export type { OpenSessionOptions, SessionEvent, TurnResult, LiveSession } from '
 
 export {
   collectApiCredentials,
+  collectProviderCredentials,
+  providerEnv,
+  PROVIDER_PRESETS,
   writeProfileDotEnv,
   mergeProfileDotEnv,
   checkDotenvPermissions,
   seedApiClaudeJson,
   API_MODEL_DEFAULTS,
 } from './apiProfile.js';
+export type { ProviderPreset } from './apiProfile.js';
 
 export { summarizeUsage, usageBySession, parseSinceDuration, totalTokens } from './usage.js';
 export type { ProfileUsageSummary, SessionUsageSummary, UsageOptions, UsageTotals } from './usage.js';

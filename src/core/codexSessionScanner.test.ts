@@ -40,6 +40,27 @@ describe('scanCodexInteractive', () => {
     expect(out[0].createdAtMs).toBe(Date.parse('2026-06-18T10:05:23.926Z'));
   });
 
+  it('skips codex context preamble (environment_context / AGENTS.md) for the intent', () => {
+    rollout(join(SRC, 'sessions', '2026', '06', '19'), 'rollout-2026-06-19T08-00-00-22222222-2222-2222-2222-222222222222.jsonl', [
+      { timestamp: '2026-06-19T08:00:00.000Z', type: 'session_meta', payload: { id: '22222222-2222-2222-2222-222222222222', cwd: '/p' } },
+      { timestamp: '2026-06-19T08:00:01.000Z', type: 'response_item', payload: { role: 'user', content: [{ type: 'input_text', text: '<environment_context>\ncwd=/p\n</environment_context>' }] } },
+      { timestamp: '2026-06-19T08:00:02.000Z', type: 'response_item', payload: { role: 'user', content: [{ type: 'input_text', text: '# AGENTS.md instructions for /p' }] } },
+      { timestamp: '2026-06-19T08:00:03.000Z', type: 'response_item', payload: { role: 'user', content: [{ type: 'input_text', text: 'refactor the parser' }] } },
+    ]);
+    const out = scanCodexInteractive(SRC);
+    expect(out).toHaveLength(1);
+    expect(out[0].intent).toBe('refactor the parser');
+  });
+
+  it('falls back to the first user message when every one looks like preamble', () => {
+    rollout(join(SRC, 'sessions', '2026', '06', '19'), 'rollout-2026-06-19T09-00-00-33333333-3333-3333-3333-333333333333.jsonl', [
+      { timestamp: '2026-06-19T09:00:00.000Z', type: 'session_meta', payload: { id: '33333333-3333-3333-3333-333333333333', cwd: '/p' } },
+      { timestamp: '2026-06-19T09:00:01.000Z', type: 'response_item', payload: { role: 'user', content: [{ type: 'input_text', text: '<environment_context>only</environment_context>' }] } },
+    ]);
+    const out = scanCodexInteractive(SRC);
+    expect(out[0].intent).toBe('<environment_context>only</environment_context>');
+  });
+
   it('falls back to the UUID in the filename when session_meta is missing an id', () => {
     rollout(join(SRC, 'sessions', '2026', '06', '18'), 'rollout-2026-06-18T09-00-00-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl', [
       { timestamp: '2026-06-18T09:00:00.000Z', type: 'session_meta', payload: { cwd: '/x' } },

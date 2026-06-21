@@ -210,12 +210,27 @@ seeded with that summary. Same-CLI continuation (claude↔claude, codex↔codex)
 native resume (`aimux run <profile> --resume <id>`). Note: the *conversation context*
 carries over, not the model — the target continues with its own model.
 
-### Other models via an endpoint
+### Other models via a provider preset
 
-DeepSeek, local models (Ollama/LM Studio), and other Anthropic-compatible providers work
-today through an API profile (`aimux profile add <name> --api`, see below) by pointing
-`ANTHROPIC_BASE_URL` at the provider or a proxy. (Costs shown by `aimux usage` are
-estimated against claude pricing and will be off for other models.)
+Many providers expose an **Anthropic-compatible** endpoint, so they run on the claude CLI
+itself — just a different base URL + token. A provider profile is therefore a **claude
+profile**: it shares the full claude brain (skills, plugins, settings, memory, transcripts)
+and you can even `--resume` a claude session under it natively (same CLI, same model swap).
+
+One command, prompts only for the token:
+
+```bash
+aimux profile add ds --provider deepseek   # fills base URL + model mapping
+aimux run ds
+```
+
+Built-in presets: **deepseek, kimi, glm, qwen, minimax, mimo**. Base URLs are verified;
+model names drift — update with `aimux profile update <name> -e ANTHROPIC_MODEL=…`.
+
+For anything else (local models via Ollama/LM Studio, a proxy, Bedrock/Vertex), use the
+generic `aimux profile add <name> --api` and point `ANTHROPIC_BASE_URL` at it (see below).
+Costs shown by `aimux usage` are estimated against claude pricing and will be off for
+non-claude models.
 
 ## Per-profile environment variables
 

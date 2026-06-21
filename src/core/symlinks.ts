@@ -331,6 +331,29 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
     }
   }
 
+  // Per-CLI extra symlinks (codex config overlay + plugin content) — names that do not
+  // exist as source entries, so they are created beyond the readdir loop above.
+  for (const { link, target } of adapter.extraLinks(sourcePath)) {
+    const linkPath = join(profilePath, link);
+    if (lstatExists(linkPath)) {
+      const st = lstatSync(linkPath);
+      if (!st.isSymbolicLink()) {
+        result.conflicts.push(link);
+      } else if (symlinkTargetMatches(profilePath, linkPath, target)) {
+        result.skipped.push(link);
+      } else {
+        unlinkSync(linkPath);
+        symlinkSync(target, linkPath);
+        result.repaired.push(link);
+      }
+      continue;
+    }
+    if (existsSync(target)) {
+      symlinkSync(target, linkPath);
+      result.created.push(link);
+    }
+  }
+
   return result;
 }
 
@@ -419,6 +442,21 @@ export function checkProfileHealth(config: AimuxConfig, profileName: string): He
     }
   }
 
+  // Per-CLI extra symlinks (codex overlay + plugins). They are not source entries, so
+  // they're validated here rather than in the loops above.
+  for (const { link, target } of adapter.extraLinks(sourcePath)) {
+    // syncProfile only creates an extra link when its source target exists; mirror that
+    // here so an absent optional source (e.g. no ~/.codex/plugins) isn't a false 'missing'.
+    if (!existsSync(target)) continue;
+    const linkPath = join(profilePath, link);
+    if (!lstatExists(linkPath)) {
+      report.missing.push(link);
+      continue;
+    }
+    const ok = lstatSync(linkPath).isSymbolicLink() && symlinkTargetMatches(profilePath, linkPath, target);
+    report[ok ? 'valid' : 'broken'].push(link);
+  }
+
   return report;
 }
 
@@ -428,6 +466,11 @@ export function checkAllProfiles(config: AimuxConfig): Map<string, HealthReport>
     reports.set(name, checkProfileHealth(config, name));
   }
   return reports;
+}
+
+/** Whether the symlink at `linkPath` resolves to `target` (relative to `fromDir`). */
+function symlinkTargetMatches(fromDir: string, linkPath: string, target: string): boolean {
+  return resolve(fromDir, readlinkSync(linkPath)) === resolve(target);
 }
 
 function lstatExists(p: string): boolean {
