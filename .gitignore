@@ -13,5 +13,5 @@ AGENTS.md
 .beads-credential-key
 .token-pilot/
 .token-pilot-fingerprint.json
-.codex/
+.codex
 .docs/
