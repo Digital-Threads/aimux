@@ -337,16 +337,14 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
     const linkPath = join(profilePath, link);
     if (lstatExists(linkPath)) {
       const st = lstatSync(linkPath);
-      if (st.isSymbolicLink()) {
-        if (resolve(profilePath, readlinkSync(linkPath)) === resolve(target)) {
-          result.skipped.push(link);
-        } else {
-          unlinkSync(linkPath);
-          symlinkSync(target, linkPath);
-          result.repaired.push(link);
-        }
-      } else {
+      if (!st.isSymbolicLink()) {
         result.conflicts.push(link);
+      } else if (symlinkTargetMatches(profilePath, linkPath, target)) {
+        result.skipped.push(link);
+      } else {
+        unlinkSync(linkPath);
+        symlinkSync(target, linkPath);
+        result.repaired.push(link);
       }
       continue;
     }
@@ -455,8 +453,7 @@ export function checkProfileHealth(config: AimuxConfig, profileName: string): He
       report.missing.push(link);
       continue;
     }
-    const st = lstatSync(linkPath);
-    const ok = st.isSymbolicLink() && resolve(profilePath, readlinkSync(linkPath)) === resolve(target) && existsSync(linkPath);
+    const ok = lstatSync(linkPath).isSymbolicLink() && symlinkTargetMatches(profilePath, linkPath, target);
     report[ok ? 'valid' : 'broken'].push(link);
   }
 
@@ -469,6 +466,11 @@ export function checkAllProfiles(config: AimuxConfig): Map<string, HealthReport>
     reports.set(name, checkProfileHealth(config, name));
   }
   return reports;
+}
+
+/** Whether the symlink at `linkPath` resolves to `target` (relative to `fromDir`). */
+function symlinkTargetMatches(fromDir: string, linkPath: string, target: string): boolean {
+  return resolve(fromDir, readlinkSync(linkPath)) === resolve(target);
 }
 
 function lstatExists(p: string): boolean {

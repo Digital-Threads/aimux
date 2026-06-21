@@ -126,7 +126,11 @@ export async function resumeSession(
   options: { cwd?: string; forkSession?: boolean } = {},
 ): Promise<number> {
   const profile = getProfile(config, profileName);
-  const args = adapterFor(profile.cli).resumeArgs(sessionId, { fork: options.forkSession });
+  const adapter = adapterFor(profile.cli);
+  const rargs = adapter.resumeArgs(sessionId, { fork: options.forkSession });
+  // globalArgs() is the single overlay-injection point (e.g. codex `-p aimux`); resume
+  // spawns the CLI directly (not via buildRunParams), so prepend it here.
+  const args = [...adapter.globalArgs(rargs[0]), ...rargs];
   await prepareTtyForHandoff();
   return new Promise((resolve, reject) => {
     const child = spawn(profile.cli, args, {

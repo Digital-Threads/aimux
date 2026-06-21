@@ -18,8 +18,9 @@ export interface ProviderPreset {
   label: string;
   baseUrl: string;
   /** Model mapped to ANTHROPIC_MODEL / opus / sonnet / haiku. Third-party providers
-   *  usually expose one strong model; the small one (if any) maps to haiku/subagent. */
-  models: { default: string; opus: string; sonnet: string; haiku: string };
+   *  usually expose one strong model — set only `default` then; `opus`/`sonnet`/`haiku`
+   *  override per tier and otherwise fall back to `default`. */
+  models: { default: string; opus?: string; sonnet?: string; haiku?: string };
 }
 
 /**
@@ -32,44 +33,45 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
   deepseek: {
     label: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com/anthropic',
-    models: { default: 'deepseek-chat', opus: 'deepseek-reasoner', sonnet: 'deepseek-chat', haiku: 'deepseek-chat' },
+    models: { default: 'deepseek-chat', opus: 'deepseek-reasoner' },
   },
   kimi: {
     label: 'Kimi (Moonshot)',
     baseUrl: 'https://api.moonshot.ai/anthropic',
-    models: { default: 'kimi-k2.5', opus: 'kimi-k2.5', sonnet: 'kimi-k2.5', haiku: 'kimi-k2.5' },
+    models: { default: 'kimi-k2.5' },
   },
   glm: {
     label: 'GLM (Z.ai)',
     baseUrl: 'https://api.z.ai/api/anthropic',
-    models: { default: 'glm-5.1', opus: 'glm-5.1', sonnet: 'glm-5.1', haiku: 'glm-4.5-air' },
+    models: { default: 'glm-5.1', haiku: 'glm-4.5-air' },
   },
   qwen: {
     label: 'Qwen (Alibaba DashScope)',
     baseUrl: 'https://dashscope-intl.aliyuncs.com/apps/anthropic',
-    models: { default: 'qwen3.6-plus', opus: 'qwen3.6-plus', sonnet: 'qwen3.6-plus', haiku: 'qwen3.6-plus' },
+    models: { default: 'qwen3.6-plus' },
   },
   minimax: {
     label: 'MiniMax',
     baseUrl: 'https://api.minimax.io/anthropic',
-    models: { default: 'minimax-m2.7', opus: 'minimax-m2.7', sonnet: 'minimax-m2.7', haiku: 'minimax-m2.7' },
+    models: { default: 'minimax-m2.7' },
   },
   mimo: {
     label: 'Xiaomi MiMo',
     baseUrl: 'https://api.xiaomimimo.com',
-    models: { default: 'mimo-v2-pro', opus: 'mimo-v2-pro', sonnet: 'mimo-v2-pro', haiku: 'mimo-v2-pro' },
+    models: { default: 'mimo-v2-pro' },
   },
 };
 
 /** The dotenv vars for a provider preset (+ token if given). Pure — used by both the
  *  interactive `--provider` flow and tests. */
 export function providerEnv(preset: ProviderPreset, token?: string): Record<string, string> {
+  const m = preset.models;
   const vars: Record<string, string> = {
     ANTHROPIC_BASE_URL: preset.baseUrl,
-    ANTHROPIC_MODEL: preset.models.default,
-    ANTHROPIC_DEFAULT_OPUS_MODEL: preset.models.opus,
-    ANTHROPIC_DEFAULT_SONNET_MODEL: preset.models.sonnet,
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: preset.models.haiku,
+    ANTHROPIC_MODEL: m.default,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: m.opus ?? m.default,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: m.sonnet ?? m.default,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: m.haiku ?? m.default,
   };
   if (token) vars.ANTHROPIC_AUTH_TOKEN = token;
   return vars;

@@ -67,9 +67,12 @@ describe('codexAdapter auth/source metadata', () => {
 });
 
 describe('resumeArgs', () => {
-  it('codex resumes via "-p aimux resume <id>" (overlay; no fork flag)', () => {
-    expect(adapterFor('codex').resumeArgs('uuid-1')).toEqual(['-p', 'aimux', 'resume', 'uuid-1']);
-    expect(adapterFor('codex').resumeArgs('uuid-1', { fork: true })).toEqual(['-p', 'aimux', 'resume', 'uuid-1']);
+  it('codex resumes via "resume <id>" (overlay added by globalArgs; no fork flag)', () => {
+    // resumeArgs no longer hardcodes -p; the single injection point is globalArgs(),
+    // which resumeSession prepends. globalArgs('resume') === ['-p','aimux'].
+    expect(adapterFor('codex').resumeArgs('uuid-1')).toEqual(['resume', 'uuid-1']);
+    expect(adapterFor('codex').resumeArgs('uuid-1', { fork: true })).toEqual(['resume', 'uuid-1']);
+    expect(adapterFor('codex').globalArgs('resume')).toEqual(['-p', 'aimux']);
   });
 
   it('claude resumes via "--resume <id>" and adds --fork-session for a live session', () => {

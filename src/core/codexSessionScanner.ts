@@ -77,6 +77,70 @@ function listRolloutFiles(sessionsRoot: string): string[] {
 
 /** Scan a codex source dir for interactive sessions, returning records compatible with
  *  the claude `InteractiveSession` shape so `unifyAllSessions` can merge both. */
+interface ParsedRollout {
+  sessionId: string;
+  cwd: string;
+  createdAtMs: number;
+  intent: string;
+  events: number;
+}
+
+interface CodexScanCacheEntry {
+  mtimeMs: number;
+  size: number;
+  result: ParsedRollout | null; // null => file yielded no session (skip)
+}
+
+// (path → (mtime,size)-keyed parse) so a warm re-scan on the AgentsView poll path reuses
+// the parse instead of re-reading + re-parsing every rollout. Mirrors sessionScanner's cache.
+const codexScanCache = new Map<string, CodexScanCacheEntry>();
+
+/** Parse one codex rollout file into its session fields, or null if it has no id. */
+function parseRollout(filePath: string): ParsedRollout | null {
+  let lines: string[];
+  try {
+    lines = readFileSync(filePath, 'utf-8').split('\n');
+  } catch {
+    return null;
+  }
+
+  let sessionId = '';
+  let cwd = '';
+  let createdAtMs = 0;
+  let intent = '';
+  let events = 0;
+
+  for (const raw of lines) {
+    if (!raw) continue;
+    const rec = parseJson(raw);
+    const payload = rec?.payload;
+    if (!rec || !payload) continue;
+
+    if (rec.type === 'session_meta') {
+      sessionId = payload.id ?? sessionId;
+      cwd = payload.cwd ?? cwd;
+      const t = Date.parse(rec.timestamp ?? payload.timestamp ?? '');
+      if (!Number.isNaN(t)) createdAtMs = t;
+    } else if (rec.type === 'response_item') {
+      events += 1;
+      if (payload.role === 'user') {
+        // First real prompt wins; while we still only have a codex context preamble
+        // (<environment_context>, AGENTS.md, …) keep overwriting until a real one shows.
+        const text = contentText(payload.content);
+        if (text && (!intent || isCodexPreamble(intent))) intent = text;
+      }
+    }
+  }
+
+  if (!sessionId) {
+    const m = /rollout-.*-([0-9a-fA-F-]{36})\.jsonl$/.exec(filePath);
+    if (!m) return null;
+    sessionId = m[1];
+  }
+
+  return { sessionId, cwd, createdAtMs, intent, events };
+}
+
 export function scanCodexInteractive(sourceDir: string, opts: ScanCodexOptions = {}): InteractiveSession[] {
   const sessionsRoot = join(expandHome(sourceDir), 'sessions');
   if (!existsSync(sessionsRoot)) return [];
@@ -96,63 +160,27 @@ export function scanCodexInteractive(sourceDir: string, opts: ScanCodexOptions =
     }
     if (stat.mtimeMs < windowCutoff) continue;
 
-    let lines: string[];
-    try {
-      lines = readFileSync(filePath, 'utf-8').split('\n');
-    } catch {
-      continue;
+    // Warm path: file unchanged since last scan → reuse the parse (updatedAtMs still
+    // tracks live mtime). Cold path: parse fully and cache.
+    const cached = codexScanCache.get(filePath);
+    let result: ParsedRollout | null;
+    if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+      result = cached.result;
+    } else {
+      result = parseRollout(filePath);
+      codexScanCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, result });
     }
-
-    let sessionId = '';
-    let cwd = '';
-    let createdAtMs = 0;
-    let intent = '';
-    let firstUserText = '';
-    let events = 0;
-
-    for (const raw of lines) {
-      if (!raw) continue;
-      const rec = parseJson(raw);
-      const payload = rec?.payload;
-      if (!rec || !payload) continue;
-
-      if (rec.type === 'session_meta') {
-        sessionId = payload.id ?? sessionId;
-        cwd = payload.cwd ?? cwd;
-        const t = Date.parse(rec.timestamp ?? payload.timestamp ?? '');
-        if (!Number.isNaN(t)) createdAtMs = t;
-      } else if (rec.type === 'response_item') {
-        events += 1;
-        if (!intent && payload.role === 'user') {
-          const text = contentText(payload.content);
-          if (text) {
-            if (!firstUserText) firstUserText = text;
-            // codex prepends system/context blocks (<environment_context>, AGENTS.md,
-            // <permissions …>) as 'user' messages; the real prompt is the first that
-            // isn't one of those.
-            if (!isCodexPreamble(text)) intent = text;
-          }
-        }
-      }
-    }
-
-    if (!intent) intent = firstUserText;
-
-    if (!sessionId) {
-      const m = /rollout-.*-([0-9a-fA-F-]{36})\.jsonl$/.exec(filePath);
-      if (m) sessionId = m[1];
-      else continue;
-    }
+    if (!result) continue;
 
     sessions.push({
-      sessionId,
-      cwd,
-      intent,
+      sessionId: result.sessionId,
+      cwd: result.cwd,
+      intent: result.intent,
       title: '',
       cwdHashDir: '',
-      createdAtMs: createdAtMs || stat.birthtimeMs || stat.mtimeMs,
+      createdAtMs: result.createdAtMs || stat.birthtimeMs || stat.mtimeMs,
       updatedAtMs: stat.mtimeMs,
-      events,
+      events: result.events,
     });
   }
 

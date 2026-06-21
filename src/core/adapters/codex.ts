@@ -66,8 +66,9 @@ export const codexAdapter: CliAdapter = {
   },
 
   resumeArgs(sessionId) {
-    // codex resume <uuid> (runtime → carries the overlay); no fork-on-resume flag.
-    return ['-p', OVERLAY_PROFILE, 'resume', sessionId];
+    // codex resume <uuid>; no fork-on-resume flag. The `-p aimux` overlay is added by the
+    // single injection point: globalArgs() (callers prepend it, incl. resumeSession).
+    return ['resume', sessionId];
   },
 
   headlessArgs(prompt, outFile) {
