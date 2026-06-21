@@ -25,10 +25,11 @@ function config(): AimuxConfig {
 }
 
 beforeEach(() => {
-  // Codex source with a mix of knowledge dirs and private state.
+  // Codex source with a mix of knowledge dirs, shared transcripts, and private state.
   for (const d of ['skills', 'rules', 'memories', 'sessions']) {
     mkdirSync(join(CODEX_SRC, d), { recursive: true });
   }
+  writeFileSync(join(CODEX_SRC, 'session_index.jsonl'), '');
   writeFileSync(join(CODEX_SRC, 'auth.json'), '{}');
   writeFileSync(join(CODEX_SRC, 'config.toml'), 'model = "x"');
   writeFileSync(join(CODEX_SRC, 'history.jsonl'), '');
@@ -42,22 +43,24 @@ afterEach(() => {
 });
 
 describe('codex profile sharing (allowlist)', () => {
-  it('symlinks only knowledge dirs (skills/rules/memories) from the codex source', () => {
+  it('symlinks knowledge dirs and session transcripts from the codex source', () => {
     const profileDir = join(PROFILES, 'codework');
     syncProfile(config(), 'codework');
 
-    for (const d of ['skills', 'rules', 'memories']) {
-      const p = join(profileDir, d);
-      expect(existsSync(p), `${d} should be linked`).toBe(true);
-      expect(lstatSync(p).isSymbolicLink(), `${d} should be a symlink`).toBe(true);
+    // knowledge + shared transcripts (sessions/ and session_index.jsonl) — the latter
+    // is what lets a different codex subscription resume the same session.
+    for (const entry of ['skills', 'rules', 'memories', 'sessions', 'session_index.jsonl']) {
+      const p = join(profileDir, entry);
+      expect(existsSync(p), `${entry} should be linked`).toBe(true);
+      expect(lstatSync(p).isSymbolicLink(), `${entry} should be a symlink`).toBe(true);
     }
   });
 
-  it('does NOT share codex creds/state (auth.json, config.toml, history.jsonl, sessions)', () => {
+  it('does NOT share codex creds/state (auth.json, config.toml, history.jsonl)', () => {
     const profileDir = join(PROFILES, 'codework');
     const result = syncProfile(config(), 'codework');
 
-    for (const f of ['auth.json', 'config.toml', 'history.jsonl', 'sessions']) {
+    for (const f of ['auth.json', 'config.toml', 'history.jsonl']) {
       expect(existsSync(join(profileDir, f)), `${f} must not be linked`).toBe(false);
       expect(result.private, `${f} reported private`).toContain(f);
     }

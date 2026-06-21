@@ -1,10 +1,15 @@
 import { looksLikeSubcommand } from '../subcommand.js';
 import type { CliAdapter } from './types.js';
 
-// Codex keeps creds/state in many top-level files (auth.json, config.toml, sessions/,
-// sqlite DBs, …). Sharing is an ALLOWLIST of knowledge dirs, not a denylist — so new
-// codex state files are never accidentally shared. Plugins are added in a later PR.
-const CODEX_SHARED_DIRS = new Set(['skills', 'rules', 'memories']);
+// Codex keeps creds/state in many top-level files (auth.json, config.toml, logs, sqlite
+// DBs, …). Sharing is an ALLOWLIST, not a denylist — new codex state files are never
+// accidentally shared. We share:
+//   - knowledge: skills, rules, memories
+//   - session transcripts: sessions/ + session_index.jsonl — the codex analogue of
+//     claude's shared projects/. Sharing them is what lets you switch codex
+//     subscriptions and `codex resume` the SAME session under another profile.
+// Plugins are added in a later PR.
+const CODEX_SHARED_ENTRIES = new Set(['skills', 'rules', 'memories', 'sessions', 'session_index.jsonl']);
 
 export const codexAdapter: CliAdapter = {
   id: 'codex',
@@ -25,7 +30,7 @@ export const codexAdapter: CliAdapter = {
   },
 
   isShared(entry) {
-    return CODEX_SHARED_DIRS.has(entry);
+    return CODEX_SHARED_ENTRIES.has(entry);
   },
 
   authArgs() {
