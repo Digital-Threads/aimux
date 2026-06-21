@@ -35,6 +35,14 @@ function contentText(content: unknown): string {
   return '';
 }
 
+// codex injects context as the first 'user' message(s): an <environment_context> /
+// <permissions …> XML block, or the project's AGENTS.md instructions. These aren't the
+// real prompt, so they're skipped when deriving a session's intent/name.
+function isCodexPreamble(text: string): boolean {
+  const t = text.trimStart();
+  return t.startsWith('<') || t.startsWith('# AGENTS.md') || t.startsWith('# Instructions');
+}
+
 function listRolloutFiles(sessionsRoot: string): string[] {
   const out: string[] = [];
   const stack = [sessionsRoot];
@@ -93,6 +101,7 @@ export function scanCodexInteractive(sourceDir: string, opts: ScanCodexOptions =
     let cwd = '';
     let createdAtMs = 0;
     let intent = '';
+    let firstUserText = '';
     let events = 0;
 
     for (const raw of lines) {
@@ -109,10 +118,19 @@ export function scanCodexInteractive(sourceDir: string, opts: ScanCodexOptions =
       } else if (rec.type === 'response_item') {
         events += 1;
         if (!intent && payload.role === 'user') {
-          intent = contentText(payload.content);
+          const text = contentText(payload.content);
+          if (text) {
+            if (!firstUserText) firstUserText = text;
+            // codex prepends system/context blocks (<environment_context>, AGENTS.md,
+            // <permissions …>) as 'user' messages; the real prompt is the first that
+            // isn't one of those.
+            if (!isCodexPreamble(text)) intent = text;
+          }
         }
       }
     }
+
+    if (!intent) intent = firstUserText;
 
     if (!sessionId) {
       const m = /rollout-.*-([0-9a-fA-F-]{36})\.jsonl$/.exec(filePath);
