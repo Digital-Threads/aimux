@@ -73,7 +73,9 @@ export const codexAdapter: CliAdapter = {
   headlessArgs(prompt, outFile) {
     // codex exec stdout is noisy (header, token counts, echo). --output-last-message
     // writes ONLY the final assistant message, so the summarizer reads a clean result.
-    const head = ['-p', OVERLAY_PROFILE, 'exec'];
+    // No `-p aimux` here: headless goes through buildRunParams, whose globalArgs() injects
+    // the overlay for the runtime `exec` subcommand — adding it here would double it.
+    const head = ['exec'];
     return outFile ? [...head, '--output-last-message', outFile, prompt] : [...head, prompt];
   },
 

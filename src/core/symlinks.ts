@@ -447,6 +447,9 @@ export function checkProfileHealth(config: AimuxConfig, profileName: string): He
   // Per-CLI extra symlinks (codex overlay + plugins). They are not source entries, so
   // they're validated here rather than in the loops above.
   for (const { link, target } of adapter.extraLinks(sourcePath)) {
+    // syncProfile only creates an extra link when its source target exists; mirror that
+    // here so an absent optional source (e.g. no ~/.codex/plugins) isn't a false 'missing'.
+    if (!existsSync(target)) continue;
     const linkPath = join(profilePath, link);
     if (!lstatExists(linkPath)) {
       report.missing.push(link);

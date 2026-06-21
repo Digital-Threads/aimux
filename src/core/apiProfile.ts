@@ -241,7 +241,12 @@ export async function collectProviderCredentials(preset: ProviderPreset): Promis
   const reader = new StdinLineReader();
   try {
     const token = await reader.question(`  ${preset.label} API token:  `, true);
-    return providerEnv(preset, token || undefined);
+    if (!token) {
+      // A base-URL preset without a token yields an unusable profile that `aimux status`
+      // would still report as healthy — fail loudly instead.
+      throw new Error('No API token entered — provider profile not created');
+    }
+    return providerEnv(preset, token);
   } finally {
     reader.close();
   }

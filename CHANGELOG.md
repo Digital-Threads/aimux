@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.17.0] - 2026-06-21
+
+### Added
+- **Codex profiles reach full parity with claude.** In addition to knowledge
+  (`skills`/`rules`/`memories`), codex profiles now also share:
+  - **Session transcripts** — `sessions/` + `session_index.jsonl`, the codex analogue of
+    claude's shared `projects/`. Switching codex subscriptions can `codex resume` the same
+    session under another profile.
+  - **Settings + plugins** — via codex's native config overlay: a symlinked
+    `aimux.config.toml` (→ source `config.toml`) layered with `-p aimux`, which codex reads
+    but never writes. The mutable `config.toml` itself stays private per profile. No TOML
+    dependency, no merge — pure symlink + flag (verified against codex-cli 0.139.0).
+- **Provider presets for Anthropic-compatible models.**
+  `aimux profile add <name> --provider <deepseek|kimi|glm|qwen|minimax|mimo>` fills the
+  provider's `ANTHROPIC_BASE_URL` + model mapping and prompts only for the token. These run
+  on the claude CLI (`cli: claude`), so they share the **full claude brain** (skills,
+  plugins, settings, memory, transcripts) and you can `--resume` a claude session under
+  them natively — switching the model mid-session, no summary needed.
+- `aimux init` detects `~/.codex` and pre-registers `shared_sources.codex`.
+
+### Fixed
+- **Codex auth shown correctly.** Profile list and `aimux auth status` checked claude's
+  `.credentials.json`, so codex profiles showed `✗ no auth` despite being logged in; now
+  routed through the adapter (`auth.json`).
+- **Codex session names in `aimux agents`** skip the injected context preamble
+  (`<environment_context>` / AGENTS.md) and show the real first prompt.
+
 ## [0.16.0] - 2026-06-20
 
 ### Added

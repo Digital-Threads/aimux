@@ -85,11 +85,17 @@ describe('headlessArgs (summarizer capture)', () => {
     expect(c.headlessCaptureToFile).toBe(false);
   });
 
-  it('codex writes the final message to outFile via exec --output-last-message (with overlay)', () => {
+  it('codex writes the final message to outFile via exec --output-last-message (overlay added by buildRunParams)', () => {
     const a = adapterFor('codex');
     expect(a.headlessCaptureToFile).toBe(true);
-    expect(a.headlessArgs('hi', '/tmp/out.txt')).toEqual(['-p', 'aimux', 'exec', '--output-last-message', '/tmp/out.txt', 'hi']);
-    expect(a.headlessArgs('hi')).toEqual(['-p', 'aimux', 'exec', 'hi']);
+    // No -p here: headlessArgs flows through buildRunParams, whose globalArgs('exec')
+    // injects `-p aimux`. Including it here would double it.
+    expect(a.headlessArgs('hi', '/tmp/out.txt')).toEqual(['exec', '--output-last-message', '/tmp/out.txt', 'hi']);
+    expect(a.headlessArgs('hi')).toEqual(['exec', 'hi']);
+  });
+
+  it('globalArgs injects the overlay for exec so the headless summarizer carries it once', () => {
+    expect(adapterFor('codex').globalArgs('exec')).toEqual(['-p', 'aimux']);
   });
 });
 

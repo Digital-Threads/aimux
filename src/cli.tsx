@@ -482,6 +482,11 @@ program
           // mid-prompt leaves no half-created profile behind.
           let apiVars: Record<string, string> | undefined;
           if (options.provider) {
+            // Provider presets are Anthropic-compatible endpoints — they run on the claude
+            // CLI. A non-claude --cli would ignore the ANTHROPIC_* env entirely.
+            if ((options.cli ?? 'claude') !== 'claude') {
+              throw new Error(`--provider works only with the claude CLI, not --cli ${options.cli}`);
+            }
             const preset = PROVIDER_PRESETS[options.provider.toLowerCase()];
             if (!preset) {
               throw new Error(

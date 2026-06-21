@@ -41,6 +41,12 @@ function checkAuth(profile: ProfileConfig): AuthStatus {
     return { kind: 'oauth', active: true };
   }
 
+  // The OAuth-status probe is claude-specific (`claude auth status` JSON, CLAUDE_CONFIG_DIR).
+  // For other CLIs the credential-file check above is the verdict — no doomed subprocess.
+  if (profile.cli !== 'claude') {
+    return { kind: 'none' };
+  }
+
   const probeEnv: Record<string, string> = {};
   if (!profile.is_source) {
     probeEnv.CLAUDE_CONFIG_DIR = profilePath;

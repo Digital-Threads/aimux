@@ -40,7 +40,13 @@ function contentText(content: unknown): string {
 // real prompt, so they're skipped when deriving a session's intent/name.
 function isCodexPreamble(text: string): boolean {
   const t = text.trimStart();
-  return t.startsWith('<') || t.startsWith('# AGENTS.md') || t.startsWith('# Instructions');
+  return (
+    t.startsWith('<environment_context') ||
+    t.startsWith('<permissions') ||
+    t.startsWith('<user_instructions') ||
+    t.startsWith('# AGENTS.md') ||
+    t.startsWith('# Instructions')
+  );
 }
 
 function listRolloutFiles(sessionsRoot: string): string[] {
