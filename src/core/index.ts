@@ -50,6 +50,8 @@ export { buildRunParams, launchProfile, runProfileHeadless, looksLikeSubcommand,
 export type { RunOptions, RunParams, HeadlessOptions, HeadlessResult } from './run.js';
 export { adapterFor } from './adapters/index.js';
 export type { CliAdapter } from './adapters/index.js';
+export { detectShell, parseShell, buildSwitchEnv, renderShellExports, renderShellInit } from './shellSwitch.js';
+export type { SupportedShell, RenderExportsOptions } from './shellSwitch.js';
 export { openSession, buildSessionArgs } from './liveSession.js';
 export type { OpenSessionOptions, SessionEvent, TurnResult, LiveSession } from './liveSession.js';
 

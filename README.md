@@ -96,6 +96,31 @@ aimux profile update w --fallback-model claude-sonnet-4-6
 aimux profile update w --unset-fallback-model   # remove it
 ```
 
+### Switch your shell to a profile (`aimux use`)
+
+`aimux run` launches a one-off session. If you'd rather *activate* a profile so
+plain `claude` / `codex` use it — like `nvm use` or `pyenv shell` — enable the
+shell integration once:
+
+```bash
+# add to ~/.zshrc or ~/.bashrc (fish: ~/.config/fish/config.fish)
+eval "$(aimux shell-init)"
+```
+
+Then:
+
+```bash
+aimux use work     # activate 'work' in this shell (persistent until you switch)
+claude             # runs under 'work' — no `aimux run` needed
+codex              # same; the CLI adapter sets CODEX_HOME for you
+aimux use api      # switch profiles — stale ANTHROPIC_*/tokens are cleaned up
+aimux use          # no name → interactive picker
+```
+
+Each shell is independent, so different terminals can hold different active
+profiles at once. The switch only exports env vars into the current shell — it
+never changes global state. `aimux run` still works for one-off launches.
+
 ## Commands
 
 | Command | Description |
@@ -109,6 +134,8 @@ aimux profile update w --unset-fallback-model   # remove it
 | `aimux run` | Interactive picker — history pre-selects last used profile |
 | `aimux run w` | Prefix matching — launches `work` if unambiguous |
 | `aimux run work -m claude-sonnet-4-6` | Launch with model override |
+| `aimux use [profile]` | Switch the current shell to a profile (persistent) — plain `claude`/`codex` then use it. Requires `eval "$(aimux shell-init)"` in your rc |
+| `aimux shell-init` | Print the shell function that enables `aimux use` (add to `~/.zshrc`/`~/.bashrc`/fish config) |
 | `aimux agents` | Multi-profile agent view — see and manage claude background sessions across **all** profiles in one TUI |
 | `aimux profile add <name>` | Create new profile with symlinks |
 | `aimux profile add <name> --api` | Create a 3rd-party API profile (interactive endpoint + token prompt) |

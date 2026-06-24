@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.18.0] - 2026-06-24
+
+### Added
+- **Switch your shell to a profile (`aimux use`).** Activate a profile in the
+  current shell so plain `claude` / `codex` run under it — the `nvm use` / `pyenv
+  shell` model, an alternative to per-launch `aimux run`. Enable once with
+  `eval "$(aimux shell-init)"` in your rc (bash/zsh/fish supported), then:
+  - `aimux use <profile>` exports the profile's env (the CLI adapter picks
+    `CLAUDE_CONFIG_DIR` vs `CODEX_HOME`, plus any profile `.env`) into the
+    current shell. No name → interactive picker.
+  - Switching profiles cleans up the previous profile's managed vars (stale
+    `ANTHROPIC_*` / tokens), so no credentials leak across a switch.
+  - Each shell is independent — different terminals can hold different active
+    profiles at once, preserving aimux's "any profile, any terminal" model.
+  - `aimux shell-init [--shell <bash|zsh|fish>]` prints the wrapper function.
+- **`aimux status` / `profile list` mark the in-use profile.** The profile
+  activated in the current shell is highlighted with a `▸` marker and an
+  `Active here:` summary line (read from `$AIMUX_PROFILE`, ignored if stale).
+
 ## [0.17.0] - 2026-06-21
 
 ### Added
