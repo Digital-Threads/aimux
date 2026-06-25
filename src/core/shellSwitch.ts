@@ -60,6 +60,9 @@ export interface RenderExportsOptions {
  */
 export function renderShellExports({ env, profileName, previousManaged, shell }: RenderExportsOptions): string {
   const keys = Object.keys(env);
+  // Invariant: every entry is a bare env-var name (no spaces) — cleanup re-parses
+  // `$AIMUX_MANAGED` by splitting on whitespace, so a spaced value would strand
+  // stale keys and leak the previous profile's credentials across a switch.
   const managed = [...keys, 'AIMUX_PROFILE'];
   const stale = (previousManaged ?? '')
     .split(/\s+/)

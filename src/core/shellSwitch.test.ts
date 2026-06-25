@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { detectShell, parseShell, renderShellExports, renderShellInit } from './shellSwitch.js';
 
 describe('detectShell', () => {
@@ -61,6 +62,31 @@ describe('renderShellExports', () => {
     expect(out).toContain(`set -gx CLAUDE_CONFIG_DIR '/home/u/.aimux/profiles/work'`);
     expect(out).toContain(`set -e OLD_VAR`);
     expect(out).toContain(`set -gx AIMUX_PROFILE 'work'`);
+  });
+
+  // The output is eval'd, so injection-resistance of the quoting is the contract
+  // that matters most. Lock the exact rendered form for hostile values.
+  const EVIL = `a'b"c$(whoami)\`id\`\\d;e |f&`;
+
+  it('neutralizes shell metacharacters by single-quoting (posix)', () => {
+    const out = renderShellExports({ env: { EVIL }, profileName: 'p', shell: 'bash' });
+    // Only the single quote is escaped (as '\''); $(), backticks, \, ;, |, & are
+    // literal inside single quotes — never interpolated or executed.
+    expect(out).toContain(`export EVIL='a'\\''b"c$(whoami)\`id\`\\d;e |f&'`);
+  });
+
+  it('neutralizes backslashes and quotes (fish)', () => {
+    const out = renderShellExports({ env: { EVIL }, profileName: 'p', shell: 'fish' });
+    // fish single quotes escape only \\ and \' .
+    expect(out).toContain(`set -gx EVIL 'a\\'b"c$(whoami)\`id\`\\\\d;e |f&'`);
+  });
+
+  it('round-trips a hostile value through a real bash eval (no injection)', () => {
+    const value = `${EVIL}\nsecond-line`;
+    const script = renderShellExports({ env: { EVIL: value }, profileName: 'p', shell: 'bash' });
+    const out = execFileSync('bash', ['-c', `${script}\nprintf %s "$EVIL"`], { encoding: 'utf-8' });
+    // eval reproduced the value byte-for-byte and $(whoami)/`id` did not execute.
+    expect(out).toBe(value);
   });
 });
 
