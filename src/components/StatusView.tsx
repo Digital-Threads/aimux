@@ -90,6 +90,10 @@ export function StatusView({ config }: Props) {
   const sharedEntries = safeGetSharedElements(config);
   const sharedCount = sharedEntries.length;
   const reports = checkAllProfiles(config);
+  // The profile activated in THIS shell via `aimux use` (per-shell env var).
+  // Only honored when it resolves to a real profile, so a stale var never lies.
+  const envActive = process.env.AIMUX_PROFILE;
+  const activeProfile = envActive && config.profiles[envActive] ? envActive : undefined;
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -100,11 +104,14 @@ export function StatusView({ config }: Props) {
         <Text>Profiles: <Text bold>{profiles.length}</Text> ({authCount} authenticated)</Text>
         <Text>Shared elements: <Text bold>{sharedCount}</Text></Text>
         <Text>Private elements: <Text bold>{config.private.length}</Text></Text>
+        <Text>Active here: {activeProfile
+          ? <Text bold color="green">{activeProfile}</Text>
+          : <Text dimColor>none (run `aimux use &lt;profile&gt;`)</Text>}</Text>
         <Text> </Text>
 
         <Box flexDirection="column">
           <Box gap={2}>
-            <Box width={12}><Text bold underline>NAME</Text></Box>
+            <Box width={12}><Text bold underline>{'  NAME'}</Text></Box>
             <Box width={16}><Text bold underline>AUTH</Text></Box>
             <Box width={20}><Text bold underline>MODEL</Text></Box>
             <Box width={16}><Text bold underline>AUTOMODE</Text></Box>
@@ -133,10 +140,13 @@ export function StatusView({ config }: Props) {
                   ? 'green'
                   : 'yellow';
 
+            const isActive = name === activeProfile;
             return (
               <Box key={name} gap={2}>
                 <Box width={12}>
-                  <Text color={isSource ? 'yellow' : 'white'}>{name}</Text>
+                  <Text color={isActive ? 'green' : isSource ? 'yellow' : 'white'} bold={isActive}>
+                    {isActive ? '▸ ' : '  '}{name}
+                  </Text>
                 </Box>
                 <Box width={16}>
                   {auth.kind === 'api'

@@ -23,6 +23,7 @@ export function ProfilePicker({ config, lastProfile, onSelect }: Props) {
       setCursor(prev => (prev < profiles.length - 1 ? prev + 1 : 0));
     } else if (key.return) {
       onSelect(profiles[cursor][0]);
+      exit(); // close the picker so render().waitUntilExit() resolves on select
     } else if (input === 'q' || key.escape) {
       exit();
     }

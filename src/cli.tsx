@@ -14,6 +14,7 @@ import {
   looksLikeSubcommand, adapterFor,
   summarizeUsage, parseSinceDuration, totalTokens,
   loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson,
+  parseShell, buildSwitchEnv, renderShellExports, renderShellInit,
 } from './core/index.js';
 
 function collectRepeatable(value: string, previous: string[]): string[] {
@@ -245,6 +246,104 @@ program
       }
       const exitCode = await launchProfile(config, profileName, { model: options.model, extraArgs: cliArgs });
       process.exit(exitCode);
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('use [profile]')
+  .description('Switch the current shell to a profile (persistent until you switch again)')
+  .option('--export', 'Emit shell export statements for eval (used by the shell wrapper)')
+  .option('--shell <shell>', 'Target shell for --export: bash, zsh, or fish')
+  .action(async (profile: string | undefined, options: { export?: boolean; shell?: string }) => {
+    try {
+      const config = requireConfig();
+
+      const shell = parseShell(options.shell, process.env.SHELL);
+
+      let profileName = profile;
+      if (!profileName) {
+        const names = Object.keys(config.profiles);
+        if (names.length === 1) {
+          profileName = names[0];
+        } else {
+          const { render } = await import('ink');
+          const { ProfilePicker } = await import('./components/ProfilePicker.js');
+          const last = getLastProfile(process.cwd());
+          let selected: string | undefined;
+          // Under the shell wrapper, --export's stdout is captured by command
+          // substitution, so draw the picker on stderr (still a TTY) to keep
+          // stdout eval-clean. Direct invocation draws on stdout as usual.
+          const { waitUntilExit } = render(
+            <ProfilePicker config={config} lastProfile={last} onSelect={(s: string) => { selected = s; }} />,
+            options.export ? { stdout: process.stderr } : undefined,
+          );
+          await waitUntilExit();
+          if (!selected) return;
+          profileName = selected;
+        }
+      }
+
+      profileName = resolveProfile(config, profileName);
+      const profile_ = config.profiles[profileName];
+
+      // Keep the runtime dir fresh, same as `run`. Source profiles need no sync.
+      if (!profile_.is_source) {
+        const sync = syncProfile(config, profileName);
+        // Only surface real repairs — switching is frequent, and a steady
+        // conflict count would spam every switch. stderr keeps stdout eval-clean.
+        if (sync.created.length > 0 || sync.repaired.length > 0) {
+          console.error(`Auto-sync: ${formatSyncSummary(sync)}`);
+        }
+      }
+      const permWarning = checkDotenvPermissions(expandHome(profile_.path));
+      if (permWarning) console.error(`\x1b[33m⚠ ${permWarning}\x1b[0m`);
+
+      recordHistory(process.cwd(), profileName);
+      const env = buildSwitchEnv(config, profileName);
+
+      if (options.export) {
+        // stdout: ONLY shell code (it gets eval'd). Confirmation goes to stderr.
+        process.stdout.write(
+          renderShellExports({ env, profileName, previousManaged: process.env.AIMUX_MANAGED, shell }) + '\n'
+        );
+        const bits: string[] = [];
+        if (env.ANTHROPIC_BASE_URL) {
+          try { bits.push(`endpoint ${new URL(env.ANTHROPIC_BASE_URL).host}`); }
+          catch { bits.push(`endpoint ${env.ANTHROPIC_BASE_URL}`); }
+        }
+        const model = env.ANTHROPIC_MODEL ?? profile_.model;
+        if (model) bits.push(`model ${model}`);
+        const suffix = bits.length > 0 ? ` — ${bits.join(', ')}` : '';
+        console.error(`Switched to '${profileName}' (${profile_.cli})${suffix}. Run \`${profile_.cli}\` to start.`);
+        return;
+      }
+
+      // Not eval'd — the user ran `aimux use` directly without shell integration.
+      console.error(`Profile '${profileName}' (${profile_.cli}) selected, but this shell was not updated.`);
+      console.error('Enable the shell wrapper once so `aimux use` switches in place:');
+      console.error('');
+      console.error(`  echo 'eval "$(aimux shell-init)"' >> ~/.${shell === 'fish' ? 'config/fish/config.fish' : `${shell}rc`}`);
+      console.error('');
+      console.error('Or switch just this once with:');
+      console.error(shell === 'fish'
+        ? `  eval (aimux use ${profileName} --export --shell fish | string collect)`
+        : `  eval "$(aimux use ${profileName} --export)"`);
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('shell-init')
+  .description('Print the shell function enabling `aimux use` (add to your rc: eval "$(aimux shell-init)")')
+  .option('--shell <shell>', 'Target shell: bash, zsh, or fish')
+  .action((options: { shell?: string }) => {
+    try {
+      console.log(renderShellInit(parseShell(options.shell, process.env.SHELL)));
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);
