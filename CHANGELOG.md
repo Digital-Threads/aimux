@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.19.0] - 2026-06-26
+
+### Added
+- **Per-session reasoning effort (`openSession({ effort })`).** The live-session
+  API forwards a reasoning-effort level to the CLI as `--effort <level>` (e.g.
+  `low` | `medium` | `high` | `xhigh` | `max`). Thin passthrough — aimux only
+  knows the flag; the caller owns the level. Optional and backward-compatible:
+  omit it to keep the CLI's default, and existing `openSession` callers are
+  unaffected.
+
 ## [0.18.0] - 2026-06-24
 
 ### Added
