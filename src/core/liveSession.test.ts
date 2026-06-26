@@ -73,6 +73,17 @@ describe('buildSessionArgs', () => {
     expect(args.some((a) => a.startsWith('--allowedTools'))).toBe(false);
   });
 
+  it('passes the reasoning effort level through as --effort', () => {
+    const { args } = buildSessionArgs(makeConfig(), 'work', { sessionId: 's', effort: 'xhigh' }, false);
+    expect(args).toContain('--effort');
+    expect(args[args.indexOf('--effort') + 1]).toBe('xhigh');
+  });
+
+  it('omits --effort when no effort is set', () => {
+    const { args } = buildSessionArgs(makeConfig(), 'work', { sessionId: 's' }, false);
+    expect(args).not.toContain('--effort');
+  });
+
   it('carries the profile account (CLAUDE_CONFIG_DIR), model, and spine task id', () => {
     const { env, args } = buildSessionArgs(makeConfig(), 'work', { sessionId: 's', taskId: 't-1' }, false);
     expect(env.CLAUDE_CONFIG_DIR).toBe('/home/user/.aimux/profiles/work');
