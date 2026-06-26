@@ -26,6 +26,10 @@ const DEFAULT_REPLY_TIMEOUT_MS = 10 * 60_000;
 export interface OpenSessionOptions {
   /** Model for THIS session (a session's model is fixed at spawn). */
   model?: string;
+  /** Reasoning effort for THIS session (→ `--effort <level>`), e.g. 'low' |
+   *  'medium' | 'high' | 'xhigh' | 'max'. aimux only knows the flag; the caller
+   *  owns the level. Omit to use the CLI's default. */
+  effort?: string;
   /** Stable id: created with `--session-id`, recovered with `--resume`. */
   sessionId: string;
   /** The session already exists in Claude (e.g. recovering after a host restart),
@@ -101,6 +105,7 @@ export function buildSessionArgs(
   const extra: string[] = [...STREAM_FLAGS];
   if (opts.settingsPath) extra.push('--settings', opts.settingsPath);
   if (opts.mcpConfigPath) extra.push('--mcp-config', opts.mcpConfigPath);
+  if (opts.effort) extra.push('--effort', opts.effort);
   if (opts.bypassPermissions) extra.push('--dangerously-skip-permissions');
   else if (opts.allowedTools && opts.allowedTools.length) extra.push(`--allowedTools=${opts.allowedTools.join(',')}`);
   // Session lifecycle: create with --session-id, recover with --resume.
