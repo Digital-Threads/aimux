@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { buildSessionArgs, openSession, type SessionEvent } from './liveSession.js';
 import type { AimuxConfig } from '../types/index.js';
@@ -152,6 +152,24 @@ describe('openSession', () => {
     const r = await s.send('hang'); // no result emitted → watchdog fires
     expect(r.text).toContain('did not respond within the time limit');
     expect(procs[0].killed).toBe(true);
+  });
+
+  it('the watchdog resets on streamed activity — a long but ACTIVE turn is not killed', async () => {
+    vi.useFakeTimers();
+    try {
+      const { procs, spawnFn } = spy();
+      const s = openSession(makeConfig(), 'work', { sessionId: 'sid', spawnFn, replyTimeoutMs: 1000 });
+      const p = s.send('big implementation');
+      vi.advanceTimersByTime(900); // almost the cap…
+      procs[0].line({ type: 'assistant', message: { content: [{ type: 'text', text: 'still working' }] } }); // …activity re-arms it
+      vi.advanceTimersByTime(900); // 1800ms total, but only 900ms since the reset → survives
+      procs[0].line({ type: 'result', result: 'done' });
+      const r = await p;
+      expect(r.text).toBe('done'); // completed, NOT the timeout marker
+      expect(procs[0].killed).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a session opened with resume:true recovers on the FIRST send (host-restart)', async () => {
