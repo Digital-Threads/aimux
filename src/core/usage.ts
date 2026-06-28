@@ -2,9 +2,11 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AimuxConfig } from '../types/index.js';
 import { expandHome } from './paths.js';
+import { sourceFor } from './config.js';
 import { loadSessionHistory } from './sessionHistory.js';
 import { buildProfileSessionMap } from './profileSessionMap.js';
 import { parseSessionJsonl, quickFirstLineType } from './sessionScanner.js';
+import { listRolloutFiles } from './codexSessionScanner.js';
 import { estimateCost } from './pricing.js';
 
 export interface UsageTotals {
@@ -150,10 +152,21 @@ interface UsageRecord {
   usage: UsagePayload;
 }
 
-// Single scan of all transcripts → deduplicated per-request usage records. Shared by
+// All usage records across every configured CLI → deduplicated per-request. Shared by
 // summarizeUsage (group by profile) and usageBySession (group by session) so both stay
-// in sync and the scan/dedup logic lives in one place.
+// in sync. claude transcripts and codex rollouts live in different trees/formats, so each
+// CLI has its own collector; profile attribution (history → 'unknown' fallback) is shared.
 function collectUsageRecords(config: AimuxConfig, options: UsageOptions = {}): UsageRecord[] {
+  const records = collectClaudeUsageRecords(config, options);
+  if (Object.values(config.profiles).some((p) => p.cli === 'codex')) {
+    records.push(...collectCodexUsageRecords(config, options));
+  }
+  return records;
+}
+
+// claude: one deduplicated record per assistant request, scanned from the shared
+// projects/*.jsonl transcript tree.
+function collectClaudeUsageRecords(config: AimuxConfig, options: UsageOptions = {}): UsageRecord[] {
   const projectsRoot = join(expandHome(config.shared_source), 'projects');
   const records: UsageRecord[] = [];
   if (!existsSync(projectsRoot)) return records;
@@ -221,6 +234,85 @@ function collectUsageRecords(config: AimuxConfig, options: UsageOptions = {}): U
         records.push({ profile, sessionId, model: formatModel(line.message?.model), usage });
       }
     }
+  }
+
+  return records;
+}
+
+const MAX_ROLLOUT_BYTES = 256 * 1024 * 1024;
+
+// codex: one record per session from its rollout JSONL. codex emits cumulative
+// token_count events; the final total_token_usage is the session's lifetime total.
+// cached_input_tokens is a SUBSET of input_tokens, so split it into the cache-read
+// bucket; codex reports no separate cache-write tier.
+function collectCodexUsageRecords(config: AimuxConfig, options: UsageOptions = {}): UsageRecord[] {
+  const sessionsRoot = join(expandHome(sourceFor(config, 'codex')), 'sessions');
+  const records: UsageRecord[] = [];
+  if (!existsSync(sessionsRoot)) return records;
+
+  const history = loadSessionHistory();
+  const profileMap = buildProfileSessionMap(config);
+
+  for (const filePath of listRolloutFiles(sessionsRoot)) {
+    let stat;
+    try {
+      stat = statSync(filePath);
+    } catch {
+      continue;
+    }
+    if (options.sinceMs !== undefined && stat.mtimeMs < options.sinceMs) continue;
+    // A multi-hundred-MB rollout is pathological; reading it fully would spike
+    // memory (or exceed V8's string limit). Skip rather than risk an OOM.
+    if (stat.size > MAX_ROLLOUT_BYTES) continue;
+
+    let lines: string[];
+    try {
+      lines = readFileSync(filePath, 'utf-8').split('\n');
+    } catch {
+      continue;
+    }
+
+    let sessionId = '';
+    let model = '';
+    let total: Record<string, unknown> | null = null;
+    for (const raw of lines) {
+      if (!raw) continue;
+      let rec: { type?: string; payload?: Record<string, any> };
+      try {
+        rec = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      const payload = rec?.payload;
+      if (!payload) continue;
+      if (rec.type === 'session_meta') sessionId = payload.id ?? sessionId;
+      else if (rec.type === 'turn_context') model = payload.model ?? model;
+      else if (rec.type === 'event_msg' && payload.type === 'token_count' && payload.info?.total_token_usage) {
+        total = payload.info.total_token_usage; // last wins → session lifetime total
+      }
+    }
+
+    if (!sessionId) {
+      const m = /rollout-.*-([0-9a-fA-F-]{36})\.jsonl$/.exec(filePath);
+      if (!m) continue;
+      sessionId = m[1];
+    }
+    if (!total) continue;
+
+    const inputAll = numberValue(total.input_tokens);
+    const cached = numberValue(total.cached_input_tokens);
+    const usage: UsagePayload = {
+      input_tokens: Math.max(0, inputAll - cached),
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: cached,
+      output_tokens: numberValue(total.output_tokens),
+    };
+
+    const profile =
+      history.get(sessionId)?.profile ?? profileMap.get(sessionId)?.profile ?? 'unknown';
+    if (options.profile && profile !== options.profile) continue;
+
+    records.push({ profile, sessionId, model: model || 'unknown', usage });
   }
 
   return records;

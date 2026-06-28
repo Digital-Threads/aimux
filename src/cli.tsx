@@ -120,7 +120,7 @@ program
 
 program
   .command('usage')
-  .description('Show token usage by profile from Claude transcript metadata')
+  .description('Show token usage by profile (Claude transcripts + codex rollouts)')
   .option('-p, --profile <profile>', 'Only show one profile (supports prefix matching)')
   .option('--since <duration>', 'Only include usage since duration: 24h, 7d, 4w', '7d')
   .option('--all', 'Include all known transcript usage')
@@ -134,7 +134,7 @@ program
       if (!options.all) {
         console.log(`\nWindow: ${options.since}`);
       }
-      console.log('Source: shared projects/*.jsonl transcript usage metadata; duplicate requestIds counted once.');
+      console.log('Source: Claude projects/*.jsonl transcripts + codex session rollouts; duplicate Claude requestIds counted once. $ are list-price estimates.');
       if (summaries.some((s) => s.profile === 'unknown')) {
         console.log('Note: unknown means aimux could not map a transcript session to a profile.');
       }
