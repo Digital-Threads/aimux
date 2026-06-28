@@ -1,5 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
-import { buildHandoffPrompt, buildSummarizePrompt, handoffSession, type HandoffDeps } from './handoff.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { buildHandoffPrompt, buildSummarizePrompt, handoffSession, readTranscript, type HandoffDeps } from './handoff.js';
 import type { AimuxConfig } from '../types/index.js';
 import type { UnifiedSession } from './unifiedSessions.js';
 
@@ -37,6 +40,29 @@ describe('prompt builders', () => {
     expect(out).toContain('--- TRANSCRIPT ---');
     expect(out).toContain('TRANSCRIPT_BODY');
     expect(out).toContain('immediate next step');
+  });
+});
+
+describe('readTranscript (codex)', () => {
+  let dir: string;
+  afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }); });
+
+  const ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+  function codexConfig(): AimuxConfig {
+    return { version: 1, shared_source: '/x', shared_sources: { codex: dir }, profiles: {}, private: [] } as AimuxConfig;
+  }
+
+  it('matches the rollout by exact session id, not a substring', () => {
+    dir = mkdtempSync(join(tmpdir(), 'aimux-handoff-codex-'));
+    const day = join(dir, 'sessions', '2026', '06', '28');
+    mkdirSync(day, { recursive: true });
+    // Decoy: filename CONTAINS the id but isn't the session's rollout (extra suffix).
+    writeFileSync(join(day, `rollout-2026-06-28T10-00-00-${ID}-decoy.jsonl`), 'DECOY');
+    writeFileSync(join(day, `rollout-2026-06-28T11-00-00-${ID}.jsonl`), 'REAL');
+
+    const text = readTranscript(codexConfig(), session({ cli: 'codex', sessionId: ID }));
+    expect(text).toBe('REAL');
   });
 });
 
