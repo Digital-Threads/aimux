@@ -164,6 +164,9 @@ export function openSession(config: AimuxConfig, profileName: string, opts: Open
   let buf = '';
   let pending: ((r: TurnResult) => void) | null = null;
   let curEvent: ((e: SessionEvent) => void) | undefined;
+  // Reset the reply watchdog on streamed activity, so it's an INACTIVITY timeout
+  // (a long-but-active turn survives) rather than a hard cap on turn duration.
+  let resetWatchdog: (() => void) | null = null;
   let totalCost = 0;
   const denialSet: string[] = [];
   // First send creates the session (--session-id); afterwards it recovers (--resume).
@@ -187,6 +190,7 @@ export function openSession(config: AimuxConfig, profileName: string, opts: Open
       let ev: { type?: string; result?: string; total_cost_usd?: number; permission_denials?: unknown[]; message?: { content?: unknown } };
       try { ev = JSON.parse(line); } catch { continue; }
       if (ev.type === 'assistant') {
+        resetWatchdog?.(); // the agent is working — keep the watchdog from firing
         const s = summarizeAssistant(ev.message?.content);
         if (s) curEvent?.({ kind: 'assistant', text: s, raw: ev });
       } else if (ev.type === 'result') {
@@ -228,13 +232,19 @@ export function openSession(config: AimuxConfig, profileName: string, opts: Open
       curEvent = onEvent;
       return new Promise<TurnResult>((resolve) => {
         let timer: ReturnType<typeof setTimeout>;
-        pending = (r: TurnResult) => { clearTimeout(timer); resolve(r); };
-        timer = setTimeout(() => {
+        const arm = (): ReturnType<typeof setTimeout> => setTimeout(() => {
           pending = null;
+          resetWatchdog = null;
           try { child.kill(); } catch { /* best-effort */ }
           proc = null;
           resolve({ text: '⏱ The agent did not respond within the time limit — the session was stopped. Re-run the stage or switch the subscription.', costUsd: 0, denials: [] });
         }, replyTimeout);
+        timer = arm();
+        // INACTIVITY timeout: every streamed event re-arms it (see onData), so a
+        // long but actively-working turn (a big implementation) is not killed —
+        // only a genuinely silent/stuck one is.
+        resetWatchdog = () => { clearTimeout(timer); timer = arm(); };
+        pending = (r: TurnResult) => { clearTimeout(timer); resetWatchdog = null; resolve(r); };
         child.stdin?.write(userMessage(text));
       });
     },
