@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.19.1] - 2026-06-28
+
+### Fixed
+- **Reply watchdog is now an inactivity timeout, not a turn cap.** In the
+  live-session API the reply watchdog armed once per `send()` and cleared only on
+  the turn's `result`, so a turn that streamed longer than `replyTimeoutMs`
+  (default 10 min) was killed mid-work — a long implementation died with "did not
+  respond within the time limit" while still actively streaming. It now re-arms on
+  every streamed `assistant` event, so it fires only on genuine silence; a
+  long-but-active turn keeps going. A stuck/silent turn still times out.
+
 ## [0.19.0] - 2026-06-26
 
 ### Added
