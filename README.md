@@ -128,7 +128,7 @@ never changes global state. `aimux run` still works for one-off launches.
 | `aimux init` | Auto-detect Claude dirs, create config, migrate profiles |
 | `aimux init --source <path>` | Initialize with explicit source directory |
 | `aimux status` | TUI dashboard — profiles, auth, auto-mode posture, symlink health |
-| `aimux usage` | Show token usage by profile from Claude transcript metadata |
+| `aimux usage` | Show token usage by profile (Claude transcripts + codex rollouts) |
 | `aimux usage --profile work --since 24h` | Show usage for one profile over a recent window |
 | `aimux run [profile]` | Launch AI CLI with correct env and model |
 | `aimux run` | Interactive picker — history pre-selects last used profile |
@@ -256,8 +256,8 @@ model names drift — update with `aimux profile update <name> -e ANTHROPIC_MODE
 
 For anything else (local models via Ollama/LM Studio, a proxy, Bedrock/Vertex), use the
 generic `aimux profile add <name> --api` and point `ANTHROPIC_BASE_URL` at it (see below).
-Costs shown by `aimux usage` are estimated against claude pricing and will be off for
-non-claude models.
+Costs shown by `aimux usage` are list-price estimates (Claude, codex/gpt-5, and the
+Anthropic-compatible providers) and will drift as prices change.
 
 ## Per-profile environment variables
 

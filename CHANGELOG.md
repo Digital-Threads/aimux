@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.20.0] - 2026-06-28
+
+### Added
+- **`aimux usage` now includes codex sessions.** Usage scanned only Claude
+  transcripts, so codex profiles showed zero tokens and `$0` — a silently
+  incomplete report. It now also reads codex session rollouts (final cumulative
+  `token_count`, with `cached_input_tokens` split into the cache-read bucket) and
+  attributes them to a profile via the same history → `unknown` fallback as Claude.
+- **Pricing for OpenAI / codex (gpt-5 family).** Added list-price estimates for
+  `gpt-5.3-codex`, `gpt-5-codex`, `gpt-5.5`, `gpt-5.4`, `gpt-5` (plus family
+  prefixes) so codex turns are no longer costed at `$0`. Estimates only, like the
+  existing Claude/provider prices.
+
+### Fixed
+- **`aimux profile remove` confirms before deleting.** It ran `rm -rf` on the
+  profile's directory (credentials included) with no confirmation; combined with
+  prefix-matched names, a typo could wipe the wrong profile. It now prompts `[y/N]`
+  on a TTY (echoing the resolved name + full path). **Behavior change:** in a
+  non-interactive shell it refuses to delete unless `-y/--yes` is passed (scripts
+  must opt in). `--keep-dir` still removes the profile without touching disk.
+- **Handoff locates the codex transcript by exact session id** (the trailing
+  `-<uuid>.jsonl`) instead of a substring match a sibling file could win, and only
+  trusts the generated summary when the headless summarizer exits `0`.
+
 ## [0.19.1] - 2026-06-28
 
 ### Fixed
