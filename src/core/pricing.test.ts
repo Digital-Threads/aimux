@@ -28,6 +28,17 @@ describe('resolvePricing', () => {
   it('returns null for an unknown model', () => {
     expect(resolvePricing('totally-made-up-model')).toBeNull();
   });
+
+  it('prices codex / gpt-5 models so codex usage is not silently $0', () => {
+    expect(resolvePricing('gpt-5-codex')?.input).toBeGreaterThan(0);
+    expect(resolvePricing('gpt-5.3-codex')?.input).toBeGreaterThan(0);
+    expect(resolvePricing('gpt-5')?.input).toBeGreaterThan(0);
+  });
+
+  it('matches a future gpt-5.x codex variant by prefix', () => {
+    // An unseen codex point-release still resolves (to the gpt-5 family) rather than null.
+    expect(resolvePricing('gpt-5.9-codex-20991231')).not.toBeNull();
+  });
 });
 
 describe('hasPricing', () => {
