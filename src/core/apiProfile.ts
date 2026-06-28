@@ -199,6 +199,21 @@ class StdinLineReader {
   }
 }
 
+/** Yes/no parse for confirmations: only an explicit `y`/`yes` (any case) consents. */
+export function isAffirmative(answer: string): boolean {
+  return /^y(es)?$/i.test(answer.trim());
+}
+
+/** Ask a `[y/N]` question on the shared stdin reader; false unless the answer is affirmative. */
+export async function confirm(question: string): Promise<boolean> {
+  const reader = new StdinLineReader();
+  try {
+    return isAffirmative(await reader.question(question));
+  } finally {
+    reader.close();
+  }
+}
+
 /**
  * Interactively collect 3rd-party API endpoint credentials. Returns the env
  * var map to persist to the profile's `.env`. The auth token is read with no

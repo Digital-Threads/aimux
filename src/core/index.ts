@@ -65,6 +65,8 @@ export {
   checkDotenvPermissions,
   seedApiClaudeJson,
   API_MODEL_DEFAULTS,
+  isAffirmative,
+  confirm,
 } from './apiProfile.js';
 export type { ProviderPreset } from './apiProfile.js';
 

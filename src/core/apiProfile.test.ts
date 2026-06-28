@@ -2,8 +2,16 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions } from './apiProfile.js';
+import { writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, isAffirmative } from './apiProfile.js';
 import { parseDotenv } from './run.js';
+
+describe('isAffirmative', () => {
+  it('is true only for an explicit yes (any case), false for everything else', () => {
+    for (const yes of ['y', 'Y', 'yes', 'YES', 'Yes', ' y ', 'yes\n']) expect(isAffirmative(yes)).toBe(true);
+    // Safety: a destructive confirm must NOT treat empty/garbage/"no" as consent.
+    for (const no of ['', 'n', 'N', 'no', 'nope', 'sure', 'ya', 'yep', '1', 'true']) expect(isAffirmative(no)).toBe(false);
+  });
+});
 
 describe('writeProfileDotEnv', () => {
   let dir: string;
