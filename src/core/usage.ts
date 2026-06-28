@@ -247,8 +247,10 @@ const MAX_ROLLOUT_BYTES = 256 * 1024 * 1024;
 // bucket; codex reports no separate cache-write tier.
 function collectCodexUsageRecords(config: AimuxConfig, options: UsageOptions = {}): UsageRecord[] {
   const sessionsRoot = join(expandHome(sourceFor(config, 'codex')), 'sessions');
-  const records: UsageRecord[] = [];
-  if (!existsSync(sessionsRoot)) return records;
+  // Dedup by sessionId: codex resume can write a second rollout for the same session,
+  // each carrying its own cumulative total. Keep the largest so it isn't double-counted.
+  const bySession = new Map<string, { record: UsageRecord; cumulative: number }>();
+  if (!existsSync(sessionsRoot)) return [];
 
   const history = loadSessionHistory();
   const profileMap = buildProfileSessionMap(config);
@@ -300,22 +302,30 @@ function collectCodexUsageRecords(config: AimuxConfig, options: UsageOptions = {
     if (!total) continue;
 
     const inputAll = numberValue(total.input_tokens);
-    const cached = numberValue(total.cached_input_tokens);
+    const cached = numberValue(total.cached_input_tokens); // a SUBSET of input_tokens
+    const output = numberValue(total.output_tokens);
     const usage: UsagePayload = {
       input_tokens: Math.max(0, inputAll - cached),
       cache_creation_input_tokens: 0,
       cache_read_input_tokens: cached,
-      output_tokens: numberValue(total.output_tokens),
+      output_tokens: output,
     };
 
     const profile =
       history.get(sessionId)?.profile ?? profileMap.get(sessionId)?.profile ?? 'unknown';
     if (options.profile && profile !== options.profile) continue;
 
-    records.push({ profile, sessionId, model: model || 'unknown', usage });
+    // Default to the codex flagship when the rollout carried no model, so a session
+    // with usage is never silently priced at $0 — the bug this collector fixes.
+    const record: UsageRecord = { profile, sessionId, model: model || 'gpt-5-codex', usage };
+    const cumulative = numberValue(total.total_tokens) || inputAll + output;
+    const existing = bySession.get(sessionId);
+    if (!existing || cumulative > existing.cumulative) {
+      bySession.set(sessionId, { record, cumulative });
+    }
   }
 
-  return records;
+  return [...bySession.values()].map((e) => e.record);
 }
 
 export function summarizeUsage(config: AimuxConfig, options: UsageOptions = {}): ProfileUsageSummary[] {

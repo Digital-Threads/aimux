@@ -63,6 +63,23 @@ describe('codex usage in summarizeUsage', () => {
     expect(u!.estimatedCostUsd).toBeGreaterThan(0); // gpt-5-codex is priced, not $0
   });
 
+  it('counts a session once (max cumulative) when it spans multiple rollout files', () => {
+    // codex resume can write a second rollout for the same session id; each carries
+    // its own cumulative total. Summing them would double-count — keep the largest.
+    const day = join(dir, 'codex', 'sessions', '2026', '06', '28');
+    writeFileSync(
+      join(day, `rollout-2026-06-28T12-00-00-${UUID}.jsonl`),
+      rolloutLines('gpt-5-codex', {
+        input_tokens: 25000, cached_input_tokens: 10000, output_tokens: 5000,
+        reasoning_output_tokens: 1000, total_tokens: 30000,
+      }),
+    );
+    const u = summarizeUsage(config()).find((s) => s.profile === 'unknown')!;
+    // Larger file wins; NOT the sum (2000 + 5000 = 7000) of both files.
+    expect(u.outputTokens).toBe(5000);
+    expect(u.inputTokens).toBe(15000); // 25000 - 10000, from the larger rollout
+  });
+
   it('does not scan codex when no codex profile is configured', () => {
     const claudeOnly: AimuxConfig = { ...config(), profiles: { main: { cli: 'claude', path: join(dir, 'x'), is_source: true } } };
     const summaries = summarizeUsage(claudeOnly);
