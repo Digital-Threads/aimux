@@ -198,27 +198,33 @@ plugins from your main profile (or with `CLAUDE_CONFIG_DIR=~/.claude claude plug
 and every profile picks them up on its next run. A plugin installed from inside a
 profile is merged back into the shared source automatically.
 
-## Multiple AI CLIs (Codex)
+## Multiple AI CLIs (Codex, Gemini)
 
 aimux isn't claude-only. A profile's `cli` field selects which AI CLI it runs, so you
-can keep claude **and** Codex subscriptions side by side — same shared brain, isolated
-auth — and even hand a live conversation from one to the other when a limit hits.
+can keep claude, Codex, **and** Gemini subscriptions side by side — same shared brain,
+isolated auth — and even hand a live conversation from one to the other when a limit hits.
 
 ```bash
 aimux profile add codework --cli codex   # a Codex profile
+aimux profile add gem --cli gemini       # a Gemini profile (~/.gemini)
 aimux auth login codework                # runs `codex login` under an isolated CODEX_HOME
 aimux run codework                        # launches Codex with the right model flag
 aimux agents                              # claude + codex sessions in one view (CLI-badged)
 ```
 
 - **Isolation per CLI.** Each CLI gets its own config-dir env (`CLAUDE_CONFIG_DIR` /
-  `CODEX_HOME`), so subscriptions never collide.
+  `CODEX_HOME` / `GEMINI_CLI_HOME`), so subscriptions never collide.
 - **Per-CLI source-of-truth.** `shared_sources` maps each CLI to its source
   (`claude → ~/.claude`, `codex → ~/.codex`); the legacy `shared_source` stays as the
   claude alias.
 - **Per-CLI sharing.** claude shares everything except `private`; Codex shares a
   knowledge allowlist (`skills`, `rules`, `memories`) and keeps `auth.json` /
-  `config.toml` / `sessions/` private. (Codex plugin sharing is a planned follow-up.)
+  `config.toml` / `sessions/` private; Gemini shares `GEMINI.md` / `skills` / `commands`
+  / `extensions` / `memories` and keeps auth + `settings.json` + history private.
+- **Gemini specifics.** Gemini has no direct config-dir override, so aimux points
+  `GEMINI_CLI_HOME` at the profile's parent and the profile dir IS gemini's `.gemini`.
+  Gemini resumes by per-project index (`-r latest`), not by session id, so cross-Gemini
+  native resume isn't wired into the session list yet.
 - **claude is untouched.** Multi-CLI is strictly opt-in — without a non-claude profile
   nothing changes.
 

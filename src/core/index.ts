@@ -40,6 +40,7 @@ export type { SyncResult, HealthReport } from './symlinks.js';
 export {
   detectClaudeDirs,
   detectCodex,
+  detectGemini,
   initFromSource,
   initAutoDetect,
 } from './init.js';

@@ -90,6 +90,24 @@ export function detectCodex(): string | null {
   return contents.some((item) => CODEX_MARKERS.includes(item)) ? codexPath : null;
 }
 
+export function detectGemini(): string | null {
+  const geminiPath = join(homedir(), '.gemini');
+  if (!existsSync(geminiPath)) return null;
+  try {
+    if (!lstatSync(geminiPath).isDirectory()) return null;
+  } catch {
+    return null;
+  }
+  const GEMINI_MARKERS = ['oauth_creds.json', 'GEMINI.md', 'settings.json', 'installation_id'];
+  let contents: string[];
+  try {
+    contents = readdirSync(geminiPath);
+  } catch {
+    return null;
+  }
+  return contents.some((item) => GEMINI_MARKERS.includes(item)) ? geminiPath : null;
+}
+
 export function initFromSource(
   sourcePath: string,
   extraProfiles?: Array<{ name: string; existingPath?: string; model?: string }>,
