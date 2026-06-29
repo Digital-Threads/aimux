@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.21.1] - 2026-06-29
+
+### Fixed
+- **`aimux run <codex-profile> resume` now shows the same sessions as plain `codex
+  resume`.** codex 0.14x moved its resume-picker index out of `session_index.jsonl`
+  into a schema-versioned SQLite DB (`state_<N>.sqlite`, the `threads` table), which
+  aimux didn't share — so a codex profile's picker showed a stale/near-empty list
+  while plain `codex` in the same dir (reading the source DB) showed everything. The
+  session-index DB is now shared like `sessions/`: a profile symlinks it to the source
+  of truth (`~/.codex/state_<N>.sqlite`), so every codex profile sees the full thread
+  list. The `-wal`/`-shm` sidecars are intentionally not shared — SQLite recreates them
+  next to the symlink's resolved (source) path and checkpoints them on close, so
+  concurrent profiles are as safe as two plain `codex` against one home.
+  - Existing profiles are migrated automatically: a profile's stale real
+    `state_<N>.sqlite` is reclaimed (replaced by the source symlink) on the next sync /
+    `aimux rebuild`, since the source DB is authoritative codex-managed state (its
+    `threads` are backfilled from the already-shared `sessions/` rollouts), never user
+    data. A new optional `CliAdapter.reclaimsFromSource` gates this; claude/gemini keep
+    the safe skip-on-conflict default.
+
 ## [0.21.0] - 2026-06-29
 
 ### Added

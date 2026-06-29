@@ -66,6 +66,31 @@ describe('codexAdapter auth/source metadata', () => {
   });
 });
 
+describe('codex session-index DB sharing', () => {
+  it('shares state_<N>.sqlite (the threads/resume index moved to SQLite in codex 0.14x)', () => {
+    const a = adapterFor('codex');
+    expect(a.isShared('state_5.sqlite', new Set())).toBe(true);
+    expect(a.isShared('state_12.sqlite', new Set())).toBe(true);
+    // not the transient sidecars (SQLite recreates them next to the source) or logs
+    expect(a.isShared('state_5.sqlite-wal', new Set())).toBe(false);
+    expect(a.isShared('logs_2.sqlite', new Set())).toBe(false);
+    expect(a.isShared('auth.json', new Set())).toBe(false);
+  });
+
+  it('reclaims a stale real state_<N>.sqlite from the source (it is authoritative)', () => {
+    const a = adapterFor('codex');
+    expect(a.reclaimsFromSource?.('state_5.sqlite')).toBe(true);
+    // never reclaim auth or other private real files
+    expect(a.reclaimsFromSource?.('auth.json')).toBe(false);
+    expect(a.reclaimsFromSource?.('logs_2.sqlite')).toBe(false);
+  });
+
+  it('claude/gemini do not reclaim conflicts (preserve the skip-on-conflict guard)', () => {
+    expect(adapterFor('claude').reclaimsFromSource).toBeUndefined();
+    expect(adapterFor('gemini').reclaimsFromSource).toBeUndefined();
+  });
+});
+
 describe('resumeArgs', () => {
   it('codex resumes via "resume <id>" (overlay added by globalArgs; no fork flag)', () => {
     // resumeArgs no longer hardcodes -p; the single injection point is globalArgs(),
