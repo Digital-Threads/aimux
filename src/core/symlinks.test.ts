@@ -51,6 +51,60 @@ afterEach(() => {
   rmSync(TEST_DIR, { recursive: true, force: true });
 });
 
+describe('syncProfile reclaims codex session-index DB', () => {
+  it('replaces a stale REAL state_<N>.sqlite in the profile with the source symlink', () => {
+    const codexSrc = join(TEST_DIR, 'codex-src');
+    const profileDir = join(PROFILES_DIR, 'cx');
+    mkdirSync(codexSrc, { recursive: true });
+    mkdirSync(profileDir, { recursive: true });
+    writeFileSync(join(codexSrc, 'state_5.sqlite'), 'SOURCE-INDEX-126');
+    writeFileSync(join(codexSrc, 'auth.json'), 'src-auth');
+    // The profile already has a stale, real (non-symlink) index from an earlier run.
+    writeFileSync(join(profileDir, 'state_5.sqlite'), 'STALE-INDEX-4');
+
+    const config = makeConfig({
+      shared_sources: { codex: codexSrc },
+      profiles: {
+        main: { cli: 'claude', path: SHARED_DIR, is_source: true },
+        cx: { cli: 'codex', path: profileDir },
+      },
+    });
+    const result = syncProfile(config, 'cx');
+
+    const dbPath = join(profileDir, 'state_5.sqlite');
+    expect(lstatSync(dbPath).isSymbolicLink()).toBe(true);
+    expect(readFileSync(dbPath, 'utf-8')).toBe('SOURCE-INDEX-126'); // now reads source
+    expect(result.repaired).toContain('state_5.sqlite');
+    expect(result.conflicts).not.toContain('state_5.sqlite');
+    // auth.json is private — never shared, never reclaimed.
+    expect(result.private).toContain('auth.json');
+  });
+
+  it('does NOT reclaim a directory at the entry path — falls through to conflicts (no EISDIR)', () => {
+    const codexSrc = join(TEST_DIR, 'codex-src-dir');
+    const profileDir = join(PROFILES_DIR, 'cxdir');
+    mkdirSync(codexSrc, { recursive: true });
+    mkdirSync(profileDir, { recursive: true });
+    writeFileSync(join(codexSrc, 'state_5.sqlite'), 'SOURCE');
+    // Pathological: a real DIRECTORY where the DB belongs. unlinkSync would EISDIR
+    // and abort the whole sync, so the isFile() guard must skip it to conflicts.
+    mkdirSync(join(profileDir, 'state_5.sqlite'), { recursive: true });
+
+    const config = makeConfig({
+      shared_sources: { codex: codexSrc },
+      profiles: {
+        main: { cli: 'claude', path: SHARED_DIR, is_source: true },
+        cxdir: { cli: 'codex', path: profileDir },
+      },
+    });
+    // Must not throw, and must record a conflict rather than reclaiming.
+    const result = syncProfile(config, 'cxdir');
+    expect(result.conflicts).toContain('state_5.sqlite');
+    expect(result.repaired).not.toContain('state_5.sqlite');
+    expect(lstatSync(join(profileDir, 'state_5.sqlite')).isDirectory()).toBe(true);
+  });
+});
+
 describe('getSharedElements', () => {
   it('returns non-private entries', () => {
     seedShared(['settings.json', 'CLAUDE.md', '.credentials.json']);

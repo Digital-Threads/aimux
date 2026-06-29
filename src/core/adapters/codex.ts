@@ -15,6 +15,15 @@ import type { CliAdapter } from './types.js';
 // carries the source's model/features/[plugins]/[marketplaces] when layered via `-p aimux`.
 const CODEX_SHARED_ENTRIES = new Set(['skills', 'rules', 'memories', 'sessions', 'session_index.jsonl']);
 
+// codex 0.14x moved the session/resume index out of session_index.jsonl into a SQLite DB
+// (`state_<N>.sqlite`, schema-versioned; the picker reads its `threads` table). Share it
+// too, or `aimux run <codex> resume` shows an empty/stale list while plain `codex resume`
+// (reading the source DB) shows everything. The `-wal`/`-shm` sidecars are NOT shared:
+// SQLite recreates them next to the symlink's resolved (source) path on its own.
+function isSessionStateDb(entry: string): boolean {
+  return /^state_\d+\.sqlite$/.test(entry);
+}
+
 // The overlay profile name: codex layers `$CODEX_HOME/<name>.config.toml` on top of the
 // base config when invoked with `-p <name>`. Verified: codex reads it, never writes it.
 const OVERLAY_PROFILE = 'aimux';
@@ -50,7 +59,15 @@ export const codexAdapter: CliAdapter = {
   },
 
   isShared(entry) {
-    return CODEX_SHARED_ENTRIES.has(entry);
+    return CODEX_SHARED_ENTRIES.has(entry) || isSessionStateDb(entry);
+  },
+
+  reclaimsFromSource(entry) {
+    // The session-index DB is codex-managed state, not user data, and the source is
+    // authoritative (its `threads` are backfilled from the shared `sessions/` rollouts).
+    // So a profile's stale real copy should be replaced by the source symlink on sync —
+    // this migrates existing codex profiles to the shared resume index automatically.
+    return isSessionStateDb(entry);
   },
 
   authArgs() {

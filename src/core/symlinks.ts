@@ -322,6 +322,14 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
           symlinkSync(sourceTarget, targetInProfile);
           result.repaired.push(entry);
         }
+      } else if (adapter.reclaimsFromSource?.(entry) && stat.isFile()) {
+        // A real file where a source-authoritative entry (codex's session-index DB)
+        // belongs — replace it with the source symlink instead of leaving a conflict.
+        // Guarded to a regular file: a directory at this path would make unlinkSync
+        // throw EISDIR and abort the whole sync, so it falls through to `conflicts`.
+        unlinkSync(targetInProfile);
+        symlinkSync(sourceTarget, targetInProfile);
+        result.repaired.push(entry);
       } else {
         result.conflicts.push(entry);
       }

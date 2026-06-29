@@ -30,6 +30,12 @@ export interface CliAdapter {
    *  may share only an allowlist of knowledge dirs. `configPrivate` is `config.private`. */
   isShared(entry: string, configPrivate: Set<string>): boolean;
 
+  /** Whether a profile's REAL (non-symlink) file at a shared entry should be replaced by
+   *  the source symlink on sync, instead of being left as a conflict. Use only for
+   *  source-authoritative state (codex's session-index DB) — never for user data.
+   *  Optional; absent → conflicts are preserved (the safe default). */
+  reclaimsFromSource?(entry: string): boolean;
+
   /** Args to launch the CLI's interactive auth/login flow (claude: `auth login`;
    *  codex: `login`). */
   authArgs(): string[];
