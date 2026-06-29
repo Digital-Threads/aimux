@@ -49,7 +49,7 @@ function isCodexPreamble(text: string): boolean {
   );
 }
 
-function listRolloutFiles(sessionsRoot: string): string[] {
+export function listRolloutFiles(sessionsRoot: string): string[] {
   const out: string[] = [];
   const stack = [sessionsRoot];
   while (stack.length) {

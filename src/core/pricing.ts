@@ -38,6 +38,14 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'deepseek-chat': thirdParty(0.27, 1.1),
   'deepseek-reasoner': thirdParty(0.55, 2.19),
   'qwen-max': thirdParty(1.6, 6.4),
+  // OpenAI / codex CLI (list prices, same cache shape as other OpenAI-compatible
+  // endpoints). Subscription codex isn't billed per token; this estimates what the
+  // same tokens would cost at API list price, mirroring how Claude profiles are costed.
+  'gpt-5.3-codex': thirdParty(1.75, 14),
+  'gpt-5-codex': thirdParty(1.25, 10),
+  'gpt-5.5': thirdParty(5, 30),
+  'gpt-5.4': thirdParty(2.5, 15),
+  'gpt-5': thirdParty(1.25, 10),
 };
 
 /** Family fallbacks, longest-prefix-first, for unseen patch/date variants. */
@@ -50,6 +58,12 @@ const FAMILY_PREFIXES: Array<[string, ModelPricing]> = [
   ['deepseek-reasoner', thirdParty(0.55, 2.19)],
   ['deepseek', thirdParty(0.27, 1.1)],
   ['qwen', thirdParty(1.6, 6.4)],
+  // Longest-first so a codex point-release wins over the bare gpt-5 family.
+  ['gpt-5.3-codex', thirdParty(1.75, 14)],
+  ['gpt-5-codex', thirdParty(1.25, 10)],
+  ['gpt-5.5', thirdParty(5, 30)],
+  ['gpt-5.4', thirdParty(2.5, 15)],
+  ['gpt-5', thirdParty(1.25, 10)],
 ];
 
 export function resolvePricing(model: string): ModelPricing | null {

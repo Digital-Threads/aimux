@@ -57,7 +57,9 @@ export function readTranscript(config: AimuxConfig, session: UnifiedSession): st
           const p = join(dir, name);
           const st = statSync(p);
           if (st.isDirectory()) stack.push(p);
-          else if (name.includes(session.sessionId) && name.endsWith('.jsonl')) {
+          // The session id is the rollout's trailing uuid (rollout-<ts>-<uuid>.jsonl);
+          // match it exactly so a sibling whose name merely contains the id can't win.
+          else if (name.startsWith('rollout-') && name.endsWith(`-${session.sessionId}.jsonl`)) {
             return tail(readFileSync(p, 'utf-8'), TRANSCRIPT_CHAR_BUDGET);
           }
         }
@@ -98,7 +100,10 @@ const defaultDeps: HandoffDeps = {
       // codex: read the clean final message from a temp file (stdout is noisy).
       const outFile = join(tmpdir(), `aimux-handoff-${process.pid}-${randomBytes(4).toString('hex')}.txt`);
       try {
-        await runProfileHeadless(config, viaProfile, { extraArgs: adapter.headlessArgs(prompt, outFile) });
+        const res = await runProfileHeadless(config, viaProfile, { extraArgs: adapter.headlessArgs(prompt, outFile) });
+        // A non-zero exit means the summarizer errored; any partial output it left
+        // is untrustworthy — fail loudly rather than hand off a bad summary.
+        if (res.exitCode !== 0) throw new Error(`Summarizer (${viaProfile}) exited with code ${res.exitCode}`);
         return existsSync(outFile) ? readFileSync(outFile, 'utf-8').trim() : '';
       } finally {
         try {
@@ -109,6 +114,7 @@ const defaultDeps: HandoffDeps = {
       }
     }
     const res = await runProfileHeadless(config, viaProfile, { extraArgs: adapter.headlessArgs(prompt) });
+    if (res.exitCode !== 0) throw new Error(`Summarizer (${viaProfile}) exited with code ${res.exitCode}`);
     return res.stdout.trim();
   },
   launch(config, toProfile, seedPrompt) {

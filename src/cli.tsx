@@ -13,7 +13,7 @@ import {
   launchProfile, getLastProfile, recordHistory, getProfile,
   looksLikeSubcommand, adapterFor,
   summarizeUsage, parseSinceDuration, totalTokens,
-  loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson,
+  loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson, confirm,
   parseShell, buildSwitchEnv, renderShellExports, renderShellInit,
 } from './core/index.js';
 
@@ -120,7 +120,7 @@ program
 
 program
   .command('usage')
-  .description('Show token usage by profile from Claude transcript metadata')
+  .description('Show token usage by profile (Claude transcripts + codex rollouts)')
   .option('-p, --profile <profile>', 'Only show one profile (supports prefix matching)')
   .option('--since <duration>', 'Only include usage since duration: 24h, 7d, 4w', '7d')
   .option('--all', 'Include all known transcript usage')
@@ -134,7 +134,7 @@ program
       if (!options.all) {
         console.log(`\nWindow: ${options.since}`);
       }
-      console.log('Source: shared projects/*.jsonl transcript usage metadata; duplicate requestIds counted once.');
+      console.log('Source: Claude projects/*.jsonl transcripts + codex session rollouts; duplicate Claude requestIds counted once. $ are list-price estimates.');
       if (summaries.some((s) => s.profile === 'unknown')) {
         console.log('Note: unknown means aimux could not map a transcript session to a profile.');
       }
@@ -682,17 +682,30 @@ program
     new Command('remove')
       .argument('<name>', 'Profile name')
       .option('--keep-dir', 'Keep profile directory on disk')
+      .option('-y, --yes', 'Skip the deletion confirmation prompt')
       .description('Remove a profile')
-      .action((name: string, options: { keepDir?: boolean }) => {
+      .action(async (name: string, options: { keepDir?: boolean; yes?: boolean }) => {
         try {
           let config = requireConfig();
           const resolved = resolveProfile(config, name);
-          const profile = config.profiles[resolved];
-          const profilePath = profile.path;
+          const fullPath = expandHome(config.profiles[resolved].path);
+
+          // Deleting the directory wipes that profile's credentials and is
+          // irreversible; with prefix-matched names a typo could target the wrong
+          // profile. Confirm before destroying anything, and never delete silently
+          // in a non-interactive shell.
+          if (!options.keepDir && !options.yes) {
+            if (!process.stdin.isTTY) {
+              console.error(`Refusing to delete '${resolved}' and its directory (${fullPath}) without confirmation. Re-run with --yes, or --keep-dir to keep the files.`);
+              process.exit(1);
+            }
+            const ok = await confirm(`Delete profile '${resolved}' and its directory ${fullPath}? [y/N] `);
+            if (!ok) { console.log('Aborted — nothing was removed.'); return; }
+          }
+
           config = removeProfile(config, resolved);
           saveConfig(config);
           if (!options.keepDir) {
-            const fullPath = expandHome(profilePath);
             rmSync(fullPath, { recursive: true, force: true });
             console.log(`✓ Profile '${resolved}' removed (directory deleted)`);
           } else {
