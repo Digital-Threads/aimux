@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.21.0] - 2026-06-29
+
+### Added
+- **Gemini CLI support (`--cli gemini`).** A third AI CLI alongside claude and codex.
+  `aimux profile add gem --cli gemini` creates an isolated Gemini profile that shares
+  knowledge (`GEMINI.md`, `skills`, `commands`, `extensions`, `memories`) from
+  `~/.gemini` while keeping auth, `settings.json`, and history private. `run` / `use`
+  launch `gemini` with the right `-m <model>` flag under an isolated config dir.
+  - Gemini has no direct config-dir override, so aimux sets `GEMINI_CLI_HOME` to the
+    profile's parent and makes the profile dir itself gemini's `.gemini` (a new optional
+    `CliAdapter.configPathFor`). claude/codex profile paths are unchanged.
+  - `aimux init` now also hints when `~/.gemini` is detected.
+  - Note: Gemini resumes by per-project index (`-r latest`), not by session id, so
+    cross-Gemini native resume is not wired into the session list yet.
+
 ## [0.20.0] - 2026-06-28
 
 ### Added

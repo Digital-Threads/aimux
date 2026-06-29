@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   loadConfig, saveConfig, addProfile, removeProfile, expandHome,
-  ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs, detectCodex,
+  ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs, detectCodex, detectGemini,
   syncProfile, syncAllProfiles, checkAllProfiles,
   launchProfile, getLastProfile, recordHistory, getProfile,
   looksLikeSubcommand, adapterFor,
@@ -154,6 +154,10 @@ program
         if (detectCodex()) {
           console.log('\nCodex detected (~/.codex). Add a Codex profile with:');
           console.log('  aimux profile add codework --cli codex');
+        }
+        if (detectGemini()) {
+          console.log('\nGemini detected (~/.gemini). Add a Gemini profile with:');
+          console.log('  aimux profile add gem --cli gemini');
         }
       };
 

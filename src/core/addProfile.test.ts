@@ -29,4 +29,17 @@ describe('addProfile cli + shared_sources', () => {
     const updated = addProfile(cfg, 'codework', { cli: 'codex' });
     expect(updated.shared_sources?.codex).toBe('/custom/codex');
   });
+
+  it('puts a gemini profile in a .gemini dir and registers ~/.gemini as its source', () => {
+    const updated = addProfile(base(), 'gem', { cli: 'gemini' });
+    expect(updated.profiles.gem.cli).toBe('gemini');
+    // The profile path IS gemini's config dir (.gemini), so GEMINI_CLI_HOME points one up.
+    expect(updated.profiles.gem.path).toBe('~/.aimux/profiles/gem/.gemini');
+    expect(updated.shared_sources?.gemini).toBe('~/.gemini');
+  });
+
+  it('keeps claude/codex profile paths unchanged (no .gemini suffix)', () => {
+    expect(addProfile(base(), 'work', {}).profiles.work.path).toBe('~/.aimux/profiles/work');
+    expect(addProfile(base(), 'cx', { cli: 'codex' }).profiles.cx.path).toBe('~/.aimux/profiles/cx');
+  });
 });

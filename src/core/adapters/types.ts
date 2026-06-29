@@ -16,6 +16,12 @@ export interface CliAdapter {
   /** Env that points the CLI at an isolated config dir. Empty for the source profile. */
   configDirEnv(profilePath: string, isSource: boolean): Record<string, string>;
 
+  /** Transform a profile's base dir (`~/.aimux/profiles/<name>`) into the dir that IS the
+   *  CLI's config home. Most CLIs use the base dir as-is (default); gemini needs the
+   *  profile dir to be a `.gemini` subdir so `GEMINI_CLI_HOME` can point one level up.
+   *  Optional — when absent the base dir is used unchanged. */
+  configPathFor?(baseDir: string): string;
+
   /** Whether the first passthrough arg is a CLI subcommand (suppresses model flags). */
   isSubcommand(firstArg: string | undefined): boolean;
 

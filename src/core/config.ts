@@ -56,7 +56,11 @@ export function addProfile(
     throw new Error(`Profile '${name}' already exists`);
   }
   const cli = options.cli ?? 'claude';
-  const profilePath = `~/.aimux/profiles/${name}`;
+  const baseDir = `~/.aimux/profiles/${name}`;
+  // Most CLIs use the base dir as their config home; gemini needs it to be a `.gemini`
+  // subdir (see geminiAdapter.configPathFor / configDirEnv).
+  const adapter = adapterFor(cli);
+  const profilePath = adapter.configPathFor ? adapter.configPathFor(baseDir) : baseDir;
   const updated = { ...config };
   updated.profiles = {
     ...config.profiles,
