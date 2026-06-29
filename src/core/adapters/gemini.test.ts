@@ -54,6 +54,10 @@ describe('geminiAdapter sharing + auth metadata', () => {
     expect(a.authArgs()).toEqual([]); // no login subcommand; interactive OAuth
   });
 
+  it('refuses id-based resume (gemini resumes by index, not session id)', () => {
+    expect(() => adapterFor('gemini').resumeArgs('some-uuid')).toThrow(/not supported/);
+  });
+
   it('runs headless via -p on stdout and needs no overlay/extra links', () => {
     const a = adapterFor('gemini');
     expect(a.headlessArgs('hi')).toEqual(['-p', 'hi']);

@@ -58,11 +58,11 @@ export const geminiAdapter: CliAdapter = {
     return '~/.gemini';
   },
 
-  resumeArgs(sessionId) {
+  resumeArgs() {
     // gemini resumes by per-project index or "latest" (`-r <index|latest>`), NOT by a
-    // session id — so id-based resume is best-effort and not wired into aimux's session
-    // list yet. Kept for interface completeness.
-    return ['-r', sessionId];
+    // session id. Feeding it a uuid would silently target the wrong session, so fail
+    // loud instead — gemini resume isn't wired into aimux's id-based session list yet.
+    throw new Error('gemini resume by session id is not supported (gemini resumes by per-project index)');
   },
 
   headlessArgs(prompt) {
