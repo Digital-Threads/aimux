@@ -201,6 +201,30 @@ describe('syncProfile', () => {
     const entries = readdirSync(join(PROFILES_DIR, 'work'));
     expect(entries).toContain('settings.json');
   });
+
+  it('prunes orphaned and obsolete symlinks in profile', () => {
+    seedShared(['settings.json']);
+    const config = makeConfig();
+    const workDir = join(PROFILES_DIR, 'work');
+    mkdirSync(workDir, { recursive: true });
+
+    // 1. Orphaned symlink: points to expected source target, but source entry is gone
+    symlinkSync(join(SHARED_DIR, 'old-deleted.json'), join(workDir, 'old-deleted.json'));
+
+    // 2. Obsolete symlink: points to expected source target, but is now private (.credentials.json)
+    writeFileSync(join(SHARED_DIR, '.credentials.json'), 'creds');
+    symlinkSync(join(SHARED_DIR, '.credentials.json'), join(workDir, '.credentials.json'));
+
+    const result = syncProfile(config, 'work');
+
+    // Both should be pruned/unlinked and result in repaired
+    expect(result.repaired).toContain('old-deleted.json');
+    expect(result.repaired).toContain('.credentials.json');
+
+    // Verify they are physically deleted from profile so they don't block fresh creation
+    expect(existsSync(join(workDir, 'old-deleted.json'))).toBe(false);
+    expect(existsSync(join(workDir, '.credentials.json'))).toBe(false);
+  });
 });
 
 describe('syncAllProfiles', () => {
@@ -268,6 +292,17 @@ describe('checkProfileHealth', () => {
     const report = checkProfileHealth(config, 'work');
     expect(report.conflicts).toContain('settings.json');
     expect(report.valid).not.toContain('settings.json');
+  });
+
+  it('reports obsolete symlinks (now private)', () => {
+    seedShared(['settings.json', '.credentials.json']);
+    const config = makeConfig();
+    const workDir = join(PROFILES_DIR, 'work');
+    mkdirSync(workDir, { recursive: true });
+    symlinkSync(join(SHARED_DIR, '.credentials.json'), join(workDir, '.credentials.json'));
+
+    const report = checkProfileHealth(config, 'work');
+    expect(report.conflicts).toContain('.credentials.json (obsolete symlink, should be private)');
   });
 
   it('reports missing profile directory', () => {
