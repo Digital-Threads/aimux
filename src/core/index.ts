@@ -92,3 +92,6 @@ export { handoffSession, buildHandoffPrompt, buildSummarizePrompt, readTranscrip
 export type { HandoffDeps, HandoffResult } from './handoff.js';
 
 export { loadActiveProfile, saveActiveProfile, getActiveProfilePath } from './activeProfile.js';
+
+export { formatTranscript } from './logs.js';
+
