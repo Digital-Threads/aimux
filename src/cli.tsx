@@ -1037,5 +1037,62 @@ program
     }
   });
 
+program
+  .command('logs [session]')
+  .description('View and grep chat transcripts of a session')
+  .option('--last', 'View logs of the most recent session')
+  .option('-g, --grep <query>', 'Filter transcript lines matching the query')
+  .action(async (session: string | undefined, options: { last?: boolean; grep?: string }) => {
+    try {
+      const config = requireConfig();
+      if (!session && !options.last) {
+        console.error('Error: Please specify a session ID or use --last');
+        process.exit(1);
+      }
+
+      const { unifyAllSessions } = await import('./core/unifiedSessions.js');
+      const { readTranscript } = await import('./core/handoff.js');
+      const { formatTranscript } = await import('./core/index.js');
+
+      const all = unifyAllSessions(config, { windowDays: Infinity });
+      let target: any;
+      if (options.last) {
+        target = all[0];
+      } else {
+        target = all.find(s => s.sessionId === session || s.short === session);
+      }
+
+      if (!target) {
+        console.error(`Error: Session '${session || 'last'}' not found`);
+        process.exit(1);
+      }
+
+      const raw = readTranscript(config, target);
+      if (!raw) {
+        console.error('Error: No transcript log found for this session');
+        process.exit(1);
+      }
+
+      const formatted = formatTranscript(raw);
+
+      if (options.grep) {
+        const query = options.grep.toLowerCase();
+        const matches = formatted.filter(f => f.toLowerCase().includes(query));
+        if (matches.length === 0) {
+          console.log('(No matching lines found)');
+        } else {
+          console.log(matches.join('\n\n'));
+        }
+      } else {
+        console.log(formatted.join('\n\n'));
+      }
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
 program.parse();
+
+
 
