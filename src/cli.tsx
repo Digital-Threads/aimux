@@ -10,7 +10,7 @@ import {
   loadConfig, saveConfig, addProfile, removeProfile, expandHome,
   ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs, detectCodex, detectGemini,
   syncProfile, syncAllProfiles, checkAllProfiles,
-  launchProfile, getLastProfile, resolveProfileForDir, recordHistory, getProfile,
+  launchProfile, getLastProfile, resolveProfileForDir, recordHistory, getProfile, loadActiveProfile,
   looksLikeSubcommand, adapterFor,
   summarizeUsage, parseSinceDuration, totalTokens,
   loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson, confirm,
@@ -937,7 +937,7 @@ program
   COMPREPLY=()
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="init run status usage profile rebuild doctor auth completions"
+  commands="init run status usage profile rebuild doctor auth prompt-indicator prompt completions"
 
   case "\${prev}" in
     run|auth)
@@ -957,7 +957,7 @@ complete -F _aimux aimux
       console.log(`#compdef aimux
 _aimux() {
   local -a commands profiles
-  commands=(init run status usage profile rebuild doctor auth completions)
+  commands=(init run status usage profile rebuild doctor auth prompt-indicator prompt completions)
   profiles=(${profiles})
 
   _arguments '1:command:($commands)' '*::arg:->args'
@@ -974,7 +974,7 @@ _aimux() {
 _aimux
 # Add to ~/.zshrc: eval "$(aimux completions zsh)"`);
     } else if (shell === 'fish') {
-      console.log(`complete -c aimux -n '__fish_use_subcommand' -a 'init run status usage profile rebuild doctor auth completions'
+      console.log(`complete -c aimux -n '__fish_use_subcommand' -a 'init run status usage profile rebuild doctor auth prompt-indicator prompt completions'
 complete -c aimux -n '__fish_seen_subcommand_from run' -a '${profiles}'
 complete -c aimux -n '__fish_seen_subcommand_from profile' -a 'add list update remove clone'
 complete -c aimux -n '__fish_seen_subcommand_from auth' -a 'login status'
@@ -1018,4 +1018,24 @@ program
     console.log(`\nReload with: source ${rcFile}`);
   });
 
+program
+  .command('prompt-indicator')
+  .alias('prompt')
+  .description('Print the active profile name (for zsh/bash/Starship prompt)')
+  .option('-f, --format <pattern>', 'Format pattern (e.g. "[aimux: %s]"). If omitted, outputs raw profile name.')
+  .action((options: { format?: string }) => {
+    try {
+      const active = process.env.AIMUX_PROFILE || loadActiveProfile();
+      if (!active) return;
+      if (options.format) {
+        console.log(options.format.replace('%s', active));
+      } else {
+        console.log(active);
+      }
+    } catch {
+      // fail silently so shell prompts do not break/spew errors
+    }
+  });
+
 program.parse();
+
