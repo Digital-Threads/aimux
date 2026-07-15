@@ -10,7 +10,7 @@ import {
   loadConfig, saveConfig, addProfile, removeProfile, expandHome,
   ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs, detectCodex, detectGemini,
   syncProfile, syncAllProfiles, checkAllProfiles,
-  launchProfile, getLastProfile, recordHistory, getProfile,
+  launchProfile, getLastProfile, resolveProfileForDir, recordHistory, getProfile,
   looksLikeSubcommand, adapterFor,
   summarizeUsage, parseSinceDuration, totalTokens,
   loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson, confirm,
@@ -207,27 +207,32 @@ program
 
       if (!profileName) {
         const cwd = process.cwd();
-        const last = getLastProfile(cwd);
-        const names = Object.keys(config.profiles);
-
-        if (names.length === 1) {
-          profileName = names[0];
+        const boundProfile = resolveProfileForDir(config, cwd);
+        if (boundProfile) {
+          profileName = boundProfile;
         } else {
-          const { render } = await import('ink');
-          const { ProfilePicker } = await import('./components/ProfilePicker.js');
-          let selectedProfile: string | undefined;
-          const { waitUntilExit } = render(
-            <ProfilePicker
-              config={config}
-              lastProfile={last}
-              onSelect={(selected: string) => {
-                selectedProfile = selected;
-              }}
-            />
-          );
-          await waitUntilExit();
-          if (!selectedProfile) return;
-          profileName = selectedProfile;
+          const last = getLastProfile(cwd);
+          const names = Object.keys(config.profiles);
+
+          if (names.length === 1) {
+            profileName = names[0];
+          } else {
+            const { render } = await import('ink');
+            const { ProfilePicker } = await import('./components/ProfilePicker.js');
+            let selectedProfile: string | undefined;
+            const { waitUntilExit } = render(
+              <ProfilePicker
+                config={config}
+                lastProfile={last}
+                onSelect={(selected: string) => {
+                  selectedProfile = selected;
+                }}
+              />
+            );
+            await waitUntilExit();
+            if (!selectedProfile) return;
+            profileName = selectedProfile;
+          }
         }
       }
 
@@ -269,24 +274,30 @@ program
 
       let profileName = profile;
       if (!profileName) {
-        const names = Object.keys(config.profiles);
-        if (names.length === 1) {
-          profileName = names[0];
+        const cwd = process.cwd();
+        const boundProfile = resolveProfileForDir(config, cwd);
+        if (boundProfile) {
+          profileName = boundProfile;
         } else {
-          const { render } = await import('ink');
-          const { ProfilePicker } = await import('./components/ProfilePicker.js');
-          const last = getLastProfile(process.cwd());
-          let selected: string | undefined;
-          // Under the shell wrapper, --export's stdout is captured by command
-          // substitution, so draw the picker on stderr (still a TTY) to keep
-          // stdout eval-clean. Direct invocation draws on stdout as usual.
-          const { waitUntilExit } = render(
-            <ProfilePicker config={config} lastProfile={last} onSelect={(s: string) => { selected = s; }} />,
-            options.export ? { stdout: process.stderr } : undefined,
-          );
-          await waitUntilExit();
-          if (!selected) return;
-          profileName = selected;
+          const names = Object.keys(config.profiles);
+          if (names.length === 1) {
+            profileName = names[0];
+          } else {
+            const { render } = await import('ink');
+            const { ProfilePicker } = await import('./components/ProfilePicker.js');
+            const last = getLastProfile(cwd);
+            let selected: string | undefined;
+            // Under the shell wrapper, --export's stdout is captured by command
+            // substitution, so draw the picker on stderr (still a TTY) to keep
+            // stdout eval-clean. Direct invocation draws on stdout as usual.
+            const { waitUntilExit } = render(
+              <ProfilePicker config={config} lastProfile={last} onSelect={(s: string) => { selected = s; }} />,
+              options.export ? { stdout: process.stderr } : undefined,
+            );
+            await waitUntilExit();
+            if (!selected) return;
+            profileName = selected;
+          }
         }
       }
 

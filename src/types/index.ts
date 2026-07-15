@@ -1,4 +1,4 @@
-export type { AimuxConfig, ProfileConfig } from './config.js';
+export type { AimuxConfig, ProfileConfig, ProjectBinding } from './config.js';
 export { DEFAULT_CONFIG, DEFAULT_PRIVATE_ELEMENTS } from './config.js';
 
 export interface ProfileStatus {
