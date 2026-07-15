@@ -311,16 +311,19 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
       continue;
     }
 
+    let success = false;
     if (existsSync(targetInProfile) || lstatExists(targetInProfile)) {
       const stat = lstatSync(targetInProfile);
       if (stat.isSymbolicLink()) {
         const linkTarget = resolve(profilePath, readlinkSync(targetInProfile));
         if (linkTarget === sourceTarget) {
           result.skipped.push(entry);
+          success = true;
         } else {
           unlinkSync(targetInProfile);
           symlinkSync(sourceTarget, targetInProfile);
           result.repaired.push(entry);
+          success = true;
         }
       } else if (adapter.reclaimsFromSource?.(entry) && stat.isFile()) {
         // A real file where a source-authoritative entry (codex's session-index DB)
@@ -330,14 +333,21 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
         unlinkSync(targetInProfile);
         symlinkSync(sourceTarget, targetInProfile);
         result.repaired.push(entry);
+        success = true;
       } else {
         result.conflicts.push(entry);
       }
     } else {
       symlinkSync(sourceTarget, targetInProfile);
       result.created.push(entry);
+      success = true;
+    }
+
+    if (success) {
+      adapter.onPostSync?.(sourcePath, entry);
     }
   }
+
 
   // Per-CLI extra symlinks (codex config overlay + plugin content) — names that do not
   // exist as source entries, so they are created beyond the readdir loop above.

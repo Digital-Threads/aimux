@@ -1,5 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { adapterFor } from './index.js';
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    spawnSync: vi.fn().mockReturnValue({ status: 0 }),
+  };
+});
+
 
 describe('codexAdapter run-path', () => {
   it('is selected for cli "codex"', () => {
@@ -156,3 +166,31 @@ describe('codex overlay (globalArgs + extraLinks)', () => {
     expect(adapterFor('claude').extraLinks('/home/u/.claude')).toEqual([]);
   });
 });
+
+describe('codexAdapter onPostSync', () => {
+  it('runs sqlite3 WAL configuration on a session state DB', () => {
+    const a = adapterFor('codex');
+    const spawnSpy = vi.mocked(spawnSync);
+    spawnSpy.mockClear();
+
+    a.onPostSync?.('/path/to/source', 'state_5.sqlite');
+
+    expect(spawnSpy).toHaveBeenCalledWith(
+      'sqlite3',
+      ['/path/to/source/state_5.sqlite', 'PRAGMA journal_mode=WAL;'],
+      { stdio: 'ignore' }
+    );
+  });
+
+  it('does not run sqlite3 on non-state DB entries', () => {
+    const a = adapterFor('codex');
+    const spawnSpy = vi.mocked(spawnSync);
+    spawnSpy.mockClear();
+
+    a.onPostSync?.('/path/to/source', 'rules');
+    a.onPostSync?.('/path/to/source', 'logs_2.sqlite');
+
+    expect(spawnSpy).not.toHaveBeenCalled();
+  });
+});
+

@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { looksLikeSubcommand } from '../subcommand.js';
 import type { CliAdapter } from './types.js';
@@ -111,4 +112,16 @@ export const codexAdapter: CliAdapter = {
       { link: 'plugins', target: join(sourceDir, 'plugins') },
     ];
   },
+
+  onPostSync(sourcePath, entry) {
+    if (isSessionStateDb(entry)) {
+      try {
+        const dbPath = join(sourcePath, entry);
+        spawnSync('sqlite3', [dbPath, 'PRAGMA journal_mode=WAL;'], { stdio: 'ignore' });
+      } catch {
+        // best effort
+      }
+    }
+  },
 };
+

@@ -73,4 +73,10 @@ export interface CliAdapter {
    *  this for its config overlay (`aimux.config.toml` → source `config.toml`) and plugin
    *  content. `sourceDir` is the CLI's source-of-truth dir. */
   extraLinks(sourceDir: string): Array<{ link: string; target: string }>;
+
+  /** Optional callback to configure or process a shared file after a successful sync/link.
+   *  `sourcePath` is the CLI's source-of-truth directory, and `entry` is the name of the
+   *  shared file/directory inside it. */
+  onPostSync?(sourcePath: string, entry: string): void;
 }
+
