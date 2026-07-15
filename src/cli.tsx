@@ -511,7 +511,7 @@ program
 
       type PendingAction =
         | { type: 'exit' }
-        | { type: 'attach'; profile: string; sessionId: string; cwd: string; live: boolean; cli: string };
+        | { type: 'attach'; profile: string; sessionId: string; cwd: string; live: boolean; cli: string; fork?: boolean };
 
       const { existsSync: existsSyncFn } = await import('node:fs');
 
@@ -554,7 +554,8 @@ program
             const cwd = action.cwd && existsSyncFn(action.cwd) ? action.cwd : undefined;
             const code = await resumeSession(config, action.profile, action.sessionId, {
               cwd,
-              forkSession: action.live,
+              forkSession: action.fork !== false && action.live,
+              attachLive: action.fork === false && action.live,
             });
             recordSessionUsage(action.sessionId, action.profile);
             if (code !== 0) console.error(`Resume exited with code ${code}`);

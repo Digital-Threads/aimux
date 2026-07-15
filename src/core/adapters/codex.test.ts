@@ -114,6 +114,12 @@ describe('resumeArgs', () => {
     expect(adapterFor('claude').resumeArgs('id-1')).toEqual(['--resume', 'id-1']);
     expect(adapterFor('claude').resumeArgs('id-1', { fork: true })).toEqual(['--resume', 'id-1', '--fork-session']);
   });
+
+  it('claude attaches to live running session without forking', () => {
+    const c = adapterFor('claude');
+    expect(c.attachArgs).toBeDefined();
+    expect(c.attachArgs!('id-1')).toEqual(['attach', 'id-1']);
+  });
 });
 
 describe('headlessArgs (summarizer capture)', () => {

@@ -14,14 +14,14 @@ import { summarizeUsage, totalTokens, type ProfileUsageSummary } from '../core/u
 
 export type AgentsAction =
   | { type: 'exit' }
-  | { type: 'attach'; profile: string; sessionId: string; cwd: string; live: boolean; cli: string };
+  | { type: 'attach'; profile: string; sessionId: string; cwd: string; live: boolean; cli: string; fork?: boolean };
 
 interface Props {
   config: AimuxConfig;
   onAction: (action: AgentsAction) => void;
 }
 
-type ViewMode = 'list' | 'dispatch' | 'filter' | 'help' | 'pickActiveProfile' | 'pickAttachProfile';
+type ViewMode = 'list' | 'dispatch' | 'filter' | 'help' | 'pickActiveProfile' | 'pickAttachProfile' | 'pickAttachMode';
 type GroupMode = 'recency' | 'cwd' | 'state' | 'flat';
 
 interface SessionRow {
@@ -274,6 +274,8 @@ export function AgentsView({ config, onAction }: Props) {
   const [dispatchPrompt, setDispatchPrompt] = useState('');
   const [dispatchProfileDraft, setDispatchProfileDraft] = useState<string>(initialActive);
   const [profilePickerIdx, setProfilePickerIdx] = useState(0);
+  const [attachProfileDraft, setAttachProfileDraft] = useState<string>('');
+  const [attachModeIdx, setAttachModeIdx] = useState<number>(0);
   const [showAll, setShowAll] = useState(false);
   const [viewportTop, setViewportTop] = useState(0);
   const [toast, setToast] = useState('');
@@ -548,7 +550,7 @@ export function AgentsView({ config, onAction }: Props) {
   const currentSession = currentRow?.kind === 'session' ? currentRow.session : undefined;
   selectedIdRef.current = currentSession?.sessionId;
 
-  const doAttach = (profile: string) => {
+  const doAttach = (profile: string, fork?: boolean) => {
     if (!currentSession) return;
     onAction({
       type: 'attach',
@@ -561,6 +563,7 @@ export function AgentsView({ config, onAction }: Props) {
         currentSession.state !== 'done' &&
         currentSession.state !== 'failed' &&
         currentSession.state !== 'stopped',
+      fork,
     });
     exit();
   };
@@ -568,6 +571,26 @@ export function AgentsView({ config, onAction }: Props) {
   useInput((input, key) => {
     if (mode === 'help') {
       if (key.escape || input === '?' || input === 'q') setMode('list');
+      return;
+    }
+
+    if (mode === 'pickAttachMode') {
+      if (key.escape) {
+        setMode('list');
+        return;
+      }
+      if (key.upArrow) {
+        setAttachModeIdx((i) => (i > 0 ? i - 1 : 1));
+        return;
+      }
+      if (key.downArrow) {
+        setAttachModeIdx((i) => (i < 1 ? i + 1 : 0));
+        return;
+      }
+      if (key.return) {
+        setMode('list');
+        doAttach(attachProfileDraft, attachModeIdx === 1);
+      }
       return;
     }
 
@@ -590,8 +613,18 @@ export function AgentsView({ config, onAction }: Props) {
           setActiveProfile(chosen);
           setMode('list');
         } else {
-          setMode('list');
-          doAttach(chosen);
+          const isLive = currentSession?.isBackground &&
+            currentSession.state !== 'done' &&
+            currentSession.state !== 'failed' &&
+            currentSession.state !== 'stopped';
+          if (isLive) {
+            setAttachProfileDraft(chosen);
+            setAttachModeIdx(0);
+            setMode('pickAttachMode');
+          } else {
+            setMode('list');
+            doAttach(chosen);
+          }
         }
       }
       return;
@@ -657,7 +690,19 @@ export function AgentsView({ config, onAction }: Props) {
     else if (key.downArrow) moveCursor(1);
     else if (key.tab) jumpToNextGroup();
     else if (key.return || key.rightArrow) {
-      if (currentSession) doAttach(activeProfile);
+      if (currentSession) {
+        const isLive = currentSession.isBackground &&
+          currentSession.state !== 'done' &&
+          currentSession.state !== 'failed' &&
+          currentSession.state !== 'stopped';
+        if (isLive) {
+          setAttachProfileDraft(activeProfile);
+          setAttachModeIdx(0);
+          setMode('pickAttachMode');
+        } else {
+          doAttach(activeProfile);
+        }
+      }
     } else if (input === ' ') {
       if (currentSession) setPeekOpen((v) => !v);
     } else if (input === 'n') {
@@ -709,6 +754,14 @@ export function AgentsView({ config, onAction }: Props) {
         cursor={profilePickerIdx}
         activeProfile={activeProfile}
         sessionLastProfile={currentSession?.lastProfile}
+      />
+    );
+  }
+  if (mode === 'pickAttachMode') {
+    return (
+      <AttachModePickerModal
+        sessionName={currentSession?.name ?? ''}
+        cursor={attachModeIdx}
       />
     );
   }
@@ -892,6 +945,39 @@ function HelpOverlay({ activeProfile }: { activeProfile: string }) {
       ))}
       <Text> </Text>
       <Text dimColor>Press ? or Esc to close</Text>
+    </Box>
+  );
+}
+
+function AttachModePickerModal({
+  sessionName,
+  cursor,
+}: {
+  sessionName: string;
+  cursor: number;
+}) {
+  const options = [
+    { label: 'Attach to live running session (join)', desc: 'Connects directly to the active process without creating a new copy' },
+    { label: 'Fork copy (starts a new thread)', desc: 'Spawns a new process, copying the conversation history to avoid conflicts' },
+  ];
+
+  return (
+    <Box flexDirection="column" paddingX={2} paddingY={1}>
+      <Text bold color="cyan">Choose attach mode for "{sessionName}"</Text>
+      <Text> </Text>
+      {options.map((opt, i) => {
+        const sel = i === cursor;
+        return (
+          <Box key={i} flexDirection="column" marginY={0.5}>
+            <Text color={sel ? 'cyan' : undefined} bold={sel}>
+              {sel ? '❯' : ' '} {opt.label}
+            </Text>
+            <Text dimColor>   {opt.desc}</Text>
+          </Box>
+        );
+      })}
+      <Text> </Text>
+      <Text dimColor>↑↓ navigate · Enter select · Esc cancel</Text>
     </Box>
   );
 }

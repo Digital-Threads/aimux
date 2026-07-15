@@ -48,9 +48,12 @@ export interface CliAdapter {
    *  for a freshly added non-claude profile (claude: `~/.claude`; codex: `~/.codex`). */
   defaultSource(): string;
 
-  /** Args to resume an existing session by id (claude: `--resume <id>` [+ `--fork-session`];
-   *  codex: `resume <id>`). */
   resumeArgs(sessionId: string, opts?: { fork?: boolean }): string[];
+
+  /** Args to attach to a currently running live session without forking (claude: `attach <id>`).
+   *  Optional. */
+  attachArgs?(sessionId: string): string[];
+
 
   /** Args for a non-interactive one-shot with a prompt, captured via runProfileHeadless.
    *  claude prints the answer to stdout (`-p <prompt>`); codex's stdout is noisy, so it

@@ -45,6 +45,11 @@ export const claudeAdapter: CliAdapter = {
     return args;
   },
 
+  attachArgs(sessionId) {
+    return ['attach', sessionId];
+  },
+
+
   headlessArgs(prompt) {
     return ['-p', prompt];
   },

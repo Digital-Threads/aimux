@@ -123,11 +123,18 @@ export async function resumeSession(
   config: AimuxConfig,
   profileName: string,
   sessionId: string,
-  options: { cwd?: string; forkSession?: boolean } = {},
+  options: { cwd?: string; forkSession?: boolean; attachLive?: boolean } = {},
 ): Promise<number> {
   const profile = getProfile(config, profileName);
   const adapter = adapterFor(profile.cli);
-  const rargs = adapter.resumeArgs(sessionId, { fork: options.forkSession });
+  
+  let rargs: string[];
+  if (options.attachLive && adapter.attachArgs) {
+    rargs = adapter.attachArgs(sessionId);
+  } else {
+    rargs = adapter.resumeArgs(sessionId, { fork: options.forkSession });
+  }
+
   // globalArgs() is the single overlay-injection point (e.g. codex `-p aimux`); resume
   // spawns the CLI directly (not via buildRunParams), so prepend it here.
   const args = [...adapter.globalArgs(rargs[0]), ...rargs];
