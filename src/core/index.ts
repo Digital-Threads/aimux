@@ -12,10 +12,12 @@ export {
   saveHistory,
   recordHistory,
   getLastProfile,
+  resolveProfileForDir,
   configExists,
   ensureAimuxDir,
   ensureProfileDir,
 } from './config.js';
+
 
 export {
   expandHome,

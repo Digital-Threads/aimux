@@ -9,6 +9,11 @@ export interface ProfileConfig {
   env?: Record<string, string>;
 }
 
+export interface ProjectBinding {
+  pattern: string;
+  profile: string;
+}
+
 export interface AimuxConfig {
   version: number;
   /** Legacy single source (the claude source-of-truth). Always present for backward
@@ -19,7 +24,9 @@ export interface AimuxConfig {
   shared_sources?: Record<string, string>;
   profiles: Record<string, ProfileConfig>;
   private: string[];
+  bindings?: ProjectBinding[];
 }
+
 
 export const DEFAULT_PRIVATE_ELEMENTS = [
   '.credentials.json',
