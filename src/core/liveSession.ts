@@ -13,8 +13,14 @@
 // event carrying the text + total_cost_usd + permission_denials.
 
 import { spawn, type ChildProcess } from 'child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { buildRunParams } from './run.js';
 import type { AimuxConfig } from '../types/index.js';
+import { adapterFor } from './adapters/index.js';
+import { fetchRateLimits } from './limits.js';
+import { saveActiveProfile } from './activeProfile.js';
+import { expandHome } from './paths.js';
 
 // The headless multi-turn protocol flags. Owned here, never exposed to callers.
 const STREAM_FLAGS = ['-p', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json'];
@@ -70,6 +76,7 @@ export interface TurnResult {
   text: string;
   costUsd: number;
   denials: string[];
+  raw?: any;
 }
 
 export interface LiveSession {
@@ -174,10 +181,10 @@ export function openSession(config: AimuxConfig, profileName: string, opts: Open
   // host restart) — so the very first send must --resume, not re-create.
   let everSpawned = !!opts.resume;
 
-  function settle(text: string, cost = 0, denials: string[] = []): void {
+  function settle(text: string, cost = 0, denials: string[] = [], raw?: any): void {
     const p = pending;
     pending = null;
-    p?.({ text, costUsd: cost, denials });
+    p?.({ text, costUsd: cost, denials, raw });
   }
 
   function onData(d: Buffer | string): void {
@@ -187,7 +194,7 @@ export function openSession(config: AimuxConfig, profileName: string, opts: Open
       const line = buf.slice(0, i);
       buf = buf.slice(i + 1);
       if (!line.trim()) continue;
-      let ev: { type?: string; result?: string; total_cost_usd?: number; permission_denials?: unknown[]; message?: { content?: unknown } };
+      let ev: any;
       try { ev = JSON.parse(line); } catch { continue; }
       if (ev.type === 'assistant') {
         resetWatchdog?.(); // the agent is working — keep the watchdog from firing
@@ -203,7 +210,11 @@ export function openSession(config: AimuxConfig, profileName: string, opts: Open
         }
         const text = ev.result ?? '';
         curEvent?.({ kind: 'result', text, raw: ev });
-        settle(text, ev.total_cost_usd ?? 0, turnDenials);
+        settle(text, ev.total_cost_usd ?? 0, turnDenials, ev);
+      } else if (ev.type === 'error') {
+        const errorText = ev.error?.message ?? JSON.stringify(ev.error ?? 'Unknown error');
+        curEvent?.({ kind: 'other', raw: ev });
+        settle(errorText, 0, [], ev);
       } else {
         curEvent?.({ kind: 'other', raw: ev });
       }
@@ -226,7 +237,7 @@ export function openSession(config: AimuxConfig, profileName: string, opts: Open
     return child;
   }
 
-  return {
+  const session: LiveSession = {
     send(text, onEvent) {
       const child = ensure();
       curEvent = onEvent;
@@ -244,7 +255,27 @@ export function openSession(config: AimuxConfig, profileName: string, opts: Open
         // long but actively-working turn (a big implementation) is not killed —
         // only a genuinely silent/stuck one is.
         resetWatchdog = () => { clearTimeout(timer); timer = arm(); };
-        pending = (r: TurnResult) => { clearTimeout(timer); resetWatchdog = null; resolve(r); };
+        pending = async (r: TurnResult) => {
+          clearTimeout(timer);
+          resetWatchdog = null;
+
+          if (isRateLimitError(r.text, r.raw)) {
+            const failover = await findFailoverProfile(config, profile);
+            if (failover) {
+              console.warn(`\x1b[33m⚠ Rate limit hit on profile '${profile}'. Auto-switching to '${failover}'…\x1b[0m`);
+              session.relocate(failover);
+              try {
+                saveActiveProfile(failover);
+              } catch {
+                // best-effort
+              }
+              const retryResult = await session.send(text, onEvent);
+              resolve(retryResult);
+              return;
+            }
+          }
+          resolve(r);
+        };
         child.stdin?.write(userMessage(text));
       });
     },
@@ -265,4 +296,58 @@ export function openSession(config: AimuxConfig, profileName: string, opts: Open
       if (proc) { try { proc.stdin?.end(); proc.kill(); } catch { /* best-effort */ } proc = null; }
     },
   };
+
+  return session;
+}
+
+function isRateLimitError(text: string, raw: any): boolean {
+  if (raw && typeof raw === 'object') {
+    if (raw.type === 'error') {
+      const msg = (raw.error?.message || JSON.stringify(raw.error || '')).toLowerCase();
+      const type = (raw.error?.type || '').toLowerCase();
+      if (msg.includes('rate limit') || msg.includes('429') || msg.includes('quota') || type.includes('rate_limit')) {
+        return true;
+      }
+    }
+  }
+  const lowerText = text.toLowerCase();
+  return (
+    lowerText.includes('rate limit') ||
+    lowerText.includes('rate_limit') ||
+    lowerText.includes('quota exceeded') ||
+    lowerText.includes('429') ||
+    lowerText.includes('overloaded')
+  );
+}
+
+async function findFailoverProfile(
+  config: AimuxConfig,
+  currentProfile: string,
+): Promise<string | null> {
+  const profileNames = Object.keys(config.profiles).filter((name) => name !== currentProfile);
+  for (const name of profileNames) {
+    const p = config.profiles[name];
+    const profilePath = expandHome(p.path);
+    if (!p.is_source) {
+      const credentialsPath = join(profilePath, adapterFor(p.cli).credentialsFile());
+      if (!existsSync(credentialsPath)) {
+        continue;
+      }
+    }
+
+    try {
+      const status = await fetchRateLimits(p, profilePath, { timeoutMs: 2000 });
+      if (status) {
+        if (status.status !== 'rate_limited' && status.fiveHourPct < 100 && status.weeklyPct < 100) {
+          return name;
+        }
+      } else {
+        // Fallback for non-oauth API profiles or missing network
+        return name;
+      }
+    } catch {
+      // best-effort
+    }
+  }
+  return null;
 }

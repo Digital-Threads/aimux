@@ -2,6 +2,30 @@ import { describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { buildSessionArgs, openSession, type SessionEvent } from './liveSession.js';
 import type { AimuxConfig } from '../types/index.js';
+import { fetchRateLimits } from './limits.js';
+
+vi.mock('./limits.js', () => ({
+  fetchRateLimits: vi.fn(),
+  classifyProfile: vi.fn(),
+  parseRateLimitHeaders: vi.fn(),
+}));
+
+vi.mock('./activeProfile.js', () => ({
+  saveActiveProfile: vi.fn(),
+  loadActiveProfile: vi.fn(() => null),
+  getActiveProfilePath: vi.fn(() => '/dummy/path'),
+}));
+
+vi.mock('node:fs', async () => {
+  const actual = await vi.importActual('node:fs') as any;
+  return {
+    ...actual,
+    existsSync: (path: string) => {
+      if (path.includes('.credentials.json')) return true;
+      return actual.existsSync(path);
+    },
+  };
+});
 
 function makeConfig(): AimuxConfig {
   return {
@@ -178,5 +202,37 @@ describe('openSession', () => {
     const p = s.send('a'); procs[0].line({ type: 'result', result: '1' }); await p;
     expect(calls[0].args).toContain('--resume');
     expect(calls[0].args).not.toContain('--session-id');
+  });
+
+  it('automatically switches profile on rate limit (failover)', async () => {
+    const { calls, procs, spawnFn } = spy();
+
+    vi.mocked(fetchRateLimits).mockImplementation(async (profile: any) => {
+      if (profile.path.includes('work') || profile.path.includes('.claude')) {
+        return { fiveHourPct: 100, weeklyPct: 0, status: 'rate_limited' };
+      }
+      return { fiveHourPct: 10, weeklyPct: 0, status: 'allowed' };
+    });
+
+    const s = openSession(makeConfig(), 'work', { sessionId: 'sid', spawnFn });
+    const p = s.send('prompt text');
+
+    // First process spawned on work
+    expect(calls[0].env.CLAUDE_CONFIG_DIR).toBe('/home/user/.aimux/profiles/work');
+
+    // Simulate 429 rate limit error response
+    procs[0].line({ type: 'error', error: { message: 'Rate limit 429 exceeded' } });
+
+    // Wait a tick for the async failover logic to run and spawn the relocated process
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Wait for the relocated retry to receive result from backup
+    procs[1].line({ type: 'result', result: 'success from backup' });
+    const r = await p;
+
+    expect(r.text).toBe('success from backup');
+    expect(calls[1].args).toContain('--resume');
+    expect(calls[1].env.CLAUDE_CONFIG_DIR).toBe('/home/user/.aimux/profiles/backup');
+    expect(procs[0].killed).toBe(true);
   });
 });
