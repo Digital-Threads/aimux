@@ -18,6 +18,8 @@ All notable changes to this project are documented here. The format is based on
   subscription. Patterns support `*` and `**`; use `~/work/**` to include subdirectories
   (a bare `~/work` matches that directory only). Relative patterns are anchored to `$HOME`,
   never to the current directory, so a binding means the same thing wherever `aimux` runs.
+  Inside a bound directory a bare `aimux use` switches straight to the bound profile;
+  `aimux use --pick` forces the interactive picker.
 - **`aimux prompt-indicator`** (alias `aimux prompt`) — prints the active profile for a
   shell prompt or Starship. `--format '[aimux: %s]'` wraps it; every `%s` is substituted
   and the profile name is inserted literally.

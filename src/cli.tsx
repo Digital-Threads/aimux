@@ -266,7 +266,8 @@ program
   .description('Switch the current shell to a profile (persistent until you switch again)')
   .option('--export', 'Emit shell export statements for eval (used by the shell wrapper)')
   .option('--shell <shell>', 'Target shell for --export: bash, zsh, or fish')
-  .action(async (profile: string | undefined, options: { export?: boolean; shell?: string }) => {
+  .option('--pick', 'Always show the profile picker, ignoring any directory binding')
+  .action(async (profile: string | undefined, options: { export?: boolean; shell?: string; pick?: boolean }) => {
     try {
       const config = requireConfig();
 
@@ -275,7 +276,9 @@ program
       let profileName = profile;
       if (!profileName) {
         const cwd = process.cwd();
-        const boundProfile = resolveProfileForDir(config, cwd);
+        // A binding auto-selects the profile for this directory; --pick opts back into
+        // the interactive picker so `aimux use` never becomes un-overridable.
+        const boundProfile = options.pick ? null : resolveProfileForDir(config, cwd);
         if (boundProfile) {
           profileName = boundProfile;
         } else {
