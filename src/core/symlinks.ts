@@ -295,7 +295,58 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
     private: [],
   };
 
+  // Adapter-managed links (codex's `aimux.config.toml` overlay + `plugins`) are created
+  // by extraLinks, NOT by the shared-entry loop, so they are deliberately absent from
+  // `isShared`. Exempt them from the prune/health sweeps below — otherwise every sync
+  // unlinks and recreates them (spurious "repaired") and `doctor` reports a healthy
+  // codex profile as broken.
+  const adapterLinkNames = new Set(adapter.extraLinks(sourcePath).map((l) => l.link));
+
+  // Prune orphaned symlinks (pointing to deleted source entries)
+  // and obsolete symlinks (now private) to enable self-healing on version updates.
+  if (existsSync(profilePath)) {
+    try {
+      const profileEntries = readdirSync(profilePath);
+      for (const entry of profileEntries) {
+        if (adapterLinkNames.has(entry)) continue;
+        const targetInProfile = join(profilePath, entry);
+        let stat;
+        try {
+          stat = lstatSync(targetInProfile);
+        } catch {
+          continue;
+        }
+        if (!stat.isSymbolicLink()) continue;
+
+        let linkTarget;
+        try {
+          linkTarget = resolve(profilePath, readlinkSync(targetInProfile));
+        } catch {
+          continue;
+        }
+        const expectedSourceTarget = join(sourcePath, entry);
+
+        if (linkTarget === expectedSourceTarget) {
+          const isShared = adapter.isShared(entry, configPrivate);
+          const sourceExists = existsSync(expectedSourceTarget);
+
+          if (!isShared || !sourceExists) {
+            try {
+              unlinkSync(targetInProfile);
+              result.repaired.push(entry);
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const sourceEntries = readdirSync(sourcePath);
+
 
   for (const entry of sourceEntries) {
     const targetInProfile = join(profilePath, entry);
@@ -440,15 +491,36 @@ export function checkProfileHealth(config: AimuxConfig, profileName: string): He
     }
   }
 
+  // Adapter-managed links are validated by the extraLinks loop below; skip them here so
+  // they are not double-reported as both `conflicts` and `valid`.
+  const adapterLinkNames = new Set(adapter.extraLinks(sourcePath).map((l) => l.link));
+
   for (const entry of profileEntries) {
-    if (!adapter.isShared(entry, configPrivate)) continue;
-    if (!sourceEntries.has(entry)) {
-      const stat = lstatSync(join(profilePath, entry));
-      if (stat.isSymbolicLink()) {
-        report.orphaned.push(entry);
-      }
+    if (adapterLinkNames.has(entry)) continue;
+    const targetInProfile = join(profilePath, entry);
+    let stat;
+    try {
+      stat = lstatSync(targetInProfile);
+    } catch {
+      continue;
+    }
+    if (!stat.isSymbolicLink()) continue;
+
+    let linkTarget;
+    try {
+      linkTarget = resolve(profilePath, readlinkSync(targetInProfile));
+    } catch {
+      continue;
+    }
+
+    if (linkTarget === join(sourcePath, entry) && !adapter.isShared(entry, configPrivate)) {
+      report.conflicts.push(`${entry} (obsolete symlink, should be private)`);
+    } else if (adapter.isShared(entry, configPrivate) && !sourceEntries.has(entry)) {
+      report.orphaned.push(entry);
     }
   }
+
+
 
   // Per-CLI extra symlinks (codex overlay + plugins). They are not source entries, so
   // they're validated here rather than in the loops above.

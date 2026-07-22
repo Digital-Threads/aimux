@@ -4,6 +4,36 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.22.0] - 2026-07-22
+
+### Added
+- **Self-healing symlinks.** `sync` / `aimux rebuild` now prunes a profile's stale links:
+  a symlink pointing at a source entry that no longer exists (dangling), or at an entry
+  that has since become private. Previously these accumulated silently and `aimux doctor`
+  could only report them — you had to delete them by hand. Adapter-managed links (codex's
+  `aimux.config.toml` overlay and `plugins`) are exempt, since they are created by
+  `extraLinks` rather than the shared-entry loop.
+- **Project → profile bindings.** An optional `bindings` list in `config.yaml` maps a
+  directory pattern to a profile, so entering a project auto-selects the right
+  subscription. Patterns support `*` and `**`; use `~/work/**` to include subdirectories
+  (a bare `~/work` matches that directory only). Relative patterns are anchored to `$HOME`,
+  never to the current directory, so a binding means the same thing wherever `aimux` runs.
+  Inside a bound directory a bare `aimux use` switches straight to the bound profile;
+  `aimux use --pick` forces the interactive picker.
+- **`aimux prompt-indicator`** (alias `aimux prompt`) — prints the active profile for a
+  shell prompt or Starship. `--format '[aimux: %s]'` wraps it; every `%s` is substituted
+  and the profile name is inserted literally.
+- **`aimux logs [session]`** — view or grep a session transcript (`--last`, `-g <query>`),
+  for both claude and codex formats. Colors are emitted only to a TTY, so piping to a file
+  or `grep` produces clean text (also respects `NO_COLOR`).
+
+### Fixed
+- **`aimux doctor` no longer reports a healthy codex profile as broken.** codex's
+  `plugins` link is adapter-managed and deliberately outside the share allowlist; the
+  health sweep counted it as an obsolete symlink while the extraLinks check counted it as
+  valid, so the same entry appeared in both `conflicts` and `valid`, and every
+  `aimux run <codex-profile>` printed a spurious `repaired plugins`.
+
 ## [0.21.1] - 2026-06-29
 
 ### Fixed

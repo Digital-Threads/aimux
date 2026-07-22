@@ -10,7 +10,7 @@ import {
   loadConfig, saveConfig, addProfile, removeProfile, expandHome,
   ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs, detectCodex, detectGemini,
   syncProfile, syncAllProfiles, checkAllProfiles,
-  launchProfile, getLastProfile, recordHistory, getProfile,
+  launchProfile, getLastProfile, resolveProfileForDir, recordHistory, getProfile, loadActiveProfile,
   looksLikeSubcommand, adapterFor,
   summarizeUsage, parseSinceDuration, totalTokens,
   loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson, confirm,
@@ -207,27 +207,32 @@ program
 
       if (!profileName) {
         const cwd = process.cwd();
-        const last = getLastProfile(cwd);
-        const names = Object.keys(config.profiles);
-
-        if (names.length === 1) {
-          profileName = names[0];
+        const boundProfile = resolveProfileForDir(config, cwd);
+        if (boundProfile) {
+          profileName = boundProfile;
         } else {
-          const { render } = await import('ink');
-          const { ProfilePicker } = await import('./components/ProfilePicker.js');
-          let selectedProfile: string | undefined;
-          const { waitUntilExit } = render(
-            <ProfilePicker
-              config={config}
-              lastProfile={last}
-              onSelect={(selected: string) => {
-                selectedProfile = selected;
-              }}
-            />
-          );
-          await waitUntilExit();
-          if (!selectedProfile) return;
-          profileName = selectedProfile;
+          const last = getLastProfile(cwd);
+          const names = Object.keys(config.profiles);
+
+          if (names.length === 1) {
+            profileName = names[0];
+          } else {
+            const { render } = await import('ink');
+            const { ProfilePicker } = await import('./components/ProfilePicker.js');
+            let selectedProfile: string | undefined;
+            const { waitUntilExit } = render(
+              <ProfilePicker
+                config={config}
+                lastProfile={last}
+                onSelect={(selected: string) => {
+                  selectedProfile = selected;
+                }}
+              />
+            );
+            await waitUntilExit();
+            if (!selectedProfile) return;
+            profileName = selectedProfile;
+          }
         }
       }
 
@@ -261,7 +266,8 @@ program
   .description('Switch the current shell to a profile (persistent until you switch again)')
   .option('--export', 'Emit shell export statements for eval (used by the shell wrapper)')
   .option('--shell <shell>', 'Target shell for --export: bash, zsh, or fish')
-  .action(async (profile: string | undefined, options: { export?: boolean; shell?: string }) => {
+  .option('--pick', 'Always show the profile picker, ignoring any directory binding')
+  .action(async (profile: string | undefined, options: { export?: boolean; shell?: string; pick?: boolean }) => {
     try {
       const config = requireConfig();
 
@@ -269,24 +275,32 @@ program
 
       let profileName = profile;
       if (!profileName) {
-        const names = Object.keys(config.profiles);
-        if (names.length === 1) {
-          profileName = names[0];
+        const cwd = process.cwd();
+        // A binding auto-selects the profile for this directory; --pick opts back into
+        // the interactive picker so `aimux use` never becomes un-overridable.
+        const boundProfile = options.pick ? null : resolveProfileForDir(config, cwd);
+        if (boundProfile) {
+          profileName = boundProfile;
         } else {
-          const { render } = await import('ink');
-          const { ProfilePicker } = await import('./components/ProfilePicker.js');
-          const last = getLastProfile(process.cwd());
-          let selected: string | undefined;
-          // Under the shell wrapper, --export's stdout is captured by command
-          // substitution, so draw the picker on stderr (still a TTY) to keep
-          // stdout eval-clean. Direct invocation draws on stdout as usual.
-          const { waitUntilExit } = render(
-            <ProfilePicker config={config} lastProfile={last} onSelect={(s: string) => { selected = s; }} />,
-            options.export ? { stdout: process.stderr } : undefined,
-          );
-          await waitUntilExit();
-          if (!selected) return;
-          profileName = selected;
+          const names = Object.keys(config.profiles);
+          if (names.length === 1) {
+            profileName = names[0];
+          } else {
+            const { render } = await import('ink');
+            const { ProfilePicker } = await import('./components/ProfilePicker.js');
+            const last = getLastProfile(cwd);
+            let selected: string | undefined;
+            // Under the shell wrapper, --export's stdout is captured by command
+            // substitution, so draw the picker on stderr (still a TTY) to keep
+            // stdout eval-clean. Direct invocation draws on stdout as usual.
+            const { waitUntilExit } = render(
+              <ProfilePicker config={config} lastProfile={last} onSelect={(s: string) => { selected = s; }} />,
+              options.export ? { stdout: process.stderr } : undefined,
+            );
+            await waitUntilExit();
+            if (!selected) return;
+            profileName = selected;
+          }
         }
       }
 
@@ -926,7 +940,7 @@ program
   COMPREPLY=()
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="init run status usage profile rebuild doctor auth completions"
+  commands="init run status usage profile rebuild doctor auth logs prompt-indicator prompt completions"
 
   case "\${prev}" in
     run|auth)
@@ -946,7 +960,7 @@ complete -F _aimux aimux
       console.log(`#compdef aimux
 _aimux() {
   local -a commands profiles
-  commands=(init run status usage profile rebuild doctor auth completions)
+  commands=(init run status usage profile rebuild doctor auth logs prompt-indicator prompt completions)
   profiles=(${profiles})
 
   _arguments '1:command:($commands)' '*::arg:->args'
@@ -963,7 +977,7 @@ _aimux() {
 _aimux
 # Add to ~/.zshrc: eval "$(aimux completions zsh)"`);
     } else if (shell === 'fish') {
-      console.log(`complete -c aimux -n '__fish_use_subcommand' -a 'init run status usage profile rebuild doctor auth completions'
+      console.log(`complete -c aimux -n '__fish_use_subcommand' -a 'init run status usage profile rebuild doctor auth logs prompt-indicator prompt completions'
 complete -c aimux -n '__fish_seen_subcommand_from run' -a '${profiles}'
 complete -c aimux -n '__fish_seen_subcommand_from profile' -a 'add list update remove clone'
 complete -c aimux -n '__fish_seen_subcommand_from auth' -a 'login status'
@@ -1007,4 +1021,86 @@ program
     console.log(`\nReload with: source ${rcFile}`);
   });
 
+program
+  .command('prompt-indicator')
+  .alias('prompt')
+  .description('Print the active profile name (for zsh/bash/Starship prompt)')
+  .option('-f, --format <pattern>', 'Format pattern (e.g. "[aimux: %s]"). If omitted, outputs raw profile name.')
+  .action((options: { format?: string }) => {
+    try {
+      const active = process.env.AIMUX_PROFILE || loadActiveProfile();
+      if (!active) return;
+      if (options.format) {
+        // replaceAll + function replacer: substitutes EVERY `%s`, and the profile name is
+        // inserted literally (a bare `replace` would treat `$&`/`` $` `` in a name as
+        // replacement patterns).
+        console.log(options.format.replaceAll('%s', () => active));
+      } else {
+        console.log(active);
+      }
+    } catch {
+      // fail silently so shell prompts do not break/spew errors
+    }
+  });
+
+program
+  .command('logs [session]')
+  .description('View and grep chat transcripts of a session')
+  .option('--last', 'View logs of the most recent session')
+  .option('-g, --grep <query>', 'Filter transcript lines matching the query')
+  .action(async (session: string | undefined, options: { last?: boolean; grep?: string }) => {
+    try {
+      const config = requireConfig();
+      if (!session && !options.last) {
+        console.error('Error: Please specify a session ID or use --last');
+        process.exit(1);
+      }
+
+      const { unifyAllSessions } = await import('./core/unifiedSessions.js');
+      const { readTranscript } = await import('./core/handoff.js');
+      const { formatTranscript } = await import('./core/index.js');
+
+      const all = unifyAllSessions(config, { windowDays: Infinity });
+      let target: any;
+      if (options.last) {
+        target = all[0];
+      } else {
+        target = all.find(s => s.sessionId === session || s.short === session);
+      }
+
+      if (!target) {
+        console.error(`Error: Session '${session || 'last'}' not found`);
+        process.exit(1);
+      }
+
+      const raw = readTranscript(config, target);
+      if (!raw) {
+        console.error('Error: No transcript log found for this session');
+        process.exit(1);
+      }
+
+      const formatted = formatTranscript(raw, {
+        color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR,
+      });
+
+      if (options.grep) {
+        const query = options.grep.toLowerCase();
+        const matches = formatted.filter(f => f.toLowerCase().includes(query));
+        if (matches.length === 0) {
+          console.log('(No matching lines found)');
+        } else {
+          console.log(matches.join('\n\n'));
+        }
+      } else {
+        console.log(formatted.join('\n\n'));
+      }
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
 program.parse();
+
+
+

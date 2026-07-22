@@ -1,9 +1,12 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { resolve, sep, isAbsolute } from 'node:path';
+import { homedir } from 'node:os';
 import { parse, stringify } from 'yaml';
 import type { AimuxConfig, ProfileConfig, HistoryEntry } from '../types/index.js';
 import { DEFAULT_CONFIG, DEFAULT_PRIVATE_ELEMENTS } from '../types/index.js';
 import { getConfigPath, getHistoryPath, getAimuxDir, getProfilesDir, expandHome } from './paths.js';
 import { adapterFor } from './adapters/index.js';
+
 
 export function loadConfig(): AimuxConfig | null {
   const configPath = getConfigPath();
@@ -184,8 +187,32 @@ export function validateConfig(config: unknown): string[] {
     errors.push('private must be an array of strings');
   }
 
+  if (c.bindings !== undefined) {
+    if (!Array.isArray(c.bindings)) {
+      errors.push('bindings must be an array of objects');
+    } else {
+      const profiles = (c.profiles || {}) as Record<string, unknown>;
+      for (let i = 0; i < c.bindings.length; i++) {
+        const b = c.bindings[i];
+        if (!b || typeof b !== 'object' || Array.isArray(b)) {
+          errors.push(`bindings[${i}] must be an object`);
+          continue;
+        }
+        if (typeof b.pattern !== 'string' || !b.pattern) {
+          errors.push(`bindings[${i}]: pattern must be a non-empty string`);
+        }
+        if (typeof b.profile !== 'string' || !b.profile) {
+          errors.push(`bindings[${i}]: profile must be a non-empty string`);
+        } else if (!profiles[b.profile]) {
+          errors.push(`bindings[${i}]: profile '${b.profile}' does not exist in profiles`);
+        }
+      }
+    }
+  }
+
   return errors;
 }
+
 
 // --- History ---
 
@@ -222,6 +249,80 @@ export function getLastProfile(dir: string): string | null {
   const entry = entries.find(e => e.dir === dir);
   return entry?.profile ?? null;
 }
+
+export function matchGlob(dir: string, pattern: string): boolean {
+  const cleanDir = resolve(expandHome(dir));
+  // Anchor a relative pattern to $HOME, never to process.cwd(): a binding in config.yaml
+  // must mean the same directory no matter where `aimux` was invoked from. Test the RAW
+  // pattern — expandHome() already resolves a bare relative path against the cwd.
+  const cleanPattern = pattern.startsWith('~/') || isAbsolute(pattern)
+    ? expandHome(pattern)
+    : resolve(homedir(), pattern);
+
+  if (cleanDir === cleanPattern) return true;
+
+  const dirParts = cleanDir.split(sep);
+  const patternParts = cleanPattern.split(sep);
+
+  let d = 0;
+  let p = 0;
+  while (d < dirParts.length && p < patternParts.length) {
+    const part = patternParts[p];
+    if (part === '**') {
+      if (p === patternParts.length - 1) {
+        return true;
+      }
+      const nextPatternPart = patternParts[p + 1];
+      let found = false;
+      while (d < dirParts.length) {
+        if (matchSegment(dirParts[d], nextPatternPart)) {
+          found = true;
+          break;
+        }
+        d++;
+      }
+      if (!found) return false;
+      p += 2;
+      d++;
+      continue;
+    }
+
+    if (!matchSegment(dirParts[d], part)) {
+      return false;
+    }
+    d++;
+    p++;
+  }
+
+  if (d === dirParts.length && p === patternParts.length - 1 && patternParts[p] === '**') {
+    return true;
+  }
+
+  return d === dirParts.length && p === patternParts.length;
+}
+
+function matchSegment(segment: string, pattern: string): boolean {
+  if (pattern === '*') return true;
+  const regexStr = '^' + pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.') + '$';
+  const regex = new RegExp(regexStr);
+  return regex.test(segment);
+}
+
+export function resolveProfileForDir(config: AimuxConfig, dir: string): string | null {
+  if (config.bindings && config.bindings.length > 0) {
+    for (const binding of config.bindings) {
+      if (matchGlob(dir, binding.pattern) && config.profiles[binding.profile]) {
+        return binding.profile;
+      }
+    }
+  }
+  return null;
+}
+
+
 
 // --- Filesystem ---
 
