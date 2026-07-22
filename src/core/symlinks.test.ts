@@ -80,6 +80,38 @@ describe('syncProfile reclaims codex session-index DB', () => {
     expect(result.private).toContain('auth.json');
   });
 
+  it('leaves adapter-managed links (codex overlay + plugins) alone: not pruned, not a conflict', () => {
+    // Regression: the self-healing prune matches on `linkTarget === source/<entry>`, which
+    // codex's extraLinks (`plugins`, `aimux.config.toml`) satisfy — but they are NOT in the
+    // codex share allowlist. Without an exemption every sync unlinks + recreates them
+    // ("repaired plugins" on every run) and `doctor` reports a healthy profile as broken.
+    const codexSrc = join(TEST_DIR, 'codex-src-extra');
+    const profileDir = join(PROFILES_DIR, 'cxextra');
+    mkdirSync(join(codexSrc, 'plugins'), { recursive: true });
+    mkdirSync(profileDir, { recursive: true });
+    writeFileSync(join(codexSrc, 'config.toml'), 'model = "x"');
+
+    const config = makeConfig({
+      shared_sources: { codex: codexSrc },
+      profiles: {
+        main: { cli: 'claude', path: SHARED_DIR, is_source: true },
+        cxextra: { cli: 'codex', path: profileDir },
+      },
+    });
+
+    syncProfile(config, 'cxextra');
+    // Second sync must be a no-op for the adapter links — nothing churned.
+    const again = syncProfile(config, 'cxextra');
+    expect(again.repaired).not.toContain('plugins');
+    expect(again.repaired).not.toContain('aimux.config.toml');
+    expect(existsSync(join(profileDir, 'plugins'))).toBe(true);
+
+    const health = checkProfileHealth(config, 'cxextra');
+    expect(health.conflicts.join(' ')).not.toContain('plugins');
+    expect(health.valid).toContain('plugins');
+    expect(health.valid).toContain('aimux.config.toml');
+  });
+
   it('does NOT reclaim a directory at the entry path — falls through to conflicts (no EISDIR)', () => {
     const codexSrc = join(TEST_DIR, 'codex-src-dir');
     const profileDir = join(PROFILES_DIR, 'cxdir');

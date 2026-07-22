@@ -937,7 +937,7 @@ program
   COMPREPLY=()
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="init run status usage profile rebuild doctor auth prompt-indicator prompt completions"
+  commands="init run status usage profile rebuild doctor auth logs prompt-indicator prompt completions"
 
   case "\${prev}" in
     run|auth)
@@ -957,7 +957,7 @@ complete -F _aimux aimux
       console.log(`#compdef aimux
 _aimux() {
   local -a commands profiles
-  commands=(init run status usage profile rebuild doctor auth prompt-indicator prompt completions)
+  commands=(init run status usage profile rebuild doctor auth logs prompt-indicator prompt completions)
   profiles=(${profiles})
 
   _arguments '1:command:($commands)' '*::arg:->args'
@@ -974,7 +974,7 @@ _aimux() {
 _aimux
 # Add to ~/.zshrc: eval "$(aimux completions zsh)"`);
     } else if (shell === 'fish') {
-      console.log(`complete -c aimux -n '__fish_use_subcommand' -a 'init run status usage profile rebuild doctor auth prompt-indicator prompt completions'
+      console.log(`complete -c aimux -n '__fish_use_subcommand' -a 'init run status usage profile rebuild doctor auth logs prompt-indicator prompt completions'
 complete -c aimux -n '__fish_seen_subcommand_from run' -a '${profiles}'
 complete -c aimux -n '__fish_seen_subcommand_from profile' -a 'add list update remove clone'
 complete -c aimux -n '__fish_seen_subcommand_from auth' -a 'login status'
@@ -1028,7 +1028,10 @@ program
       const active = process.env.AIMUX_PROFILE || loadActiveProfile();
       if (!active) return;
       if (options.format) {
-        console.log(options.format.replace('%s', active));
+        // replaceAll + function replacer: substitutes EVERY `%s`, and the profile name is
+        // inserted literally (a bare `replace` would treat `$&`/`` $` `` in a name as
+        // replacement patterns).
+        console.log(options.format.replaceAll('%s', () => active));
       } else {
         console.log(active);
       }
@@ -1073,7 +1076,9 @@ program
         process.exit(1);
       }
 
-      const formatted = formatTranscript(raw);
+      const formatted = formatTranscript(raw, {
+        color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR,
+      });
 
       if (options.grep) {
         const query = options.grep.toLowerCase();

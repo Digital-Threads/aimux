@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { tmpdir, homedir } from 'node:os';
 import { setAimuxDir } from './paths.js';
 import {
   validateConfig,
@@ -185,6 +185,20 @@ describe('matchGlob', () => {
   it('matches exact paths', () => {
     expect(matchGlob('/home/user/work', '/home/user/work')).toBe(true);
     expect(matchGlob('/home/user/work', '/home/user/other')).toBe(false);
+  });
+
+  it('anchors a relative pattern to $HOME, not to process.cwd()', () => {
+    // Regression: `resolve(pattern)` used the CWD, so the same binding in config.yaml
+    // matched different directories depending on where `aimux` happened to be run.
+    const home = homedir();
+    const original = process.cwd();
+    try {
+      process.chdir(tmpdir());
+      expect(matchGlob(join(home, 'work', 'proj'), 'work/**')).toBe(true);
+      expect(matchGlob(join(tmpdir(), 'work', 'proj'), 'work/**')).toBe(false);
+    } finally {
+      process.chdir(original);
+    }
   });
 
   it('matches segments using *', () => {

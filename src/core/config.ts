@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { resolve, sep, isAbsolute } from 'node:path';
+import { homedir } from 'node:os';
 import { parse, stringify } from 'yaml';
 import type { AimuxConfig, ProfileConfig, HistoryEntry } from '../types/index.js';
 import { DEFAULT_CONFIG, DEFAULT_PRIVATE_ELEMENTS } from '../types/index.js';
@@ -251,7 +252,12 @@ export function getLastProfile(dir: string): string | null {
 
 export function matchGlob(dir: string, pattern: string): boolean {
   const cleanDir = resolve(expandHome(dir));
-  const cleanPattern = resolve(expandHome(pattern));
+  // Anchor a relative pattern to $HOME, never to process.cwd(): a binding in config.yaml
+  // must mean the same directory no matter where `aimux` was invoked from. Test the RAW
+  // pattern — expandHome() already resolves a bare relative path against the cwd.
+  const cleanPattern = pattern.startsWith('~/') || isAbsolute(pattern)
+    ? expandHome(pattern)
+    : resolve(homedir(), pattern);
 
   if (cleanDir === cleanPattern) return true;
 
