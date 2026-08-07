@@ -270,12 +270,18 @@ export async function collectProviderCredentials(preset: ProviderPreset): Promis
 }
 
 /**
- * Seed a minimal `.claude.json` for an API profile so Claude Code skips its
- * first-run onboarding/OAuth flow and goes straight to the API endpoint
- * configured via env. No-op if the file already exists (never clobbers a real
- * one). Written chmod 600 alongside the profile's `.env`.
+ * Seed a minimal `.claude.json` so Claude Code skips its first-run onboarding.
+ *
+ * Needed by EVERY claude profile, not just API ones. A fresh profile dir has no
+ * `.claude.json`, so `hasCompletedOnboarding` is unset and claude opens the
+ * first-run wizard — which includes an account step. That reads as "I already
+ * logged in, why is it asking again?" even though `aimux auth login` wrote valid
+ * credentials: the credentials are fine, the onboarding flag is what's missing.
+ *
+ * No-op if the file already exists (never clobbers a real one). Written chmod 600
+ * alongside the profile's `.env`.
  */
-export function seedApiClaudeJson(profilePath: string): boolean {
+export function seedClaudeOnboarding(profilePath: string): boolean {
   const target = join(profilePath, '.claude.json');
   if (existsSync(target)) return false;
   writeFileSync(target, JSON.stringify({ hasCompletedOnboarding: true }, null, 2) + '\n', {
@@ -284,6 +290,10 @@ export function seedApiClaudeJson(profilePath: string): boolean {
   });
   return true;
 }
+
+/** @deprecated Renamed to `seedClaudeOnboarding` — it applies to every claude
+ *  profile, not only API ones. Kept so `./core` consumers keep compiling. */
+export const seedApiClaudeJson = seedClaudeOnboarding;
 
 /** Quote a dotenv value only when it contains characters that need it. */
 function serializeDotenvValue(value: string): string {

@@ -66,6 +66,7 @@ export {
   writeProfileDotEnv,
   mergeProfileDotEnv,
   checkDotenvPermissions,
+  seedClaudeOnboarding,
   seedApiClaudeJson,
   API_MODEL_DEFAULTS,
   isAffirmative,
