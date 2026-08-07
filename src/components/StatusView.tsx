@@ -1,4 +1,4 @@
-import { Box, Text } from 'ink';
+import { Box, Text, useStdout } from 'ink';
 import { useMemo } from 'react';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -10,7 +10,7 @@ import { readProfileAutoMode } from '../core/autoMode.js';
 import { getSharedElements, checkAllProfiles } from '../core/symlinks.js';
 import { adapterFor } from '../core/adapters/index.js';
 import type { RateLimitProbe } from '../core/limits.js';
-import { windowPct, probeFallback } from './rateLimitCell.js';
+import { windowPct, probeFallback, resetCell } from './rateLimitCell.js';
 
 interface Props {
   config: AimuxConfig;
@@ -119,6 +119,14 @@ export function StatusView({ config, limits }: Props) {
   const staleAuth = limits
     ? [...limits].filter(([, probe]) => probe.error === 'auth').map(([name]) => name)
     : [];
+  // The reset times are the widest column and the least urgent one: on a narrow
+  // terminal Ink would wrap every row in half to fit them, which costs more
+  // readability than the column adds. Usage percentages always stay.
+  const { stdout } = useStdout();
+  // COLUMNS is the fallback when stdout is not a TTY (piped output), which is
+  // also how Ink itself sizes the frame — without it the two disagree.
+  const columns = stdout?.columns || Number(process.env.COLUMNS) || 80;
+  const showResets = Boolean(limits) && columns >= 120;
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -141,7 +149,8 @@ export function StatusView({ config, limits }: Props) {
             <Box width={20}><Text bold underline>MODEL</Text></Box>
             <Box width={16}><Text bold underline>AUTOMODE</Text></Box>
             <Box width={18}><Text bold underline>SHARED</Text></Box>
-            {limits ? <Box width={16}><Text bold underline>USED 5H/7D</Text></Box> : null}
+            {limits ? <Box width={13}><Text bold underline>USED 5H/7D</Text></Box> : null}
+            {showResets ? <Box width={15}><Text bold underline>RESETS</Text></Box> : null}
           </Box>
 
           {profiles.map(([name, profile]) => {
@@ -194,7 +203,8 @@ export function StatusView({ config, limits }: Props) {
                     {sharedStatus}
                   </Text>
                 </Box>
-                {limits ? <Box width={16}>{limitCell(limits.get(name))}</Box> : null}
+                {limits ? <Box width={13}>{limitCell(limits.get(name))}</Box> : null}
+                {showResets ? <Box width={15}>{resetCell(limits?.get(name))}</Box> : null}
               </Box>
             );
           })}

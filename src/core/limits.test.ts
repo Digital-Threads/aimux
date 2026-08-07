@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { ProfileConfig } from '../types/index.js';
-import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles } from './limits.js';
+import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt } from './limits.js';
 
 // Real header keys captured from a live HTTP 200 probe (see plan spike result).
 const REAL = {
@@ -178,5 +178,25 @@ describe('probeError', () => {
 
   it('treats server-side failures as unavailable', () => {
     for (const code of [429, 500, 502, 503]) expect(probeError(code)).toBe('unavailable');
+  });
+});
+
+describe('formatResetAt', () => {
+  const now = Date.UTC(2026, 7, 7, 12, 0, 0);
+
+  it('shows a clock time for a window that frees up within a day — that is the whole answer for a 5h window', () => {
+    expect(formatResetAt(now + 2 * 3600_000, now)).toMatch(/^\d{2}:\d{2}$/);
+  });
+
+  it('shows a calendar date once the reset is more than a day out, where a bare clock time would be ambiguous', () => {
+    expect(formatResetAt(now + 3 * 86_400_000, now)).toMatch(/^[A-Z][a-z]{2} \d{1,2}$/);
+  });
+
+  it('says "now" for a window that has already rolled over rather than printing a past time', () => {
+    expect(formatResetAt(now - 60_000, now)).toBe('now');
+  });
+
+  it('returns an em-dash when the provider gave no reset stamp', () => {
+    expect(formatResetAt(undefined, now)).toBe('—');
   });
 });

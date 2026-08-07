@@ -128,6 +128,20 @@ export function parseCodexUsage(payload: unknown): RateLimitStatus | null {
   return out.fiveHourPct === null && out.weeklyPct === null ? null : out;
 }
 
+/**
+ * When a window frees up, in the shortest form that is still unambiguous: a
+ * clock time within the next day (what a 5h window always is), a calendar date
+ * beyond that (a weekly window, where "14:07" alone would not say which day).
+ */
+export function formatResetAt(resetsAt: number | undefined, now = Date.now()): string {
+  if (resetsAt === undefined) return '—';
+  if (resetsAt <= now) return 'now';
+  const d = new Date(resetsAt);
+  return resetsAt - now < 24 * 3600_000
+    ? d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 /** Severity color for a utilization percent, shared by every view that shows it. */
 export function pctColor(pct: number): 'green' | 'yellow' | 'red' {
   return pct >= 80 ? 'red' : pct >= 60 ? 'yellow' : 'green';

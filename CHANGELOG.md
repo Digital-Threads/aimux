@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.25.0] - 2026-08-07
+
+### Added
+- **A `RESETS` column showing when each window frees up** — a clock time for a
+  reset within the next day (what a 5h window always is) and a calendar date
+  beyond that, where a bare time would not say which day. Knowing a profile is at
+  90% matters much less than knowing whether it clears in twenty minutes or on
+  Thursday. A window the plan does not have shows `—` rather than an invented time.
+  - The column appears only on terminals at least 120 columns wide. It is the
+    widest and least urgent column, and on a narrow terminal Ink would wrap every
+    row in half to fit it — the usage percentages always stay.
+
 ## [0.24.0] - 2026-08-07
 
 ### Added

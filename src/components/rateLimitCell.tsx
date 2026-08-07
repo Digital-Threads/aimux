@@ -1,6 +1,6 @@
 import { Text } from 'ink';
 import type { ReactNode } from 'react';
-import { pctColor, type RateLimitProbe } from '../core/limits.js';
+import { pctColor, formatResetAt, type RateLimitProbe } from '../core/limits.js';
 
 /** One window's utilization. A window the provider did not report is unknown,
  *  not empty — printing 0% there would claim the user has a full allowance they
@@ -18,6 +18,20 @@ export function windowPct(pct: number | null): ReactNode {
  * network hiccup) stays a quiet em-dash: a status table should not raise an
  * alarm about its own connectivity.
  */
+/** When each window frees up. Only shown for a window that actually exists —
+ *  a reset time for a window the plan does not have would be noise. */
+export function resetCell(probe: RateLimitProbe | undefined): ReactNode {
+  const s = probe?.status;
+  if (!s) return <Text dimColor>—</Text>;
+  return (
+    <Text dimColor>
+      {s.fiveHourPct === null ? '—' : formatResetAt(s.fiveHourResetsAt)}
+      {' / '}
+      {s.weeklyPct === null ? '—' : formatResetAt(s.weeklyResetsAt)}
+    </Text>
+  );
+}
+
 export function probeFallback(probe: RateLimitProbe | undefined, loading = false): ReactNode | null {
   if (probe === undefined) return <Text dimColor>{loading ? '…' : '—'}</Text>;
   if (probe.status) return null;
