@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.24.0] - 2026-08-07
+
+### Added
+- **Codex profiles now report their limits too.** The `USED 5H/7D` column was
+  claude-only in 0.23.0 and left every codex profile as an em-dash. Codex windows
+  come from `GET /backend-api/codex/usage` — the same endpoint the codex CLI reads,
+  a plain GET that runs no model and therefore costs no quota. Windows are matched
+  on their length, not on the slot they arrive in: on a plan with no 5h window the
+  weekly one is delivered as `primary_window`, so trusting the order would have
+  labelled a weekly figure as 5h.
+  - Limits are read per profile from its own `auth.json` and sent with that
+    profile's `chatgpt-account-id`, so numbers can never leak across codex profiles
+    even though aimux deliberately shares `sessions/` between them.
+
+### Changed
+- **A window the provider does not report now renders as `—`, not `0%`.** Some
+  plans have no 5h window at all; claiming 0% used implied a full allowance that
+  may not exist.
+- **A rejected token is called out as `login?` instead of a silent em-dash**, with
+  a line under the table naming the affected profiles. This is the one failure the
+  user can act on — a claude token expires roughly hourly and is refreshed by the
+  CLI on its next run, so `aimux status` showing `—` for an otherwise healthy
+  profile was pure confusion. Network failures stay a quiet em-dash.
+  - Only HTTP 401 counts as a login problem. 403 does not: the codex endpoint sits
+    behind Cloudflare, which answers a request without a `user-agent` header with a
+    403 page even when the token is perfectly valid (aimux now sends one).
+
 ## [0.23.0] - 2026-08-07
 
 ### Added

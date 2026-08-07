@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import type { AimuxConfig } from './types/index.js';
-import type { ProfileUsageSummary, RateLimitStatus } from './core/index.js';
+import type { ProfileUsageSummary, RateLimitProbe } from './core/index.js';
 import { rmSync, existsSync, cpSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
@@ -32,8 +32,8 @@ function requireConfig(): AimuxConfig {
 }
 
 /**
- * Probe every claude subscription profile for its live 5h/7d windows, in
- * parallel, so `status` / `profile list` can show them in one column.
+ * Probe every subscription profile for its live 5h/7d windows, in parallel, so
+ * `status` / `profile list` can show them in one column.
  *
  * Returns undefined when the caller passed `--no-limits` and when there is
  * nothing to probe — the view hides the column entirely in that case rather
@@ -42,7 +42,7 @@ function requireConfig(): AimuxConfig {
 async function probeRateLimits(
   config: AimuxConfig,
   enabled: boolean,
-): Promise<Map<string, RateLimitStatus | null> | undefined> {
+): Promise<Map<string, RateLimitProbe> | undefined> {
   if (!enabled) return undefined;
   const names = rateLimitProfiles(config.profiles);
   if (names.length === 0) return undefined;

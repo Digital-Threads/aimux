@@ -9,7 +9,8 @@ import { profileColor } from '../core/profileColors.js';
 import { watchSessions } from '../core/sessionWatcher.js';
 import { loadPinned, togglePinned } from '../core/pinnedSessions.js';
 import { expandHome } from '../core/paths.js';
-import { classifyProfile, fetchRateLimits, pctColor, type RateLimitStatus, type ProfileKind } from '../core/limits.js';
+import { classifyProfile, fetchRateLimits, type RateLimitProbe, type ProfileKind } from '../core/limits.js';
+import { windowPct, probeFallback } from './rateLimitCell.js';
 import { summarizeUsage, totalTokens, type ProfileUsageSummary } from '../core/usage.js';
 
 export type AgentsAction =
@@ -194,7 +195,7 @@ function ProfilesStatusBar({
 }: {
   config: AimuxConfig;
   kinds: Map<string, ProfileKind>;
-  rateLimits: Map<string, RateLimitStatus | null>;
+  rateLimits: Map<string, RateLimitProbe>;
   usage: Map<string, ProfileUsageSummary>;
   loading: boolean;
 }) {
@@ -208,18 +209,14 @@ function ProfilesStatusBar({
         let body: ReactNode;
         if (kind === 'oauth') {
           const rl = rateLimits.get(name);
-          if (rl === undefined) {
-            body = <Text dimColor>{loading ? '…' : '—'}</Text>;
-          } else if (rl === null) {
-            body = <Text dimColor>—</Text>;
-          } else {
-            body = (
+          body = rl?.status
+            ? (
               <Text>
-                5h <Text color={pctColor(rl.fiveHourPct)}>{rl.fiveHourPct}%</Text>
-                {' / '}7d <Text color={pctColor(rl.weeklyPct)}>{rl.weeklyPct}%</Text>
+                5h {windowPct(rl.status.fiveHourPct)}
+                {' / '}7d {windowPct(rl.status.weeklyPct)}
               </Text>
-            );
-          }
+            )
+            : probeFallback(rl, loading);
         } else if (kind === 'api') {
           const u = usage.get(name);
           const tok = u ? totalTokens(u) : 0;
@@ -378,7 +375,7 @@ export function AgentsView({ config, onAction }: Props) {
     };
   }, [config, profileKinds]);
 
-  const [rateLimits, setRateLimits] = useState<Map<string, RateLimitStatus | null>>(new Map());
+  const [rateLimits, setRateLimits] = useState<Map<string, RateLimitProbe>>(new Map());
   const [limitsLoading, setLimitsLoading] = useState(false);
   const [limitsNonce, setLimitsNonce] = useState(0);
 

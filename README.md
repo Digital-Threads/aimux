@@ -127,7 +127,7 @@ never changes global state. `aimux run` still works for one-off launches.
 |---------|-------------|
 | `aimux init` | Auto-detect Claude dirs, create config, migrate profiles |
 | `aimux init --source <path>` | Initialize with explicit source directory |
-| `aimux status` | TUI dashboard — profiles, auth, live 5h/7d limit usage, auto-mode posture, symlink health |
+| `aimux status` | TUI dashboard — profiles, auth, live 5h/7d limit usage (claude + codex), auto-mode posture, symlink health |
 | `aimux status --no-limits` | Same dashboard without the rate-limit probe (offline / faster) |
 | `aimux usage` | Show token usage by profile (Claude transcripts + codex rollouts) |
 | `aimux usage --profile work --since 24h` | Show usage for one profile over a recent window |

@@ -9,15 +9,16 @@ import { loadProfileEnv } from '../core/run.js';
 import { readProfileAutoMode } from '../core/autoMode.js';
 import { getSharedElements, checkAllProfiles } from '../core/symlinks.js';
 import { adapterFor } from '../core/adapters/index.js';
-import { pctColor, type RateLimitStatus } from '../core/limits.js';
+import type { RateLimitProbe } from '../core/limits.js';
+import { windowPct, probeFallback } from './rateLimitCell.js';
 
 interface Props {
   config: AimuxConfig;
   /** Live 5h/7d subscription windows, probed by the caller before render (the
    *  probe is a network round-trip, so the view stays synchronous and just
    *  displays what it is given). Omit to hide the column entirely — that is
-   *  what `--no-limits` does. A `null` entry means the probe failed. */
-  limits?: Map<string, RateLimitStatus | null>;
+   *  what `--no-limits` does. */
+  limits?: Map<string, RateLimitProbe>;
 }
 
 type AuthStatus =
@@ -75,17 +76,15 @@ function capCount(n: number): string {
   return n > 99 ? '99+' : String(n);
 }
 
-/** One profile's rate-limit cell. `undefined` = not probed (not a claude
- *  subscription profile); `null` = probed but the request failed. Both render as
- *  an em-dash — a status table should not turn a transient network blip into an
- *  alarming number. */
-function limitCell(status: RateLimitStatus | null | undefined) {
-  if (!status) return <Text dimColor>—</Text>;
+/** One profile's rate-limit cell: the two windows, or whatever the probe has to
+ *  say instead (never probed / stale token / network failure). */
+function limitCell(probe: RateLimitProbe | undefined) {
+  if (!probe?.status) return probeFallback(probe);
   return (
     <Text>
-      <Text color={pctColor(status.fiveHourPct)}>{status.fiveHourPct}%</Text>
+      {windowPct(probe.status.fiveHourPct)}
       <Text dimColor> / </Text>
-      <Text color={pctColor(status.weeklyPct)}>{status.weeklyPct}%</Text>
+      {windowPct(probe.status.weeklyPct)}
     </Text>
   );
 }
@@ -115,6 +114,11 @@ export function StatusView({ config, limits }: Props) {
   // Only honored when it resolves to a real profile, so a stale var never lies.
   const envActive = process.env.AIMUX_PROFILE;
   const activeProfile = envActive && config.profiles[envActive] ? envActive : undefined;
+  // Profiles whose stored token the provider rejected. Worth naming explicitly:
+  // "login?" in a cell says something is wrong but not what to do about it.
+  const staleAuth = limits
+    ? [...limits].filter(([, probe]) => probe.error === 'auth').map(([name]) => name)
+    : [];
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -194,6 +198,16 @@ export function StatusView({ config, limits }: Props) {
               </Box>
             );
           })}
+
+          {staleAuth.length > 0 ? (
+            <>
+              <Text> </Text>
+              <Text dimColor>
+                login? — stored token expired for {staleAuth.join(', ')}. The CLI refreshes it on
+                its next run: `aimux run {staleAuth[0]}`.
+              </Text>
+            </>
+          ) : null}
         </Box>
       </Box>
     </Box>
