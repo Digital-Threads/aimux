@@ -9,7 +9,7 @@ import { profileColor } from '../core/profileColors.js';
 import { watchSessions } from '../core/sessionWatcher.js';
 import { loadPinned, togglePinned } from '../core/pinnedSessions.js';
 import { expandHome } from '../core/paths.js';
-import { classifyProfile, fetchRateLimits, type RateLimitStatus, type ProfileKind } from '../core/limits.js';
+import { classifyProfile, fetchRateLimits, pctColor, type RateLimitStatus, type ProfileKind } from '../core/limits.js';
 import { summarizeUsage, totalTokens, type ProfileUsageSummary } from '../core/usage.js';
 
 export type AgentsAction =
@@ -181,10 +181,6 @@ function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
-}
-
-function pctColor(p: number): string {
-  return p >= 80 ? 'red' : p >= 60 ? 'yellow' : 'green';
 }
 
 // Per-profile status strip under the agents header: subscription profiles show

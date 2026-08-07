@@ -127,7 +127,8 @@ never changes global state. `aimux run` still works for one-off launches.
 |---------|-------------|
 | `aimux init` | Auto-detect Claude dirs, create config, migrate profiles |
 | `aimux init --source <path>` | Initialize with explicit source directory |
-| `aimux status` | TUI dashboard — profiles, auth, auto-mode posture, symlink health |
+| `aimux status` | TUI dashboard — profiles, auth, live 5h/7d limit usage, auto-mode posture, symlink health |
+| `aimux status --no-limits` | Same dashboard without the rate-limit probe (offline / faster) |
 | `aimux usage` | Show token usage by profile (Claude transcripts + codex rollouts) |
 | `aimux usage --profile work --since 24h` | Show usage for one profile over a recent window |
 | `aimux run [profile]` | Launch AI CLI with correct env and model |
@@ -146,7 +147,7 @@ never changes global state. `aimux run` still works for one-off launches.
 | `aimux profile update <name> --unset-fallback-model` | Remove the fallback model |
 | `aimux profile update <name> -e KEY=VALUE` | Set an env var in the profile `.env` file |
 | `aimux profile update <name> --unset-env KEY` | Remove an env var from the profile `.env` file |
-| `aimux profile list` | List all profiles |
+| `aimux profile list` | List all profiles (same table as `aimux status`; `--no-limits` skips the probe) |
 | `aimux profile remove <name>` | Remove profile and clean up |
 | `aimux profile clone <src> <name>` | Clone profile with private files |
 | `aimux rebuild [profile]` | Sync symlinks and surface local shared-file conflicts |

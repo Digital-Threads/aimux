@@ -9,9 +9,15 @@ import { loadProfileEnv } from '../core/run.js';
 import { readProfileAutoMode } from '../core/autoMode.js';
 import { getSharedElements, checkAllProfiles } from '../core/symlinks.js';
 import { adapterFor } from '../core/adapters/index.js';
+import { pctColor, type RateLimitStatus } from '../core/limits.js';
 
 interface Props {
   config: AimuxConfig;
+  /** Live 5h/7d subscription windows, probed by the caller before render (the
+   *  probe is a network round-trip, so the view stays synchronous and just
+   *  displays what it is given). Omit to hide the column entirely — that is
+   *  what `--no-limits` does. A `null` entry means the probe failed. */
+  limits?: Map<string, RateLimitStatus | null>;
 }
 
 type AuthStatus =
@@ -69,6 +75,21 @@ function capCount(n: number): string {
   return n > 99 ? '99+' : String(n);
 }
 
+/** One profile's rate-limit cell. `undefined` = not probed (not a claude
+ *  subscription profile); `null` = probed but the request failed. Both render as
+ *  an em-dash — a status table should not turn a transient network blip into an
+ *  alarming number. */
+function limitCell(status: RateLimitStatus | null | undefined) {
+  if (!status) return <Text dimColor>—</Text>;
+  return (
+    <Text>
+      <Text color={pctColor(status.fiveHourPct)}>{status.fiveHourPct}%</Text>
+      <Text dimColor> / </Text>
+      <Text color={pctColor(status.weeklyPct)}>{status.weeklyPct}%</Text>
+    </Text>
+  );
+}
+
 function safeGetSharedElements(config: AimuxConfig): string[] {
   try {
     return getSharedElements(config);
@@ -77,7 +98,7 @@ function safeGetSharedElements(config: AimuxConfig): string[] {
   }
 }
 
-export function StatusView({ config }: Props) {
+export function StatusView({ config, limits }: Props) {
   const profiles = Object.entries(config.profiles);
   const authStatuses = new Map(profiles.map(([name, profile]) => [name, checkAuth(profile)]));
   // Memoized on config: each entry reads a settings.json synchronously, so we
@@ -116,6 +137,7 @@ export function StatusView({ config }: Props) {
             <Box width={20}><Text bold underline>MODEL</Text></Box>
             <Box width={16}><Text bold underline>AUTOMODE</Text></Box>
             <Box width={18}><Text bold underline>SHARED</Text></Box>
+            {limits ? <Box width={16}><Text bold underline>USED 5H/7D</Text></Box> : null}
           </Box>
 
           {profiles.map(([name, profile]) => {
@@ -168,6 +190,7 @@ export function StatusView({ config }: Props) {
                     {sharedStatus}
                   </Text>
                 </Box>
+                {limits ? <Box width={16}>{limitCell(limits.get(name))}</Box> : null}
               </Box>
             );
           })}

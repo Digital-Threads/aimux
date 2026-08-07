@@ -80,7 +80,7 @@ export type { ProfileUsageSummary, SessionUsageSummary, UsageOptions, UsageTotal
 export { readProfileAutoMode } from './autoMode.js';
 export type { AutoModeStatus } from './autoMode.js';
 
-export { fetchRateLimits, parseRateLimitHeaders, classifyProfile } from './limits.js';
+export { fetchRateLimits, parseRateLimitHeaders, classifyProfile, rateLimitProfiles, pctColor } from './limits.js';
 export type { RateLimitStatus, ProfileKind } from './limits.js';
 
 export { estimateCost, resolvePricing, hasPricing } from './pricing.js';

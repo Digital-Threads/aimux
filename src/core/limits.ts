@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ProfileConfig } from '../types/index.js';
 import { loadProfileEnv } from './run.js';
+import { expandHome } from './paths.js';
 
 /** Live subscription rate-limit windows, as whole-percent utilization. */
 export interface RateLimitStatus {
@@ -65,6 +66,24 @@ export function classifyProfile(profile: ProfileConfig, profilePath: string): Pr
   }
   if (existsSync(join(profilePath, '.credentials.json'))) return 'oauth';
   return profile.is_source ? 'oauth' : 'none';
+}
+
+/**
+ * Which profiles are worth a rate-limit probe: claude subscription profiles.
+ * The probe hits the Anthropic API, so a codex/gemini profile would only spend
+ * a request for headers it cannot produce; API-endpoint profiles bill per token
+ * and have no 5h/7d subscription windows at all.
+ */
+export function rateLimitProfiles(profiles: Record<string, ProfileConfig>): string[] {
+  return Object.entries(profiles)
+    .filter(([, p]) => (p.cli ?? 'claude') === 'claude'
+      && classifyProfile(p, expandHome(p.path)) === 'oauth')
+    .map(([name]) => name);
+}
+
+/** Severity color for a utilization percent, shared by every view that shows it. */
+export function pctColor(pct: number): 'green' | 'yellow' | 'red' {
+  return pct >= 80 ? 'red' : pct >= 60 ? 'yellow' : 'green';
 }
 
 function readOAuthToken(profilePath: string): string | null {

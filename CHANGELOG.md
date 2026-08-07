@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.23.0] - 2026-08-07
+
+### Added
+- **`aimux status` / `aimux profile list` now show the live 5h and 7d subscription
+  windows** in a `USED 5H/7D` column, so you can see which subscription still has
+  headroom without opening the agents TUI. The numbers are utilization percentages
+  (what has been consumed), colored green / yellow / red at 60% and 80% — the same
+  scale the agents view already used.
+  - Only claude subscription profiles are probed: the probe is a one-token request
+    to the Anthropic API, so a codex or gemini profile would just spend a request for
+    headers it cannot return, and 3rd-party API profiles have no 5h/7d windows at all.
+    Everything else renders as an em-dash.
+  - `--no-limits` skips the probe entirely and hides the column — use it offline, in
+    scripts, or when you want the table instantly. A failed or timed-out probe never
+    blocks the table; it degrades to an em-dash.
+
 ## [0.22.1] - 2026-07-22
 
 ### Fixed

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import type { AimuxConfig } from './types/index.js';
-import type { ProfileUsageSummary } from './core/index.js';
+import type { ProfileUsageSummary, RateLimitStatus } from './core/index.js';
 import { rmSync, existsSync, cpSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
@@ -15,6 +15,7 @@ import {
   summarizeUsage, parseSinceDuration, totalTokens,
   loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedClaudeOnboarding, confirm,
   parseShell, buildSwitchEnv, renderShellExports, renderShellInit,
+  fetchRateLimits, rateLimitProfiles,
 } from './core/index.js';
 
 function collectRepeatable(value: string, previous: string[]): string[] {
@@ -28,6 +29,30 @@ function requireConfig(): AimuxConfig {
     process.exit(1);
   }
   return config;
+}
+
+/**
+ * Probe every claude subscription profile for its live 5h/7d windows, in
+ * parallel, so `status` / `profile list` can show them in one column.
+ *
+ * Returns undefined when the caller passed `--no-limits` and when there is
+ * nothing to probe — the view hides the column entirely in that case rather
+ * than printing a row of em-dashes for an offline run.
+ */
+async function probeRateLimits(
+  config: AimuxConfig,
+  enabled: boolean,
+): Promise<Map<string, RateLimitStatus | null> | undefined> {
+  if (!enabled) return undefined;
+  const names = rateLimitProfiles(config.profiles);
+  if (names.length === 0) return undefined;
+  const entries = await Promise.all(
+    names.map(async (name) => {
+      const p = config.profiles[name];
+      return [name, await fetchRateLimits(p, expandHome(p.path))] as const;
+    }),
+  );
+  return new Map(entries);
 }
 
 function resolveProfile(config: AimuxConfig, input: string): string {
@@ -112,10 +137,12 @@ program
 program
   .command('status')
   .description('Show overview of profiles and shared source')
-  .action(async () => {
+  .option('--no-limits', 'Skip the live 5h/7d rate-limit probe (no network request)')
+  .action(async (options: { limits: boolean }) => {
     const { render } = await import('ink');
     const { StatusView } = await import('./components/StatusView.js');
-    render(<StatusView config={requireConfig()} />);
+    const config = requireConfig();
+    render(<StatusView config={config} limits={await probeRateLimits(config, options.limits)} />);
   });
 
 program
@@ -669,10 +696,12 @@ program
   .addCommand(
     new Command('list')
       .description('List all profiles')
-      .action(async () => {
+      .option('--no-limits', 'Skip the live 5h/7d rate-limit probe (no network request)')
+      .action(async (options: { limits: boolean }) => {
         const { render } = await import('ink');
         const { StatusView } = await import('./components/StatusView.js');
-        render(<StatusView config={requireConfig()} />);
+        const config = requireConfig();
+        render(<StatusView config={config} limits={await probeRateLimits(config, options.limits)} />);
       })
   )
   .addCommand(
