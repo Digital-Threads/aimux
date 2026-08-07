@@ -13,7 +13,7 @@ import {
   launchProfile, getLastProfile, resolveProfileForDir, recordHistory, getProfile, loadActiveProfile,
   looksLikeSubcommand, adapterFor,
   summarizeUsage, parseSinceDuration, totalTokens,
-  loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedApiClaudeJson, confirm,
+  loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedClaudeOnboarding, confirm,
   parseShell, buildSwitchEnv, renderShellExports, renderShellInit,
 } from './core/index.js';
 
@@ -249,6 +249,20 @@ program
       if (!launchingSubcommand) {
         recordHistory(process.cwd(), profileName);
       }
+
+      // Self-heal profiles created before the onboarding seed existed: an AUTHENTICATED
+      // claude profile with no `.claude.json` hits claude's first-run wizard and is asked
+      // for an account again. Gated on credentials being present so a genuinely
+      // unauthenticated profile still gets its real login prompt.
+      {
+        const p = config.profiles[profileName];
+        const pPath = expandHome(p.path);
+        if (p.cli === 'claude' && !p.is_source
+            && existsSync(join(pPath, adapterFor(p.cli).credentialsFile()))) {
+          seedClaudeOnboarding(pPath);
+        }
+      }
+
       const permWarning = checkDotenvPermissions(expandHome(config.profiles[profileName].path));
       if (permWarning) {
         console.error(`\x1b[33m⚠ ${permWarning}\x1b[0m`);
@@ -629,12 +643,17 @@ program
             console.log(`  conflicts left unchanged: ${sync.conflicts.join(', ')}`);
           }
 
+          // Every claude profile needs the onboarding flag, not just API ones: without it
+          // `aimux run` opens claude's first-run wizard (account step included), which
+          // looks like the login was lost even though `aimux auth login` succeeded.
+          const isClaudeProfile = (options.cli ?? 'claude') === 'claude';
+          if (isClaudeProfile && seedClaudeOnboarding(profilePath)) {
+            console.log('  Seeded .claude.json (skips Claude Code onboarding)');
+          }
+
           if (apiVars) {
             writeProfileDotEnv(profilePath, apiVars);
             console.log(`  Credentials saved to ${join(profilePath, '.env')} (chmod 600)`);
-            if (seedApiClaudeJson(profilePath)) {
-              console.log('  Seeded .claude.json (skips Claude Code onboarding)');
-            }
             console.log(`  Run: aimux run ${name}`);
           } else if (!options.auth) {
             console.log('  Auth skipped (--no-auth). Run: aimux auth login ' + name);
@@ -890,6 +909,10 @@ program
           }
           const hasAuth = existsSync(join(profilePath, adapter.credentialsFile()));
           if (hasAuth) {
+            // Self-heal profiles created before the seed existed: without the onboarding
+            // flag the next `aimux run` opens claude's first-run wizard and asks for an
+            // account again, right after this login succeeded.
+            if (p.cli === 'claude') seedClaudeOnboarding(profilePath);
             console.log(`✓ Profile '${resolved}' authenticated`);
           }
         } catch (err) {

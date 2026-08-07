@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.22.1] - 2026-07-22
+
+### Fixed
+- **A new claude profile asked for login again right after `aimux auth login` succeeded.**
+  The credentials were never the problem — a freshly created profile dir has no
+  `.claude.json`, so `hasCompletedOnboarding` is unset and claude opens its first-run
+  wizard on the next `aimux run`. The wizard includes an account step, which reads as
+  "my login was lost". `aimux profile add` now seeds the onboarding flag for every claude
+  profile, not just `--api` ones (the seed already existed but was wired only to the API
+  path). Existing profiles self-heal: `aimux auth login` seeds it after a successful
+  login, and `aimux run` seeds it for a profile that already has credentials — gated on
+  credentials being present, so an unauthenticated profile still gets its real login
+  prompt. An existing `.claude.json` is never overwritten.
+  - `seedApiClaudeJson` is renamed to `seedClaudeOnboarding`; the old name stays exported
+    as a deprecated alias for `./core` consumers.
+
 ## [0.22.0] - 2026-07-22
 
 ### Added

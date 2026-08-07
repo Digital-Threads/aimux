@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, isAffirmative } from './apiProfile.js';
+import { writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, isAffirmative, seedClaudeOnboarding, seedApiClaudeJson } from './apiProfile.js';
 import { parseDotenv } from './run.js';
 
 describe('isAffirmative', () => {
@@ -96,5 +96,31 @@ describe('checkDotenvPermissions', () => {
     chmodSync(join(dir, '.env'), 0o644);
     const warning = checkDotenvPermissions(dir);
     expect(warning).toContain('chmod 600');
+  });
+});
+
+describe('seedClaudeOnboarding', () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'aimux-seed-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('marks onboarding complete so `run` does not re-open the first-run wizard', () => {
+    // Without this flag claude treats a fresh profile dir as a first run and shows its
+    // wizard — account step included — which reads as "the login was lost".
+    expect(seedClaudeOnboarding(dir)).toBe(true);
+    const seeded = JSON.parse(readFileSync(join(dir, '.claude.json'), 'utf-8'));
+    expect(seeded.hasCompletedOnboarding).toBe(true);
+    expect(statSync(join(dir, '.claude.json')).mode & 0o777).toBe(0o600);
+  });
+
+  it('never clobbers an existing .claude.json (real account state lives there)', () => {
+    const existing = { hasCompletedOnboarding: true, oauthAccount: { emailAddress: 'me@example.com' } };
+    writeFileSync(join(dir, '.claude.json'), JSON.stringify(existing));
+    expect(seedClaudeOnboarding(dir)).toBe(false);
+    expect(JSON.parse(readFileSync(join(dir, '.claude.json'), 'utf-8'))).toEqual(existing);
+  });
+
+  it('keeps the old exported name working for ./core consumers', () => {
+    expect(seedApiClaudeJson).toBe(seedClaudeOnboarding);
   });
 });
