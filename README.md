@@ -6,7 +6,7 @@
 [![node](https://img.shields.io/node/v/@digital-threads/aimux?color=339933&logo=node.js)](https://nodejs.org)
 [![GitHub stars](https://img.shields.io/github/stars/Digital-Threads/aimux?style=social)](https://github.com/Digital-Threads/aimux)
 
-Local AI workspace orchestrator — manage multiple AI CLI subscriptions with shared knowledge and isolated authentication.
+Run multiple Claude Code / Codex / Gemini subscriptions side by side: one shared brain — skills, agents, memory, settings — separate logins, and every subscription's live 5h/7d limits in a single view.
 
 ## Problem
 
@@ -83,6 +83,7 @@ aimux run               # interactive picker (↑↓ + Enter)
 aimux run w             # prefix match → work
 aimux run o -m claude-sonnet-4-6  # one-time model override
 aimux run w --resume    # flags pass through to Claude CLI
+aimux run --auto        # launch whichever subscription has the most headroom left
 aimux status            # dashboard
 aimux usage             # token usage by profile for the last 7 days
 aimux usage --all       # all known transcript usage
@@ -135,6 +136,7 @@ never changes global state. `aimux run` still works for one-off launches.
 | `aimux run` | Interactive picker — history pre-selects last used profile |
 | `aimux run w` | Prefix matching — launches `work` if unambiguous |
 | `aimux run work -m claude-sonnet-4-6` | Launch with model override |
+| `aimux run --auto` | Probe every subscription's live limits and launch the one with the most headroom (stays within the same CLI) |
 | `aimux use [profile]` | Switch the current shell to a profile (persistent) — plain `claude`/`codex` then use it. Requires `eval "$(aimux shell-init)"` in your rc |
 | `aimux shell-init` | Print the shell function that enables `aimux use` (add to `~/.zshrc`/`~/.bashrc`/fish config) |
 | `aimux agents` | Multi-profile agent view — see and manage claude background sessions across **all** profiles in one TUI |

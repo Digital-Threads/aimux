@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.26.0] - 2026-08-07
+
+### Added
+- **`aimux run --auto` picks the subscription with the most room left.** It probes
+  every profile's live windows and launches the one whose *tightest* window has the
+  most headroom — 10% of the 5h window is worthless when the weekly one sits at 95%,
+  so the session would die halfway through either way. Windows a plan does not
+  report are ignored rather than counted as free, and a spent window (100%) takes
+  that profile out of the running.
+  - The swap stays within one CLI: answering "which subscription has room" by
+    launching a different tool than the directory asked for would be a surprise, not
+    a convenience.
+  - With no profile named, `--auto` skips the interactive picker — asking the user
+    to choose and then overriding the choice is absurd; the base profile only
+    settles which CLI to stay within.
+  - Offline, every token stale, or everything exhausted: it says so and launches the
+    profile you would have got anyway.
+
+### Changed
+- npm keywords and description rewritten around what people actually search for
+  (`claude-code`, `codex`, `gemini`, `multi-account`, `rate-limit`). The package was
+  absent from the first page of npm results for its own category.
+
 ## [0.25.0] - 2026-08-07
 
 ### Added

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { ProfileConfig } from '../types/index.js';
-import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt } from './limits.js';
+import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt, pickFreestProfile } from './limits.js';
 
 // Real header keys captured from a live HTTP 200 probe (see plan spike result).
 const REAL = {
@@ -198,5 +198,37 @@ describe('formatResetAt', () => {
 
   it('returns an em-dash when the provider gave no reset stamp', () => {
     expect(formatResetAt(undefined, now)).toBe('—');
+  });
+});
+
+describe('pickFreestProfile', () => {
+  const probe = (five: number | null, week: number | null) => ({ status: { fiveHourPct: five, weeklyPct: week } });
+
+  it('picks the profile whose tightest window has the most headroom', () => {
+    // `b` looks better on the 5h window alone, but its weekly window is nearly
+    // spent — picking on one window would strand the session mid-task.
+    const limits = new Map([
+      ['a', probe(40, 30)],
+      ['b', probe(10, 95)],
+      ['c', probe(50, 55)],
+    ]);
+    expect(pickFreestProfile(limits)).toBe('a');
+  });
+
+  it('judges a profile on the windows it actually has — codex reports no 5h window', () => {
+    const limits = new Map([['cx', probe(null, 20)], ['dt', probe(35, 35)]]);
+    expect(pickFreestProfile(limits)).toBe('cx');
+  });
+
+  it('skips an exhausted profile even when it is otherwise the freest', () => {
+    const limits = new Map([['a', probe(100, 0)], ['b', probe(70, 70)]]);
+    expect(pickFreestProfile(limits)).toBe('b');
+  });
+
+  it('returns null when nothing has usable numbers, so the caller can fall back', () => {
+    expect(pickFreestProfile(new Map([['a', { status: null, error: 'auth' as const }]]))).toBeNull();
+    expect(pickFreestProfile(new Map())).toBeNull();
+    // Both windows unknown is not the same as both windows free.
+    expect(pickFreestProfile(new Map([['a', probe(null, null)]]))).toBeNull();
   });
 });

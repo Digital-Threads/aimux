@@ -147,6 +147,33 @@ export function pctColor(pct: number): 'green' | 'yellow' | 'red' {
   return pct >= 80 ? 'red' : pct >= 60 ? 'yellow' : 'green';
 }
 
+/**
+ * The profile with the most room left, or null when no profile reported usable
+ * numbers (probe failed, or nothing to probe) so the caller can fall back to its
+ * normal choice instead of guessing.
+ *
+ * A profile is judged by its TIGHTEST window: 10% of the 5h window is worthless
+ * if the weekly one is at 95%, since the session would die halfway through.
+ * Windows the provider does not report are ignored rather than treated as free —
+ * codex plans commonly have no 5h window at all. A fully spent window (100%)
+ * takes the profile out of the running.
+ */
+export function pickFreestProfile(limits: Map<string, RateLimitProbe>): string | null {
+  let best: { name: string; worstWindow: number } | null = null;
+
+  for (const [name, probe] of limits) {
+    const windows = [probe.status?.fiveHourPct, probe.status?.weeklyPct]
+      .filter((p): p is number => typeof p === 'number');
+    if (windows.length === 0) continue;
+
+    const worstWindow = Math.max(...windows);
+    if (worstWindow >= 100) continue;
+    if (!best || worstWindow < best.worstWindow) best = { name, worstWindow };
+  }
+
+  return best?.name ?? null;
+}
+
 function readOAuthToken(profilePath: string): string | null {
   try {
     const raw = JSON.parse(readFileSync(join(profilePath, '.credentials.json'), 'utf-8'));

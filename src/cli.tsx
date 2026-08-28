@@ -15,7 +15,7 @@ import {
   summarizeUsage, parseSinceDuration, totalTokens,
   loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedClaudeOnboarding, confirm,
   parseShell, buildSwitchEnv, renderShellExports, renderShellInit,
-  fetchRateLimits, rateLimitProfiles,
+  fetchRateLimits, rateLimitProfiles, pickFreestProfile,
 } from './core/index.js';
 
 function collectRepeatable(value: string, previous: string[]): string[] {
@@ -225,8 +225,9 @@ program
   .command('run [profile] [cliArgs...]')
   .description('Launch AI CLI with the specified profile (extra flags forwarded to CLI)')
   .option('-m, --model <model>', 'Override default model')
+  .option('--auto', 'Pick the subscription with the most limit headroom right now')
   .allowUnknownOption()
-  .action(async (profile: string | undefined, cliArgs: string[], options: { model?: string }) => {
+  .action(async (profile: string | undefined, cliArgs: string[], options: { model?: string; auto?: boolean }) => {
     try {
       const config = requireConfig();
       let profileName = profile;
@@ -243,6 +244,10 @@ program
 
           if (names.length === 1) {
             profileName = names[0];
+          } else if (options.auto) {
+            // Asking the user to pick and then overriding their pick would be
+            // absurd — under --auto this only settles which CLI to stay within.
+            profileName = last ?? names[0];
           } else {
             const { render } = await import('ink');
             const { ProfilePicker } = await import('./components/ProfilePicker.js');
@@ -264,6 +269,28 @@ program
       }
 
       profileName = resolveProfile(config, profileName);
+
+      if (options.auto) {
+        // Only ever swap within the same CLI: `aimux run --auto` must not answer
+        // "which subscription has room" by launching a different tool than the
+        // one the directory (or the user) asked for.
+        const baseCli = config.profiles[profileName].cli ?? 'claude';
+        const sameCli = Object.fromEntries(
+          Object.entries(config.profiles).filter(([, p]) => (p.cli ?? 'claude') === baseCli),
+        );
+        const limits = await probeRateLimits({ ...config, profiles: sameCli }, true);
+        const freest = limits ? pickFreestProfile(limits) : null;
+        if (freest) {
+          const picked = limits!.get(freest)!.status!;
+          const pct = (p: number | null) => (p === null ? '—' : `${p}%`);
+          console.log(`Auto: ${freest} (5h ${pct(picked.fiveHourPct)}, 7d ${pct(picked.weeklyPct)})`);
+          profileName = freest;
+        } else {
+          // Offline, every token stale, or every window spent — the user still
+          // wants a session, so fall through to the profile they would have got.
+          console.log(`Auto: no live limits available, keeping ${profileName}`);
+        }
+      }
 
       if (!config.profiles[profileName].is_source && !launchingSubcommand) {
         const sync = syncProfile(config, profileName);

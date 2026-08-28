@@ -1,7 +1,7 @@
 {
   "name": "@digital-threads/aimux",
-  "version": "0.25.0",
-  "description": "Local AI workspace orchestrator — manage multiple AI CLI subscriptions with shared knowledge and isolated auth",
+  "version": "0.26.0",
+  "description": "Run multiple Claude Code, Codex and Gemini subscriptions side by side — shared skills, agents and memory, isolated logins, live 5h/7d limits in one view",
   "type": "module",
   "bin": {
     "aimux": "dist/cli.js"
@@ -18,12 +18,23 @@
     "prepublishOnly": "npm test && npm run build"
   },
   "keywords": [
-    "cli",
-    "ai",
     "claude",
-    "orchestrator",
+    "claude-code",
+    "codex",
+    "gemini",
+    "anthropic",
+    "openai",
+    "multi-account",
+    "account-switcher",
+    "profile-switcher",
     "profile-manager",
-    "tui"
+    "rate-limit",
+    "subscription",
+    "oauth",
+    "ai-cli",
+    "cli",
+    "tui",
+    "orchestrator"
   ],
   "author": "shahinyanm",
   "license": "MIT",
