@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import type { ProfileConfig } from '../types/index.js';
-import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt, pickFreestProfile } from './limits.js';
+import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt, pickFreestProfile, keychainService, classifyProfile } from './limits.js';
 
 // Real header keys captured from a live HTTP 200 probe (see plan spike result).
 const REAL = {
@@ -53,6 +53,61 @@ describe('parseRateLimitHeaders', () => {
     expect(r.fiveHourPct).toBe(30);
     expect(r.weeklyPct).toBeNull();
     expect(r.weeklyResetsAt).toBeUndefined();
+  });
+});
+
+describe('keychainService', () => {
+  it('uses the bare service name for the default config dir', () => {
+    expect(keychainService(join(homedir(), '.claude'))).toBe('Claude Code-credentials');
+  });
+
+  // Pinned rather than recomputed: restating the hash in the test would assert
+  // nothing, and a drifted naming scheme is indistinguishable from "not logged in".
+  it('suffixes any other config dir with the first 8 hex of its sha256', () => {
+    expect(keychainService('/Users/example/.aimux/profiles/work')).toBe(
+      'Claude Code-credentials-8c2e5287',
+    );
+  });
+
+  it('gives two profiles two different service names, so one cannot read the other\'s quota', () => {
+    expect(keychainService('/Users/example/.aimux/profiles/work')).not.toBe(
+      keychainService('/Users/example/.aimux/profiles/personal'),
+    );
+  });
+});
+
+describe('classifyProfile', () => {
+  let dir: string;
+
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'aimux-classify-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  const never = () => false;
+  const always = () => true;
+
+  // The regression this guards: on macOS there is no .credentials.json to find, so
+  // a logged-in profile graded 'none' here is dropped from the probe set before its
+  // token is ever read, and its 5h/7d column renders a permanent em-dash.
+  it('grades a non-source profile with Keychain credentials as oauth', () => {
+    expect(classifyProfile({ cli: 'claude', path: dir }, dir, always)).toBe('oauth');
+  });
+
+  it('still grades a profile with neither a credentials file nor a Keychain entry as none', () => {
+    expect(classifyProfile({ cli: 'claude', path: dir }, dir, never)).toBe('none');
+  });
+
+  it('does not consult the Keychain for codex, whose token lives in auth.json', () => {
+    expect(classifyProfile({ cli: 'codex', path: dir }, dir, always)).toBe('none');
+  });
+
+  it('still prefers a credentials file when one exists', () => {
+    writeFileSync(join(dir, '.credentials.json'), '{}');
+    expect(classifyProfile({ cli: 'claude', path: dir }, dir, never)).toBe('oauth');
+  });
+
+  it('still classifies a 3rd-party API profile as api, ahead of any credential lookup', () => {
+    writeFileSync(join(dir, '.env'), 'ANTHROPIC_BASE_URL=https://api.example.com\n');
+    expect(classifyProfile({ cli: 'claude', path: dir }, dir, always)).toBe('api');
   });
 });
 

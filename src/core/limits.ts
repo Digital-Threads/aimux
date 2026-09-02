@@ -1,4 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ProfileConfig } from '../types/index.js';
 import { loadProfileEnv } from './run.js';
@@ -64,18 +67,71 @@ export function parseRateLimitHeaders(
   };
 }
 
+/** A Keychain lookup is a subprocess; cap it so a locked Keychain (which prompts)
+ *  cannot hang a status table. */
+const KEYCHAIN_TIMEOUT_MS = 4000;
+
+/**
+ * The Keychain service name Claude Code stores a config dir's credentials under:
+ * the bare service for the default `~/.claude`, otherwise suffixed with the first
+ * 8 hex of the path's sha256. Exported because the naming is the part that can
+ * silently drift, and a wrong name is indistinguishable from "not logged in".
+ */
+export function keychainService(profilePath: string): string {
+  const base = 'Claude Code-credentials';
+  if (profilePath === join(homedir(), '.claude')) return base;
+  return `${base}-${createHash('sha256').update(profilePath).digest('hex').slice(0, 8)}`;
+}
+
+/** Whether the login Keychain holds claude credentials for this config dir. */
+export function hasKeychainCredentials(profilePath: string): boolean {
+  if (process.platform !== 'darwin') return false;
+  try {
+    execFileSync('security', ['find-generic-password', '-s', keychainService(profilePath)], {
+      timeout: KEYCHAIN_TIMEOUT_MS,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Read the OAuth token macOS keeps in the login Keychain rather than on disk. */
+function readKeychainToken(profilePath: string): string | null {
+  if (process.platform !== 'darwin') return null;
+  try {
+    const raw = execFileSync(
+      'security',
+      ['find-generic-password', '-s', keychainService(profilePath), '-w'],
+      { encoding: 'utf-8', timeout: KEYCHAIN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    return JSON.parse(raw)?.claudeAiOauth?.accessToken ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Classify how a profile authenticates, mirroring StatusView.checkAuth's first
  * two branches (without the slow spawn probe): a non-source profile carrying a
  * 3rd-party endpoint env is `api`; a profile with stored OAuth credentials is
  * `oauth`; otherwise `none`. Only `oauth` profiles get a rate-limit probe.
  */
-export function classifyProfile(profile: ProfileConfig, profilePath: string): ProfileKind {
+export function classifyProfile(
+  profile: ProfileConfig,
+  profilePath: string,
+  hasKeychain: (profilePath: string) => boolean = hasKeychainCredentials,
+): ProfileKind {
   if (!profile.is_source) {
     const env = loadProfileEnv(profile, profilePath);
     if (env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_BASE_URL) return 'api';
   }
   if (existsSync(join(profilePath, adapterFor(profile.cli).credentialsFile()))) return 'oauth';
+  // On macOS there is no credentials file to find — claude keeps the token in the
+  // login Keychain. Without this branch a logged-in non-source profile grades
+  // 'none' and is dropped from the probe set before its token is ever read.
+  if ((profile.cli ?? 'claude') === 'claude' && hasKeychain(profilePath)) return 'oauth';
   return profile.is_source ? 'oauth' : 'none';
 }
 
@@ -178,10 +234,12 @@ function readOAuthToken(profilePath: string): string | null {
   try {
     const raw = JSON.parse(readFileSync(join(profilePath, '.credentials.json'), 'utf-8'));
     const oauth = raw.claudeAiOauth ?? raw.claude_ai_oauth ?? raw;
-    return oauth.accessToken ?? oauth.access_token ?? null;
+    const token = oauth.accessToken ?? oauth.access_token ?? null;
+    if (token) return token;
   } catch {
-    return null;
+    // A missing credentials file is the normal case on macOS, not a failure.
   }
+  return readKeychainToken(profilePath);
 }
 
 /** Read codex's stored ChatGPT tokens. Unlike claude, the account id is part of
