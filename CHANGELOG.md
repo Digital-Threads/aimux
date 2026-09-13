@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [0.26.1] - 2026-09-13
+## [0.26.2] - 2026-09-13
 
 ### Fixed
 - **On macOS the limits column showed no figures, and the source profile was
@@ -18,6 +18,13 @@ All notable changes to this project are documented here. The format is based on
   time-limited, so a locked Keychain cannot hang the table. This also makes
   `aimux run --auto` work on macOS, where it previously always fell back.
   Contributed by @noahpollocktech in #25.
+
+## [0.26.1] - 2026-09-13
+
+### Note
+- Published from a commit that predates #25, so it does **not** contain the macOS
+  Keychain fix an earlier revision of this changelog attributed to it. It is otherwise
+  0.26.0 — the first release on npm to ship `aimux run --auto`. Use 0.26.2.
 
 ## [0.26.0] - 2026-08-07
 
