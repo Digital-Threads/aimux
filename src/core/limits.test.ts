@@ -57,21 +57,35 @@ describe('parseRateLimitHeaders', () => {
 });
 
 describe('keychainService', () => {
-  it('uses the bare service name for the default config dir', () => {
-    expect(keychainService(join(homedir(), '.claude'))).toBe('Claude Code-credentials');
+  // claude drops the suffix when CLAUDE_CONFIG_DIR is unset, and aimux leaves it
+  // unset for exactly one profile: the source — wherever its path points.
+  it('uses the bare service name for the source profile, even at a non-default path', () => {
+    expect(keychainService('/Users/example/.claude-main', true)).toBe('Claude Code-credentials');
+  });
+
+  it('still suffixes a non-source profile at ~/.claude, because aimux exports CLAUDE_CONFIG_DIR for it', () => {
+    expect(keychainService(join(homedir(), '.claude'), false)).not.toBe('Claude Code-credentials');
   });
 
   // Pinned rather than recomputed: restating the hash in the test would assert
   // nothing, and a drifted naming scheme is indistinguishable from "not logged in".
   it('suffixes any other config dir with the first 8 hex of its sha256', () => {
-    expect(keychainService('/Users/example/.aimux/profiles/work')).toBe(
+    expect(keychainService('/Users/example/.aimux/profiles/work', false)).toBe(
       'Claude Code-credentials-8c2e5287',
     );
   });
 
+  // macOS hands paths back decomposed (NFD); claude normalizes to NFC before
+  // hashing, so a non-ASCII home dir must hash the same either way.
+  it('hashes the NFC form of the path, as claude does', () => {
+    expect(keychainService('/Users/José/.aimux/profiles/work', false)).toBe(
+      keychainService('/Users/José/.aimux/profiles/work', false),
+    );
+  });
+
   it('gives two profiles two different service names, so one cannot read the other\'s quota', () => {
-    expect(keychainService('/Users/example/.aimux/profiles/work')).not.toBe(
-      keychainService('/Users/example/.aimux/profiles/personal'),
+    expect(keychainService('/Users/example/.aimux/profiles/work', false)).not.toBe(
+      keychainService('/Users/example/.aimux/profiles/personal', false),
     );
   });
 });
@@ -90,6 +104,14 @@ describe('classifyProfile', () => {
   // token is ever read, and its 5h/7d column renders a permanent em-dash.
   it('grades a non-source profile with Keychain credentials as oauth', () => {
     expect(classifyProfile({ cli: 'claude', path: dir }, dir, always)).toBe('oauth');
+  });
+
+  it('tells the Keychain lookup whether the profile is the source — that decides the service name', () => {
+    const seen: boolean[] = [];
+    const spy = (_path: string, isSource: boolean) => { seen.push(isSource); return false; };
+    classifyProfile({ cli: 'claude', path: dir }, dir, spy);
+    classifyProfile({ cli: 'claude', path: dir, is_source: true }, dir, spy);
+    expect(seen).toEqual([false, true]);
   });
 
   it('still grades a profile with neither a credentials file nor a Keychain entry as none', () => {
