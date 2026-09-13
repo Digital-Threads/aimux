@@ -1,6 +1,6 @@
 {
   "name": "@digital-threads/aimux",
-  "version": "0.26.0",
+  "version": "0.26.1",
   "description": "Run multiple Claude Code, Codex and Gemini subscriptions side by side — shared skills, agents and memory, isolated logins, live 5h/7d limits in one view",
   "type": "module",
   "bin": {

@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.26.1] - 2026-09-13
+
+### Fixed
+- **On macOS the limits column showed no figures, and the source profile was
+  misreported as `login?`.** Claude Code keeps OAuth credentials in the login
+  Keychain there, not in `<profile>/.credentials.json`, and aimux only looked for
+  the file. It now falls back to the Keychain both when deciding whether to probe a
+  profile and when reading its token; without the first half a logged-in profile
+  was dropped before its token was ever read. The service name follows claude's own
+  rule — bare for the source profile, otherwise suffixed with the first 8 hex of the
+  sha256 of the NFC-normalized config dir. Lookups run only on macOS and are
+  time-limited, so a locked Keychain cannot hang the table. This also makes
+  `aimux run --auto` work on macOS, where it previously always fell back.
+  Contributed by @noahpollocktech in #25.
+
 ## [0.26.0] - 2026-08-07
 
 ### Added
