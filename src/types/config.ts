@@ -53,6 +53,19 @@ export const DEFAULT_PRIVATE_ELEMENTS = [
   'daemon.lock',
   'daemon.log',
   'daemon.status.json',
+  // Runtime Claude Code grew after this list was first written (2.1.2xx). Each is
+  // per-install or per-session state that two profiles would otherwise write to one
+  // copy of: MCP protocol verdicts, per-session env, the Remote Control daemon and
+  // its binaries, the Agent SDK venv and its logs, shell snapshots, and the fetched
+  // model catalog. `backups/` matters most — it holds copies of the private
+  // `.claude.json`, account and all.
+  'state',
+  'session-env',
+  'backups',
+  'remote',
+  'security',
+  'shell-snapshots',
+  'cache',
 ];
 
 export const DEFAULT_CONFIG: AimuxConfig = {

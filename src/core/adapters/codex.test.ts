@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { adapterFor } from './index.js';
 
 describe('codexAdapter run-path', () => {
@@ -154,5 +157,48 @@ describe('codex overlay (globalArgs + extraLinks)', () => {
 
   it('claude has no extra links', () => {
     expect(adapterFor('claude').extraLinks('/home/u/.claude')).toEqual([]);
+  });
+});
+
+describe('codexAdapter shares the session-state DB wherever codex keeps it', () => {
+  let src: string;
+  beforeEach(() => { src = mkdtempSync(join(tmpdir(), 'aimux-codex-src-')); });
+  afterEach(() => { rmSync(src, { recursive: true, force: true }); });
+
+  const sqliteLinks = () => adapterFor('codex').extraLinks(src)
+    .map((l) => l.link)
+    .filter((l) => l.startsWith('sqlite'));
+
+  // codex 0.15x is moving its DBs into $CODEX_HOME/sqlite/. state_<N>.sqlite is the
+  // resume index: miss it there and `codex resume` under a profile lists nothing while
+  // the source lists everything — the 0.21.1 bug, one directory deeper.
+  it('links a state DB that codex has moved into sqlite/', () => {
+    mkdirSync(join(src, 'sqlite'));
+    writeFileSync(join(src, 'sqlite', 'state_7.sqlite'), 'db');
+    expect(adapterFor('codex').extraLinks(src)).toContainEqual({
+      link: join('sqlite', 'state_7.sqlite'),
+      target: join(src, 'sqlite', 'state_7.sqlite'),
+    });
+  });
+
+  it('leaves the other DBs in sqlite/ alone — logs, queues and goals are per-profile state', () => {
+    mkdirSync(join(src, 'sqlite'));
+    for (const f of ['logs_2.sqlite', 'queue_1.sqlite', 'memories_1.sqlite', 'goals_1.sqlite']) {
+      writeFileSync(join(src, 'sqlite', f), 'db');
+    }
+    expect(sqliteLinks()).toEqual([]);
+  });
+
+  it('does not link the -wal/-shm sidecars, which SQLite recreates beside the resolved path', () => {
+    mkdirSync(join(src, 'sqlite'));
+    for (const f of ['state_7.sqlite', 'state_7.sqlite-wal', 'state_7.sqlite-shm']) {
+      writeFileSync(join(src, 'sqlite', f), 'db');
+    }
+    expect(sqliteLinks()).toEqual([join('sqlite', 'state_7.sqlite')]);
+  });
+
+  it('still works on a 0.14x home that has no sqlite/ directory', () => {
+    expect(() => adapterFor('codex').extraLinks(src)).not.toThrow();
+    expect(sqliteLinks()).toEqual([]);
   });
 });

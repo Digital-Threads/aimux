@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { setAimuxDir } from './paths.js';
 import { createDefaultConfig, addProfile } from './config.js';
 import type { AimuxConfig } from '../types/index.js';
+import { DEFAULT_PRIVATE_ELEMENTS } from '../types/index.js';
 import {
   getSharedElements,
   getPrivateElements,
@@ -578,5 +579,49 @@ describe('syncProfile plugins layout', () => {
     const report = checkProfileHealth(config, 'work');
     expect(report.valid).toContain('plugins');
     expect(report.conflicts).not.toContain('plugins');
+  });
+});
+
+describe('syncProfile links the codex state DB inside sqlite/ (codex 0.15x layout)', () => {
+  it('creates the sqlite/ directory in the profile and links only the state DB into it', () => {
+    const codexSrc = join(TEST_DIR, 'codex-src-sqlite');
+    const profileDir = join(PROFILES_DIR, 'cxsql');
+    mkdirSync(join(codexSrc, 'sqlite'), { recursive: true });
+    mkdirSync(profileDir, { recursive: true });
+    writeFileSync(join(codexSrc, 'sqlite', 'state_9.sqlite'), 'SOURCE-INDEX');
+    writeFileSync(join(codexSrc, 'sqlite', 'logs_2.sqlite'), 'PRIVATE-LOGS');
+
+    const config = makeConfig({
+      shared_sources: { codex: codexSrc },
+      profiles: {
+        main: { cli: 'claude', path: SHARED_DIR, is_source: true },
+        cxsql: { cli: 'codex', path: profileDir },
+      },
+    });
+    syncProfile(config, 'cxsql');
+
+    const link = join(profileDir, 'sqlite', 'state_9.sqlite');
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(readFileSync(link, 'utf-8')).toBe('SOURCE-INDEX');
+    // The sibling DBs hold this profile's own logs; linking them would mix two
+    // subscriptions' runtime state into one file.
+    expect(existsSync(join(profileDir, 'sqlite', 'logs_2.sqlite'))).toBe(false);
+  });
+});
+
+describe('the shipped private list keeps claude runtime out of the shared set', () => {
+  it('excludes the runtime dirs claude grew after the list was written', () => {
+    const runtime = ['state', 'session-env', 'backups', 'remote', 'security', 'shell-snapshots', 'cache'];
+    for (const d of [...runtime, 'projects', 'skills']) mkdirSync(join(SHARED_DIR, d), { recursive: true });
+
+    const shared = getSharedElements(makeConfig({ private: DEFAULT_PRIVATE_ELEMENTS }));
+
+    // Each of these is per-install or per-session state: two profiles writing one copy
+    // race, and `backups/` holds copies of the private .claude.json with its account.
+    for (const d of runtime) expect(shared).not.toContain(d);
+    // projects/ carries the interactive transcripts. Sharing it is what lets a session
+    // hit a limit on one subscription and resume under another — never make it private.
+    expect(shared).toContain('projects');
+    expect(shared).toContain('skills');
   });
 });

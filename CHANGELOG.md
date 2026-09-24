@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.27.0] - 2026-09-24
+
+### Fixed
+- **Claude Code's newer runtime directories are no longer shared between profiles.**
+  The private list predated them, so `state/`, `session-env/`, `backups/`, `remote/`,
+  `security/`, `shell-snapshots/` and `cache/` were symlinked into every profile: two
+  subscriptions writing one copy of per-session and per-install state, and — worst of
+  the set — `backups/`, which holds copies of the private `.claude.json` with its
+  account on it. On a real install this was over a gigabyte of shared runtime and a
+  standing `doctor` conflict on `state/`. Existing profiles self-heal on the next
+  `aimux rebuild`; `projects/` stays shared, since resuming one session under another
+  subscription depends on it.
+
+### Added
+- **codex's session-state DB is now followed into `$CODEX_HOME/sqlite/`.** codex 0.15x
+  is relocating its databases there one at a time — logs and queues have already moved,
+  the resume index has not. aimux links `state_<N>.sqlite` in both places, so the move
+  lands without `codex resume` silently going empty under a profile the way it did
+  before 0.21.1. Only the state DB is linked: the neighbouring logs, queue and goals
+  DBs are per-profile.
+  - An adapter link may now sit in a subdirectory; sync creates the parent directory
+    in the profile.
+
 ## [0.26.2] - 2026-09-13
 
 ### Fixed

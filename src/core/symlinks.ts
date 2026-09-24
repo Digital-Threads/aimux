@@ -394,6 +394,9 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
   // exist as source entries, so they are created beyond the readdir loop above.
   for (const { link, target } of adapter.extraLinks(sourcePath)) {
     const linkPath = join(profilePath, link);
+    // A link can sit inside a subdirectory (codex's `sqlite/state_<N>.sqlite`), and the
+    // profile has no such directory until we make one.
+    mkdirSync(dirname(linkPath), { recursive: true });
     if (lstatExists(linkPath)) {
       const st = lstatSync(linkPath);
       if (!st.isSymbolicLink()) {

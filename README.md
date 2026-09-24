@@ -331,7 +331,18 @@ private:
   - stats-cache.json
   - statsig
   - telemetry
+  - state                 # MCP protocol verdicts, per install
+  - session-env           # per-session environment
+  - backups               # copies of the private .claude.json
+  - remote                # Remote Control daemon + its binaries
+  - security              # Agent SDK venv and logs
+  - shell-snapshots
+  - cache                 # fetched model catalog, per account
 ```
+
+The defaults above are always applied — listing extra entries adds to them. Claude
+Code keeps growing new runtime directories, so if `aimux doctor` reports a conflict
+on one, add it here and run `aimux rebuild`.
 
 ## Requirements
 

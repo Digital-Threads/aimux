@@ -1,3 +1,4 @@
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { looksLikeSubcommand } from '../subcommand.js';
 import type { CliAdapter } from './types.js';
@@ -22,6 +23,15 @@ const CODEX_SHARED_ENTRIES = new Set(['skills', 'rules', 'memories', 'sessions',
 // SQLite recreates them next to the symlink's resolved (source) path on its own.
 function isSessionStateDb(entry: string): boolean {
   return /^state_\d+\.sqlite$/.test(entry);
+}
+
+/** Entries of a directory that may not exist — codex 0.14x has no `sqlite/`. */
+function readdirSafe(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
 }
 
 // The overlay profile name: codex layers `$CODEX_HOME/<name>.config.toml` on top of the
@@ -106,9 +116,20 @@ export const codexAdapter: CliAdapter = {
   extraLinks(sourceDir) {
     // Overlay (settings + plugin metadata) + plugin content. config.toml is read via the
     // overlay symlink; codex never writes the overlay, so the symlink is safe.
-    return [
+    const links = [
       { link: `${OVERLAY_PROFILE}.config.toml`, target: join(sourceDir, 'config.toml') },
       { link: 'plugins', target: join(sourceDir, 'plugins') },
     ];
+
+    // codex 0.15x is relocating its DBs into `$CODEX_HOME/sqlite/`, one at a time —
+    // logs and queues have moved, the resume index has not. Follow it there as well as
+    // at the top level (isShared), so the move lands without breaking `resume` again.
+    for (const entry of readdirSafe(join(sourceDir, 'sqlite'))) {
+      if (isSessionStateDb(entry)) {
+        links.push({ link: join('sqlite', entry), target: join(sourceDir, 'sqlite', entry) });
+      }
+    }
+
+    return links;
   },
 };
