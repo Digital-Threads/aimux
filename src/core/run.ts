@@ -9,6 +9,8 @@ import { adapterFor } from './adapters/index.js';
 export interface RunOptions {
   model?: string;
   extraArgs?: string[];
+  /** Called with the CLI's pid right after it starts (interactive launches only). */
+  onSpawn?: (pid: number) => void;
 }
 
 const ENV_LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/;
@@ -194,6 +196,7 @@ export function launchProfile(
       stdio: 'inherit',
       env: { ...baseEnv, ...params.env },
     });
+    if (child.pid !== undefined) options.onSpawn?.(child.pid);
 
     child.on('error', (err) => {
       reject(new Error(`Failed to launch ${params.cli}: ${err.message}`));

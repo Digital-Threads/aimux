@@ -96,10 +96,10 @@ export { loadActiveProfile, saveActiveProfile, getActiveProfilePath } from './ac
 
 export { formatTranscript } from './logs.js';
 
-export { sessionOwners, ownerAt, newestSessionSince, findTranscript, sessionQuotaHit } from './sessionMarkers.js';
+export { sessionOwners, ownerAt, sessionTouchedSince, followProcessSession, findTranscript, sessionQuotaHit } from './sessionMarkers.js';
 export type { QuotaHit, SessionOwner } from './sessionMarkers.js';
-export { planContinuation } from './continuation.js';
+export { planContinuation, continuationArgs, sessionIdFromArgs } from './continuation.js';
 export type { ContinuationPlan } from './continuation.js';
-export { openSplit } from './split.js';
+export { openSplit, keepOpenOnFailure } from './split.js';
 export type { SplitOptions, SplitDeps } from './split.js';
 

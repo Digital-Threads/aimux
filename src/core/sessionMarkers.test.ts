@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { AimuxConfig } from '../types/index.js';
-import { findTranscript, newestSessionSince, ownerAt, sessionOwners, sessionQuotaHit } from './sessionMarkers.js';
+import { findTranscript, followProcessSession, ownerAt, sessionOwners, sessionQuotaHit, sessionTouchedSince } from './sessionMarkers.js';
 
 let root: string;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'aimux-markers-')); });
@@ -72,22 +72,30 @@ describe('sessionOwners', () => {
   });
 });
 
-describe('newestSessionSince', () => {
-  it('returns the newest session started in a config dir at or after the given time', async () => {
-    marker(profileDir('work'), 'before');
+describe('sessionTouchedSince', () => {
+  const transcript = (id: string) => {
+    mkdirSync(join(source(), 'projects', '-home-me-app'), { recursive: true });
+    writeFileSync(join(source(), 'projects', '-home-me-app', `${id}.jsonl`), `{"id":"${id}"}\n`);
+  };
+
+  it('returns the session of this profile whose transcript was written since the given time', async () => {
+    marker(profileDir('work'), 'idle');
+    transcript('idle');
+    marker(profileDir('work'), 'resumed');
+    transcript('resumed');
     await pause();
     const since = Date.now();
-    // File times come from the kernel's coarse clock and can trail Date.now() by a few
-    // ms; a real session creates its marker far later than that after launch.
     await pause();
-    marker(profileDir('work'), 'during');
-    expect(newestSessionSince(profileDir('work'), since)).toBe('during');
+    transcript('resumed'); // an old session, written to again after launch
+    expect(sessionTouchedSince(config(), profileDir('work'), since)).toBe('resumed');
   });
 
-  it('returns null when no session started in that window', () => {
-    marker(profileDir('work'), 'before');
-    expect(newestSessionSince(profileDir('work'), Date.now() + 60_000)).toBeNull();
-    expect(newestSessionSince(profileDir('missing'), 0)).toBeNull();
+  it('ignores sessions other profiles ran', async () => {
+    const since = Date.now();
+    await pause();
+    marker(source(), 'someone-else');
+    transcript('someone-else');
+    expect(sessionTouchedSince(config(), profileDir('work'), since)).toBeNull();
   });
 });
 
@@ -117,7 +125,12 @@ describe('sessionQuotaHit', () => {
 
   it('recognizes a session that ended on an exhausted subscription', () => {
     write([reply, quotaHit]);
-    expect(sessionQuotaHit(file())).toEqual({ rateLimitType: 'five_hour', resetsAt: 1789141200 * 1000 });
+    expect(sessionQuotaHit(file())).toEqual({ rateLimitType: 'five_hour', resetsAt: 1789141200 * 1000, at: undefined });
+  });
+
+  it('reports when the hit was recorded', () => {
+    write([reply, { ...quotaHit, timestamp: '2026-09-30T10:00:00.000Z' }]);
+    expect(sessionQuotaHit(file())?.at).toBe(Date.parse('2026-09-30T10:00:00.000Z'));
   });
 
   it('ignores a transient server 429, which carries no quota verdict', () => {
@@ -150,5 +163,36 @@ describe('ownerAt', () => {
     // A session resumed here after starting elsewhere: its early turns are not ours.
     expect(ownerAt(owners, 999)).toBeUndefined();
     expect(ownerAt(undefined, 9999)).toBeUndefined();
+  });
+});
+
+describe('followProcessSession', () => {
+  // claude keeps <config>/sessions/<pid>.json pointing at the conversation the process is
+  // on — it changes on /clear and /resume — and deletes it on exit.
+  const pidFile = () => join(profileDir('work'), 'sessions', '4242.json');
+  const point = (sessionId: string) => {
+    mkdirSync(join(profileDir('work'), 'sessions'), { recursive: true });
+    writeFileSync(pidFile(), JSON.stringify({ pid: 4242, sessionId }));
+  };
+
+  it('follows the process to its current conversation and remembers it after the file is gone', async () => {
+    point('first');
+    const follow = followProcessSession(profileDir('work'), 4242, 10);
+    expect(follow.current()).toBe('first');
+
+    point('after-clear');
+    await pause();
+    expect(follow.current()).toBe('after-clear');
+
+    rmSync(pidFile());
+    await pause();
+    expect(follow.current()).toBe('after-clear');
+    follow.stop();
+  });
+
+  it('knows nothing when claude never wrote the file', () => {
+    const follow = followProcessSession(profileDir('work'), 4242, 10);
+    expect(follow.current()).toBeUndefined();
+    follow.stop();
   });
 });

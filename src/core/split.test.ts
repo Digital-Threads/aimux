@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { openSplit } from './split.js';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { keepOpenOnFailure, openSplit } from './split.js';
 
 /** Records tmux calls and hands out pane ids the way `-P -F '#{pane_id}'` would. */
 function fakeTmux() {
@@ -63,5 +64,48 @@ describe('openSplit', () => {
     expect(t.calls[0][0]).toBe('new-window');
     expect(t.calls.some((c) => c[0] === 'new-session')).toBe(false);
     expect(t.attached).toEqual([]);
+  });
+});
+
+describe('openSplit when tmux fails half way', () => {
+  const failingOn = (verb: string) => {
+    const t = fakeTmux();
+    const tmux = t.deps.tmux;
+    t.deps.tmux = (args: string[]) => {
+      if (args[0] === verb) {
+        t.calls.push(args);
+        throw new Error(`can't find pane`);
+      }
+      return tmux(args);
+    };
+    return t;
+  };
+
+  it('kills the half-built session instead of leaving it running detached', () => {
+    const t = failingOn('split-window');
+    expect(() => openSplit({ profiles: ['a', 'b'], cwd: '/w', command: run, insideTmux: false, sessionName: 's' }, t.deps)).toThrow();
+    expect(t.calls).toContainEqual(['kill-session', '-t', 's']);
+    expect(t.attached).toEqual([]);
+  });
+
+  it('closes the half-built window when it was opened inside tmux', () => {
+    const t = failingOn('split-window');
+    expect(() => openSplit({ profiles: ['a', 'b'], cwd: '/w', command: run, insideTmux: true, sessionName: 's' }, t.deps)).toThrow();
+    expect(t.calls).toContainEqual(['kill-window', '-t', '%0']);
+  });
+});
+
+describe('keepOpenOnFailure', () => {
+  // A pane closes the moment its command exits, taking any error message with it.
+  it('keeps a failed pane open with a note until Enter is pressed, and still reports the failure', () => {
+    const run = spawnSync('sh', ['-c', keepOpenOnFailure("echo 'Error: profile not logged in'; exit 3")], { input: '\n', encoding: 'utf-8' });
+    expect(run.stdout).toContain('Error: profile not logged in');
+    expect(run.stdout).toContain('Press Enter to close');
+    expect(run.status).toBe(3);
+  });
+
+  it('lets a pane that ended normally close without waiting', () => {
+    const out = execFileSync('sh', ['-c', keepOpenOnFailure('echo done')], { input: '', encoding: 'utf-8' });
+    expect(out).toBe('done\n');
   });
 });

@@ -4,7 +4,7 @@ import type { AimuxConfig } from './types/index.js';
 import type { ProfileUsageSummary, RateLimitProbe } from './core/index.js';
 import { rmSync, existsSync, cpSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs';
 import { spawnSync, execFileSync } from 'node:child_process';
-import { createInterface } from 'node:readline/promises';
+import { isatty } from 'node:tty';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -18,6 +18,7 @@ import {
   parseShell, buildSwitchEnv, renderShellExports, renderShellInit,
   fetchRateLimits, rateLimitProfiles, pickFreestProfile,
   planContinuation, formatResetAt, openSplit, posixQuote, baseEnvFor,
+  continuationArgs, sessionIdFromArgs, followProcessSession, keepOpenOnFailure,
 } from './core/index.js';
 
 function collectRepeatable(value: string, previous: string[]): string[] {
@@ -57,16 +58,27 @@ async function probeRateLimits(
   return new Map(entries);
 }
 
-/** A yes/no prompt where Enter means yes — for offers, not for anything destructive. */
-async function askYes(question: string): Promise<boolean> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = (await rl.question(question)).trim().toLowerCase();
-    return answer === '' || answer === 'y' || answer === 'yes';
-  } finally {
-    rl.close();
-  }
+/**
+ * A yes/no prompt where Enter means yes — for offers, not for anything destructive.
+ *
+ * The line is read by a `sh` child, never by aimux itself: once Node opens stdin it
+ * keeps reading fd 0 in the background, and the claude that starts next would lose
+ * keystrokes to it. Ctrl-D counts as no; Ctrl-C stops the prompt like any command.
+ */
+function askYes(question: string): boolean {
+  process.stdout.write(question);
+  const read = spawnSync('sh', ['-c', 'IFS= read -r a && printf %s "$a"'], {
+    stdio: ['inherit', 'pipe', 'inherit'],
+    encoding: 'utf-8',
+  });
+  if (read.status !== 0) return false;
+
+  const reply = read.stdout.trim().toLowerCase();
+  return reply === '' || reply === 'y' || reply === 'yes';
 }
+
+/** A window's utilization for one-line messages; an unreported window is unknown, not 0%. */
+const fmtPct = (p: number | null) => (p === null ? '—' : `${p}%`);
 
 /** Claude's window names, in the words its own status line uses. */
 function describeWindow(rateLimitType: string | undefined): string {
@@ -308,8 +320,7 @@ program
         const freest = limits ? pickFreestProfile(limits) : null;
         if (freest) {
           const picked = limits!.get(freest)!.status!;
-          const pct = (p: number | null) => (p === null ? '—' : `${p}%`);
-          console.log(`Auto: ${freest} (5h ${pct(picked.fiveHourPct)}, 7d ${pct(picked.weeklyPct)})`);
+          console.log(`Auto: ${freest} (5h ${fmtPct(picked.fiveHourPct)}, 7d ${fmtPct(picked.weeklyPct)})`);
           profileName = freest;
         } else {
           // Offline, every token stale, or every window spent — the user still
@@ -350,22 +361,40 @@ program
         }
       };
 
-      let current = profileName;
-      prepare(current);
-      let launchedAt = Date.now();
-      let exitCode = await launchProfile(config, current, { model: options.model, extraArgs: cliArgs });
-
       // A session whose subscription ran out can carry on under another one: the
       // transcript is shared, only the login changes. Interactive claude sessions only —
       // a subcommand or `-p` run has no conversation to continue, and without a TTY there
       // is nobody to ask.
-      const continuable = (config.profiles[current].cli ?? 'claude') === 'claude'
+      const continuable = (config.profiles[profileName].cli ?? 'claude') === 'claude'
         && !launchingSubcommand
         && !cliArgs.some((a) => a === '-p' || a === '--print')
-        && Boolean(process.stdin.isTTY);
+        && isatty(0);
+
+      // Run one claude and learn which session it ended on — from claude's own record of
+      // the process, which follows /clear and /resume, so a continuation never picks up a
+      // session another terminal runs under the same profile. Without that record: the id
+      // the args name, then (in planContinuation) the transcript this profile wrote last.
+      const launch = async (profile: string, extraArgs: string[]) => {
+        let follower: ReturnType<typeof followProcessSession> | undefined;
+        const since = Date.now();
+        const code = await launchProfile(config, profile, {
+          model: options.model,
+          extraArgs,
+          onSpawn: continuable
+            ? (pid) => { follower = followProcessSession(expandHome(config.profiles[profile].path), pid); }
+            : undefined,
+        });
+        follower?.stop();
+
+        return { code, since, sessionId: follower?.current() ?? sessionIdFromArgs(extraArgs) };
+      };
+
+      let current = profileName;
+      prepare(current);
+      let run = await launch(current, cliArgs);
 
       while (continuable) {
-        const plan = await planContinuation(config, current, launchedAt);
+        const plan = await planContinuation(config, current, { id: run.sessionId, since: run.since });
         if (!plan) break;
 
         const resets = plan.hit.resetsAt ? ` (resets ${formatResetAt(plan.hit.resetsAt)})` : '';
@@ -375,20 +404,18 @@ program
           break;
         }
 
-        const pct = (p: number | null) => (p === null ? '—' : `${p}%`);
         const { fiveHourPct, weeklyPct } = plan.next.status;
-        const go = await askYes(
-          `${hitLine}.\nContinue this session on ${plan.next.profile} (5h ${pct(fiveHourPct)}, 7d ${pct(weeklyPct)})? [Y/n] `,
+        const go = askYes(
+          `${hitLine}.\nContinue this session on ${plan.next.profile} (5h ${fmtPct(fiveHourPct)}, 7d ${fmtPct(weeklyPct)})? [Y/n] `,
         );
         if (!go) break;
 
         current = plan.next.profile;
         prepare(current);
-        launchedAt = Date.now();
-        exitCode = await launchProfile(config, current, { model: options.model, extraArgs: ['--resume', plan.sessionId] });
+        run = await launch(current, continuationArgs(cliArgs, plan.sessionId));
       }
 
-      process.exit(exitCode);
+      process.exit(run.code);
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);
@@ -403,9 +430,11 @@ program
       const config = requireConfig();
       const profiles = names.length > 0
         ? names.map((n) => resolveProfile(config, n))
-        : Object.keys(config.profiles).filter((n) => (config.profiles[n].cli ?? 'claude') === 'claude');
+        // Subscriptions only: an API-key profile bills per token, and opening one nobody
+        // asked for next to the subscription panes would quietly start spending.
+        : rateLimitProfiles(config.profiles).filter((n) => (config.profiles[n].cli ?? 'claude') === 'claude');
       if (profiles.length === 0) {
-        console.error('No claude profiles to open. Name the profiles: aimux split <profile> <profile>');
+        console.error('No logged-in claude subscription to open. Name the profiles: aimux split <profile> <profile>');
         process.exit(1);
       }
 
@@ -420,7 +449,7 @@ program
       openSplit({
         profiles,
         cwd: process.cwd(),
-        command: (p) => `${self} run ${posixQuote(p)}`,
+        command: (p) => keepOpenOnFailure(`${self} run ${posixQuote(p)}`),
         insideTmux: Boolean(process.env.TMUX),
         sessionName: `aimux-${Date.now().toString(36)}`,
       }, {

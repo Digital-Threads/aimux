@@ -625,3 +625,60 @@ describe('the shipped private list keeps claude runtime out of the shared set', 
     expect(shared).toContain('skills');
   });
 });
+
+describe('syncProfile keeps the nested codex state link healthy', () => {
+  const setup = () => {
+    const codexSrc = join(TEST_DIR, 'codex-src-nested');
+    const profileDir = join(PROFILES_DIR, 'cxnest');
+    mkdirSync(join(codexSrc, 'sqlite'), { recursive: true });
+    mkdirSync(join(profileDir, 'sqlite'), { recursive: true });
+    const config = makeConfig({
+      shared_sources: { codex: codexSrc },
+      profiles: {
+        main: { cli: 'claude', path: SHARED_DIR, is_source: true },
+        cxnest: { cli: 'codex', path: profileDir },
+      },
+    });
+    return { codexSrc, profileDir, config };
+  };
+
+  it('replaces a real state DB codex created in the profile\'s sqlite/ with the shared one', () => {
+    // codex ran under the profile before the source had this DB, so it made its own —
+    // left alone, `resume` would list only this profile's threads again (the 0.21.1 bug).
+    const { codexSrc, profileDir, config } = setup();
+    writeFileSync(join(codexSrc, 'sqlite', 'state_9.sqlite'), 'SOURCE');
+    writeFileSync(join(profileDir, 'sqlite', 'state_9.sqlite'), 'LOCAL');
+
+    const result = syncProfile(config, 'cxnest');
+
+    const link = join(profileDir, 'sqlite', 'state_9.sqlite');
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(readFileSync(link, 'utf-8')).toBe('SOURCE');
+    expect(result.conflicts).not.toContain(join('sqlite', 'state_9.sqlite'));
+  });
+
+  it('leaves a local state DB alone while it is in use — its WAL still holds writes', () => {
+    // Unlinking a DB a running codex has open loses whatever it writes next, and a WAL
+    // left next to the new link could be replayed into the shared DB.
+    const { codexSrc, profileDir, config } = setup();
+    writeFileSync(join(codexSrc, 'sqlite', 'state_9.sqlite'), 'SOURCE');
+    writeFileSync(join(profileDir, 'sqlite', 'state_9.sqlite'), 'LOCAL');
+    writeFileSync(join(profileDir, 'sqlite', 'state_9.sqlite-wal'), 'pending');
+
+    const result = syncProfile(config, 'cxnest');
+
+    expect(lstatSync(join(profileDir, 'sqlite', 'state_9.sqlite')).isSymbolicLink()).toBe(false);
+    expect(result.conflicts).toContain(join('sqlite', 'state_9.sqlite'));
+  });
+
+  it('removes a nested link left behind when codex moves on to a newer state DB', () => {
+    const { codexSrc, profileDir, config } = setup();
+    writeFileSync(join(codexSrc, 'sqlite', 'state_10.sqlite'), 'NEW');
+    symlinkSync(join(codexSrc, 'sqlite', 'state_9.sqlite'), join(profileDir, 'sqlite', 'state_9.sqlite'));
+
+    syncProfile(config, 'cxnest');
+
+    expect(existsSync(join(profileDir, 'sqlite', 'state_10.sqlite'))).toBe(true);
+    expect(() => lstatSync(join(profileDir, 'sqlite', 'state_9.sqlite'))).toThrow();
+  });
+});

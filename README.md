@@ -132,13 +132,14 @@ always runs the profile you name, whichever one the shell has active.
 ### Several subscriptions side by side (`aimux split`)
 
 ```bash
-aimux split              # one tmux pane per claude profile, all in this directory
+aimux split              # one tmux pane per logged-in claude subscription, in this directory
 aimux split work client  # just these two
 ```
 
 Each pane runs a full `aimux run <profile>`, labelled with its profile on the pane
-border. Inside tmux it opens a new window instead of nesting tmux. Needs tmux
-(`sudo apt install tmux`, or `brew install tmux`).
+border; a pane whose run fails stays open with its error. Inside tmux it opens a new
+window instead of nesting tmux. Needs tmux (`sudo apt install tmux`, or
+`brew install tmux`).
 
 ### When a subscription runs out mid-session
 
@@ -151,10 +152,10 @@ window is spent, aimux offers to continue it where there is the most room left:
 Continue this session on personal (5h 10%, 7d 16%)? [Y/n]
 ```
 
-Press Enter and the same session resumes there. aimux reads the hit from the
-session's own transcript, so an ordinary exit costs nothing; the other subscriptions
-are only checked when a limit was actually reached. It works inside `aimux split`
-panes too.
+Press Enter and the same session resumes there, with the flags you started it with.
+aimux reads the hit from the session's own transcript, so an ordinary exit costs
+nothing; the other subscriptions are only checked when a limit was actually reached. It
+works inside `aimux split` panes too.
 
 ## Commands
 
@@ -171,7 +172,7 @@ panes too.
 | `aimux run w` | Prefix matching — launches `work` if unambiguous |
 | `aimux run work -m claude-sonnet-5-5` | Launch with model override |
 | `aimux run --auto` | Probe every subscription's live limits and launch the one with the most headroom (stays within the same CLI) |
-| `aimux split [profiles...]` | Open several subscriptions side by side, one tmux pane each (default: every claude profile) |
+| `aimux split [profiles...]` | Open several subscriptions side by side, one tmux pane each (default: every logged-in claude subscription) |
 | `aimux use [profile]` | Switch the current shell to a profile (persistent) — plain `claude`/`codex` then use it. Requires `eval "$(aimux shell-init)"` in your rc |
 | `aimux shell-init` | Print the shell function that enables `aimux use` (add to `~/.zshrc`/`~/.bashrc`/fish config) |
 | `aimux agents` | Multi-profile agent view — see and manage claude background sessions across **all** profiles in one TUI |

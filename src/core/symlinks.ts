@@ -1,9 +1,10 @@
 import {
+  type Stats,
   readdirSync, lstatSync, statSync, symlinkSync, readlinkSync,
   existsSync, mkdirSync, unlinkSync,
   readFileSync, writeFileSync, renameSync, openSync, closeSync,
 } from 'node:fs';
-import { join, resolve, sep, dirname } from 'node:path';
+import { join, resolve, sep, dirname, basename } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { AimuxConfig } from '../types/index.js';
 import { expandHome } from './paths.js';
@@ -261,6 +262,18 @@ export function getPrivateElements(config: AimuxConfig): string[] {
   return all.filter(name => privateSet.has(name));
 }
 
+/**
+ * Whether a real DB in a profile may be replaced by the source link: a regular file (a
+ * directory would make unlinkSync throw EISDIR and abort the sync) with no SQLite
+ * sidecars. SQLite removes `-wal`/`-shm` when the last connection closes, so their
+ * presence means a process may have it open — unlinking it then loses whatever that
+ * process writes next, and a leftover WAL beside the new link could be replayed into the
+ * shared DB.
+ */
+function reclaimable(path: string, stat: Stats): boolean {
+  return stat.isFile() && !existsSync(`${path}-wal`) && !existsSync(`${path}-shm`);
+}
+
 export function syncProfile(config: AimuxConfig, profileName: string): SyncResult {
   const profile = config.profiles[profileName];
   if (!profile) {
@@ -373,11 +386,11 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
           symlinkSync(sourceTarget, targetInProfile);
           result.repaired.push(entry);
         }
-      } else if (adapter.reclaimsFromSource?.(entry) && stat.isFile()) {
+      } else if (adapter.reclaimsFromSource?.(entry) && reclaimable(targetInProfile, stat)) {
         // A real file where a source-authoritative entry (codex's session-index DB)
         // belongs — replace it with the source symlink instead of leaving a conflict.
-        // Guarded to a regular file: a directory at this path would make unlinkSync
-        // throw EISDIR and abort the whole sync, so it falls through to `conflicts`.
+        // Guarded to a regular file that nothing has open (see reclaimable); anything
+        // else falls through to `conflicts`.
         unlinkSync(targetInProfile);
         symlinkSync(sourceTarget, targetInProfile);
         result.repaired.push(entry);
@@ -392,7 +405,8 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
 
   // Per-CLI extra symlinks (codex config overlay + plugin content) — names that do not
   // exist as source entries, so they are created beyond the readdir loop above.
-  for (const { link, target } of adapter.extraLinks(sourcePath)) {
+  const extraLinks = adapter.extraLinks(sourcePath);
+  for (const { link, target } of extraLinks) {
     const linkPath = join(profilePath, link);
     // A link can sit inside a subdirectory (codex's `sqlite/state_<N>.sqlite`), and the
     // profile has no such directory until we make one.
@@ -400,7 +414,15 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
     if (lstatExists(linkPath)) {
       const st = lstatSync(linkPath);
       if (!st.isSymbolicLink()) {
-        result.conflicts.push(link);
+        // Same rule as the top-level reclaim: a real copy of a source-authoritative file
+        // (codex made its own state DB before the source had one) gives way to the link.
+        if (adapter.reclaimsFromSource?.(basename(link)) && reclaimable(linkPath, st) && existsSync(target)) {
+          unlinkSync(linkPath);
+          symlinkSync(target, linkPath);
+          result.repaired.push(link);
+        } else {
+          result.conflicts.push(link);
+        }
       } else if (symlinkTargetMatches(profilePath, linkPath, target)) {
         result.skipped.push(link);
       } else {
@@ -413,6 +435,35 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
     if (existsSync(target)) {
       symlinkSync(target, linkPath);
       result.created.push(link);
+    }
+  }
+
+  // Nested adapter links live in a real directory of their own (codex's `sqlite/`) that the
+  // top-level prune never walks. Clear links there that aimux made and no longer makes — a
+  // state DB codex has since moved past leaves one pointing at nothing. Links that point
+  // outside the source are the user's and stay.
+  const currentLinks = new Set(extraLinks.map((l) => l.link));
+  const nestedDirs = new Set(extraLinks.map((l) => dirname(l.link)).filter((d) => d !== '.'));
+  for (const dir of nestedDirs) {
+    let entries: string[];
+    try {
+      entries = readdirSync(join(profilePath, dir));
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const rel = join(dir, entry);
+      if (currentLinks.has(rel)) continue;
+      const full = join(profilePath, rel);
+      try {
+        if (!lstatSync(full).isSymbolicLink()) continue;
+        if (!resolve(dirname(full), readlinkSync(full)).startsWith(resolve(sourcePath) + sep)) continue;
+      } catch {
+        continue;
+      }
+      unlinkSync(full);
+      result.repaired.push(rel);
     }
   }
 

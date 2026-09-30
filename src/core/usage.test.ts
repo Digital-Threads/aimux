@@ -168,7 +168,7 @@ describe('summarizeUsage', () => {
 
   it('counts stable line fallback keys when request identifiers are missing', () => {
     writeProfileSession('work', 'session-a', 1000);
-    const line = assistantLine('session-a', '', {
+    const line: { requestId?: string; message: { id?: string } } = assistantLine('session-a', '', {
       input_tokens: 10,
       estimated_cost_usd: 0.01,
     });
@@ -208,6 +208,30 @@ describe('summarizeUsage', () => {
     const summaries = summarizeUsage(makeConfig());
     expect(summaries.find((s) => s.profile === 'work')?.requests).toBe(1);
     expect(summaries.find((s) => s.profile === 'unknown')).toBeUndefined();
+  });
+
+  it('splits a session continued on another subscription even though .claude.json names only the second', async () => {
+    const pause = () => new Promise((r) => setTimeout(r, 30));
+    // work has its own session-env from the start, so the source's markers are trusted.
+    mkdirSync(join(TEST_DIR, 'profiles', 'work', 'session-env'), { recursive: true });
+    await pause();
+    mkdirSync(join(TEST_DIR, 'shared', 'session-env', 'session-c'), { recursive: true }); // started on main
+    await pause();
+    const onMain = new Date().toISOString();
+    await pause();
+    mkdirSync(join(TEST_DIR, 'profiles', 'work', 'session-env', 'session-c'), { recursive: true }); // continued on work
+    await pause();
+    const onWork = new Date().toISOString();
+    // work's .claude.json now lists the session as its last one — a whole-session claim.
+    writeProfileSession('work', 'session-c', Date.now());
+    writeTranscript('-tmp-project', 'session-c', [
+      assistantLine('session-c', 'req-main', { input_tokens: 10, output_tokens: 5 }, onMain),
+      assistantLine('session-c', 'req-work', { input_tokens: 10, output_tokens: 5 }, onWork),
+    ]);
+
+    const summaries = summarizeUsage(makeConfig());
+    expect(summaries.find((s) => s.profile === 'main')?.requests).toBe(1);
+    expect(summaries.find((s) => s.profile === 'work')?.requests).toBe(1);
   });
 
   it('does not credit a profile with turns from before it opened the session', () => {

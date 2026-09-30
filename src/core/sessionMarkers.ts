@@ -1,4 +1,4 @@
-import { closeSync, fstatSync, lstatSync, openSync, readdirSync, readSync, statSync, existsSync, type Stats } from 'node:fs';
+import { closeSync, fstatSync, lstatSync, openSync, readdirSync, readFileSync, readSync, statSync, existsSync, type Stats } from 'node:fs';
 import { join } from 'node:path';
 import type { AimuxConfig } from '../types/index.js';
 import { expandHome } from './paths.js';
@@ -115,18 +115,92 @@ export function ownerAt(owners: SessionOwner[] | undefined, t: number): string |
   return owner;
 }
 
-/** The newest session started in a config dir at or after `sinceMs`, if any. */
-export function newestSessionSince(configDir: string, sinceMs: number): string | null {
-  let newest: { id: string; born: number } | null = null;
-  for (const marker of markersIn(configDir)) {
-    if (marker.born >= sinceMs && (!newest || marker.born > newest.born)) newest = marker;
+/** Where claude keeps interactive transcripts: `<source>/projects/<cwd-hash>/<id>.jsonl`. */
+function projectsRoot(config: AimuxConfig): string {
+  return join(expandHome(config.shared_source), 'projects');
+}
+
+/**
+ * Follow which conversation a running claude process is on.
+ *
+ * claude keeps `<config>/sessions/<pid>.json` pointing at its current session — it
+ * changes on /clear and /resume — and deletes the file when it exits. Reading it while
+ * the process runs, and keeping the last value, names the exact session the launch
+ * ended on, with no guessing from file times and no clash with another terminal running
+ * the same profile.
+ */
+export function followProcessSession(
+  configDir: string,
+  pid: number,
+  intervalMs = 1000,
+): { current: () => string | undefined; stop: () => void } {
+  const file = join(configDir, 'sessions', `${pid}.json`);
+  let last: string | undefined;
+
+  const read = () => {
+    try {
+      const id = JSON.parse(readFileSync(file, 'utf-8'))?.sessionId;
+      if (typeof id === 'string' && id) last = id;
+    } catch {
+      // not written yet, or already removed on exit — keep what we saw
+    }
+  };
+
+  read();
+  const timer = setInterval(read, intervalMs);
+  timer.unref();
+
+  return {
+    current: () => last,
+    stop: () => clearInterval(timer),
+  };
+}
+
+/**
+ * The session this profile ran whose transcript was written most recently at or after
+ * `sinceMs` — the one a launch that started then was working on. Keyed on the
+ * transcript, not the marker: a resumed session (`--continue`, `/resume`) keeps the
+ * marker it got long ago, but its transcript is written to again.
+ */
+export function sessionTouchedSince(config: AimuxConfig, configDir: string, sinceMs: number): string | null {
+  const mine = new Set(markersIn(configDir).map((m) => m.id));
+  if (mine.size === 0) return null;
+
+  const root = projectsRoot(config);
+  let dirs: string[];
+  try {
+    dirs = readdirSync(root);
+  } catch {
+    return null;
   }
-  return newest?.id ?? null;
+
+  let best: { id: string; mtime: number } | null = null;
+  for (const dir of dirs) {
+    let files: string[];
+    try {
+      files = readdirSync(join(root, dir));
+    } catch {
+      continue;
+    }
+
+    for (const file of files) {
+      const id = file.endsWith('.jsonl') ? file.slice(0, -'.jsonl'.length) : '';
+      if (!mine.has(id)) continue;
+      let mtime: number;
+      try {
+        mtime = statSync(join(root, dir, file)).mtimeMs;
+      } catch {
+        continue;
+      }
+      if (mtime >= sinceMs && (!best || mtime > best.mtime)) best = { id, mtime };
+    }
+  }
+  return best?.id ?? null;
 }
 
 /** A session's transcript in the shared `projects/` tree, whichever project holds it. */
 export function findTranscript(config: AimuxConfig, sessionId: string): string | null {
-  const root = join(expandHome(config.shared_source), 'projects');
+  const root = projectsRoot(config);
   let dirs: string[];
   try {
     dirs = readdirSync(root);
@@ -146,6 +220,8 @@ export interface QuotaHit {
   rateLimitType?: string;
   /** When that window frees up, epoch ms. */
   resetsAt?: number;
+  /** When the hit was recorded, epoch ms. */
+  at?: number;
 }
 
 /** Enough tail to hold the last few records even when tool output makes them large. */
@@ -179,7 +255,12 @@ export function sessionQuotaHit(transcriptPath: string): QuotaHit | null {
 
   const lines = text.split('\n');
   for (let i = lines.length - 1; i >= 0; i--) {
-    let record: { type?: string; error?: string; quotaLimits?: { status?: string; rateLimitType?: string; resetsAt?: number } };
+    let record: {
+      type?: string;
+      error?: string;
+      timestamp?: string;
+      quotaLimits?: { status?: string; rateLimitType?: string; resetsAt?: number };
+    };
     try {
       record = JSON.parse(lines[i]);
     } catch {
@@ -189,9 +270,11 @@ export function sessionQuotaHit(transcriptPath: string): QuotaHit | null {
 
     const quota = record.quotaLimits;
     if (record.error !== 'rate_limit' || quota?.status !== 'rejected') return null;
+    const at = record.timestamp ? Date.parse(record.timestamp) : NaN;
     return {
       rateLimitType: quota.rateLimitType,
       resetsAt: typeof quota.resetsAt === 'number' ? quota.resetsAt * 1000 : undefined,
+      at: Number.isNaN(at) ? undefined : at,
     };
   }
   return null;

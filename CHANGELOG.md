@@ -20,21 +20,37 @@ All notable changes to this project are documented here. The format is based on
   points at the profile's own dir is left alone.
 - `aimux run --auto --continue` failed with "Profile '--continue' not found": with no
   profile named, the first passthrough flag was taken as the profile.
+- **codex's nested `sqlite/state_<N>.sqlite` link heals like the top-level one** (added in
+  0.27.0). A real DB codex created in the profile before the source had one used to be
+  reported as a conflict on every sync — leaving `resume` with only that profile's threads
+  — and it is now replaced by the link; a link left behind when codex moves on to a newer
+  state DB is pruned. A DB that codex may still have open (its `-wal` / `-shm` files are
+  present) is never replaced — it stays a conflict until codex closes it.
 
 ### Added
 - **`aimux split [profiles...]` — several subscriptions side by side in one terminal.**
-  One tmux pane per profile (default: every claude profile), each running a full
+  One tmux pane per profile (default: every logged-in claude subscription — API-key
+  profiles are left out, since they bill per token), each running a full
   `aimux run <profile>` and labelled with its profile on the pane border. Inside tmux it
   opens a new window rather than nesting. The label is a pane option, not the pane
-  title, because claude rewrites the terminal title the moment it starts.
+  title, because claude rewrites the terminal title the moment it starts. A pane whose
+  run fails stays open with its error until Enter, instead of vanishing with it; if tmux
+  itself fails half way, the half-built session or window is removed.
 - **A session whose subscription runs out can continue on another one.** When an
   interactive `aimux run` session stops on an exhausted window, aimux offers to resume
-  the same session on the subscription with the most room (Enter = yes). Detection is
-  local: Claude Code writes the hit into the transcript as a `rate_limit` record whose
-  `quotaLimits.status` is `rejected`, naming the window and its reset — so an ordinary
-  exit costs no network, a transient server 429 (no `quotaLimits`) never triggers it,
-  and a window that already reset while the session sat idle does not either. Only a
-  real hit probes the other profiles to rank them. Checked against this machine's
+  the same session on the subscription with the most room (Enter = yes; Ctrl-D = no).
+  The flags it was started with — permissions, extra dirs, MCP config — come along; the
+  opening prompt is not sent again. Detection is local: Claude Code writes the hit into
+  the transcript as a `rate_limit` record whose `quotaLimits.status` is `rejected`,
+  naming the window and its reset — so an ordinary exit costs no network, a transient
+  server 429 (no `quotaLimits`) never triggers it, and neither does a window that reset
+  while the session sat idle or a hit left over from an earlier run. aimux follows the
+  session claude itself records for the running process (`sessions/<pid>.json`), so it
+  continues the conversation the process actually ended on — after `/clear`, `/resume`
+  or `--fork-session` too — and never one another terminal runs under the same profile.
+  The prompt is read by a separate `sh`, so aimux never holds the terminal's input and
+  the next claude gets every keystroke. Only a real hit probes the other profiles to
+  rank them. Checked against this machine's
   transcripts: of 204 with a rate-limit record, 175 end on an exhausted subscription.
 
 ### Changed
@@ -44,7 +60,8 @@ All notable changes to this project are documented here. The format is based on
   record — `aimux use` + plain `claude`, background agents and the like. It is applied
   per turn, from the moment the profile opened the session, so a session begun under one
   subscription and resumed under another is split between them rather than credited
-  whole to the last. Markers from before a profile had its own `session-env` are ignored:
+  whole to the last — it takes precedence over `.claude.json`'s `lastSessionId`, which
+  names only a profile's latest session, and names it whole. Markers from before a profile had its own `session-env` are ignored:
   they may belong to any profile. Over the last five days on a real install, spend
   attributed to no profile fell from $642 to $215.
 

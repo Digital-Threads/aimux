@@ -206,8 +206,6 @@ function collectClaudeUsageRecords(config: AimuxConfig, options: UsageOptions = 
       if (parseSessionJsonl(filePath, stat.size).isSubagent) continue;
 
       const fallbackSessionId = file.replace(/\.jsonl$/, '');
-      const fallbackProfile =
-        history.get(fallbackSessionId)?.profile ?? profileMap.get(fallbackSessionId)?.profile;
       let lines: string[];
       try {
         lines = readFileSync(filePath, 'utf-8').split('\n');
@@ -225,15 +223,17 @@ function collectClaudeUsageRecords(config: AimuxConfig, options: UsageOptions = 
         if (options.sinceMs !== undefined && lineMs < options.sinceMs) continue;
 
         const sessionId = line.sessionId ?? fallbackSessionId;
-        // Last resort before 'unknown': the session-env marker Claude Code left in the
-        // config dir that ran this turn — covers `aimux use` + plain `claude`, background
-        // agents and anything else aimux did not launch itself. Decided per turn, so a
-        // session resumed under another subscription is split between the two.
+        // Order matters. aimux's own record of a session it attached to is explicit, so it
+        // wins. Next the session-env marker Claude Code left in the config dir that ran this
+        // turn: decided per turn, so a session continued on another subscription is split
+        // between the two. `.claude.json`'s lastSessionId comes after it — it names only a
+        // profile's latest session, and names it whole.
         const profile =
           history.get(sessionId)?.profile
-          ?? profileMap.get(sessionId)?.profile
-          ?? fallbackProfile
+          ?? history.get(fallbackSessionId)?.profile
           ?? ownerAt(owners.get(sessionId) ?? owners.get(fallbackSessionId), lineMs)
+          ?? profileMap.get(sessionId)?.profile
+          ?? profileMap.get(fallbackSessionId)?.profile
           ?? 'unknown';
         if (options.profile && profile !== options.profile) continue;
 
