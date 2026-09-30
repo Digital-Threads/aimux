@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 import { getProfile } from './config.js';
 import { expandHome } from './paths.js';
@@ -99,6 +99,38 @@ export interface RunParams {
 
 export { looksLikeSubcommand } from './subcommand.js';
 
+/**
+ * The environment a profile's CLI starts from: this process's own, minus whatever
+ * belongs to a different profile.
+ *
+ * Another profile's identity arrives two ways: `aimux use` exported it into the shell
+ * (and listed it in AIMUX_MANAGED), or aimux runs inside a session it launched earlier
+ * (CLAUDE_CONFIG_DIR is set for that session). A non-source profile overwrites its
+ * config-dir variable anyway; the source profile sets none, so it inherited the other
+ * profile's dir — `aimux run main` after `aimux use dt` logged in as dt.
+ */
+export function baseEnvFor(
+  profile: ProfileConfig,
+  profilePath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const base: NodeJS.ProcessEnv = { ...env };
+
+  for (const key of (env.AIMUX_MANAGED ?? '').split(/\s+/)) {
+    if (key) delete base[key];
+  }
+
+  // A config-dir variable pointing anywhere but this profile's own dir is someone
+  // else's. One pointing at our own dir stays: that is how a source relocated with
+  // CLAUDE_CONFIG_DIR keeps working.
+  for (const [key, ownDir] of Object.entries(adapterFor(profile.cli).configDirEnv(profilePath, false))) {
+    const inherited = base[key];
+    if (inherited && resolve(expandHome(inherited)) !== resolve(ownDir)) delete base[key];
+  }
+
+  return base;
+}
+
 export function buildRunParams(
   config: AimuxConfig,
   profileName: string,
@@ -155,10 +187,12 @@ export function launchProfile(
     );
   }
 
+  const baseEnv = baseEnvFor(getProfile(config, profileName), params.profilePath);
+
   return new Promise((resolve, reject) => {
     const child = spawn(params.cli, params.args, {
       stdio: 'inherit',
-      env: { ...process.env, ...params.env },
+      env: { ...baseEnv, ...params.env },
     });
 
     child.on('error', (err) => {
@@ -207,7 +241,7 @@ export function runProfileHeadless(
   options: HeadlessOptions = {},
 ): Promise<HeadlessResult> {
   const params = buildRunParams(config, profileName, options);
-  const env: NodeJS.ProcessEnv = { ...process.env, ...params.env };
+  const env: NodeJS.ProcessEnv = { ...baseEnvFor(getProfile(config, profileName), params.profilePath), ...params.env };
   if (options.taskId) env.LOOM_TASK_ID = options.taskId;
   if (options.workflowId) env.LOOM_WORKFLOW_ID = options.workflowId;
 

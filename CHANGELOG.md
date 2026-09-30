@@ -4,6 +4,50 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.29.0] - 2026-09-30
+
+### Fixed
+- **`aimux run main` could log in as a different profile.** Launching a profile copied
+  this process's whole environment, and the source profile sets no config-dir variable
+  of its own — so it inherited whatever the shell held. After `aimux use dt`, or with
+  aimux running inside a session it launched, `aimux run main` started claude with dt's
+  config dir and dt's account (verified on two real accounts). Every variable a shell
+  switch exported leaked the same way into any other profile's run: an API profile's
+  `ANTHROPIC_BASE_URL` and token, and since 0.28.0 its `ANTHROPIC_MODEL`. Every launch
+  path — run, headless, auth login, live sessions, the agents view and the status
+  auth probe — now starts from the environment minus what belongs to another profile.
+  A source relocated with `CLAUDE_CONFIG_DIR` keeps working: a config dir that already
+  points at the profile's own dir is left alone.
+- `aimux run --auto --continue` failed with "Profile '--continue' not found": with no
+  profile named, the first passthrough flag was taken as the profile.
+
+### Added
+- **`aimux split [profiles...]` — several subscriptions side by side in one terminal.**
+  One tmux pane per profile (default: every claude profile), each running a full
+  `aimux run <profile>` and labelled with its profile on the pane border. Inside tmux it
+  opens a new window rather than nesting. The label is a pane option, not the pane
+  title, because claude rewrites the terminal title the moment it starts.
+- **A session whose subscription runs out can continue on another one.** When an
+  interactive `aimux run` session stops on an exhausted window, aimux offers to resume
+  the same session on the subscription with the most room (Enter = yes). Detection is
+  local: Claude Code writes the hit into the transcript as a `rate_limit` record whose
+  `quotaLimits.status` is `rejected`, naming the window and its reset — so an ordinary
+  exit costs no network, a transient server 429 (no `quotaLimits`) never triggers it,
+  and a window that already reset while the session sat idle does not either. Only a
+  real hit probes the other profiles to rank them. Checked against this machine's
+  transcripts: of 204 with a rate-limit record, 175 end on an exhausted subscription.
+
+### Changed
+- **`aimux usage` attributes sessions aimux did not launch.** Claude Code creates
+  `session-env/<session id>` in the config dir each session runs under, and since
+  0.27.0 every profile has its own. aimux now uses that marker when it has no launch
+  record — `aimux use` + plain `claude`, background agents and the like. It is applied
+  per turn, from the moment the profile opened the session, so a session begun under one
+  subscription and resumed under another is split between them rather than credited
+  whole to the last. Markers from before a profile had its own `session-env` are ignored:
+  they may belong to any profile. Over the last five days on a real install, spend
+  attributed to no profile fell from $642 to $215.
+
 ## [0.28.0] - 2026-09-30
 
 ### Fixed

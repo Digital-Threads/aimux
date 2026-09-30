@@ -196,6 +196,35 @@ describe('summarizeUsage', () => {
     expect(totalTokens(work)).toBe(0);
   });
 
+  it('attributes a session aimux did not launch to the profile that ran it', () => {
+    // No aimux history and no .claude.json entry: the only trace is the session-env
+    // marker Claude Code left in the config dir it ran under.
+    mkdirSync(join(TEST_DIR, 'profiles', 'work', 'session-env', 'session-m'), { recursive: true });
+    const afterMarker = new Date(Date.now() + 60_000).toISOString();
+    writeTranscript('-tmp-project', 'session-m', [
+      assistantLine('session-m', 'req-m', { input_tokens: 10, output_tokens: 5 }, afterMarker),
+    ]);
+
+    const summaries = summarizeUsage(makeConfig());
+    expect(summaries.find((s) => s.profile === 'work')?.requests).toBe(1);
+    expect(summaries.find((s) => s.profile === 'unknown')).toBeUndefined();
+  });
+
+  it('does not credit a profile with turns from before it opened the session', () => {
+    // `aimux run work --resume <id>` on a session begun under another subscription:
+    // work's marker appears at the resume, so the earlier turns are not work's.
+    mkdirSync(join(TEST_DIR, 'profiles', 'work', 'session-env', 'session-r'), { recursive: true });
+    const afterMarker = new Date(Date.now() + 60_000).toISOString();
+    writeTranscript('-tmp-project', 'session-r', [
+      assistantLine('session-r', 'req-early', { input_tokens: 10, output_tokens: 5 }, NOW_TS),
+      assistantLine('session-r', 'req-late', { input_tokens: 10, output_tokens: 5 }, afterMarker),
+    ]);
+
+    const summaries = summarizeUsage(makeConfig());
+    expect(summaries.find((s) => s.profile === 'work')?.requests).toBe(1);
+    expect(summaries.find((s) => s.profile === 'unknown')?.requests).toBe(1);
+  });
+
   it('derives estimated cost from the price table when transcripts lack cost', () => {
     writeProfileSession('work', 'session-a', 1000);
     writeTranscript('-tmp-project', 'session-a', [

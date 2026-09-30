@@ -49,7 +49,7 @@ export function buildSwitchEnv(config: AimuxConfig, profileName: string): Record
 }
 
 /** Single-quote a value for POSIX shells, escaping embedded single quotes. */
-function posixQuote(value: string): string {
+export function posixQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 

@@ -3,7 +3,8 @@ import { Command } from 'commander';
 import type { AimuxConfig } from './types/index.js';
 import type { ProfileUsageSummary, RateLimitProbe } from './core/index.js';
 import { rmSync, existsSync, cpSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, execFileSync } from 'node:child_process';
+import { createInterface } from 'node:readline/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -16,6 +17,7 @@ import {
   loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedClaudeOnboarding, confirm,
   parseShell, buildSwitchEnv, renderShellExports, renderShellInit,
   fetchRateLimits, rateLimitProfiles, pickFreestProfile,
+  planContinuation, formatResetAt, openSplit, posixQuote, baseEnvFor,
 } from './core/index.js';
 
 function collectRepeatable(value: string, previous: string[]): string[] {
@@ -53,6 +55,24 @@ async function probeRateLimits(
     }),
   );
   return new Map(entries);
+}
+
+/** A yes/no prompt where Enter means yes — for offers, not for anything destructive. */
+async function askYes(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question(question)).trim().toLowerCase();
+    return answer === '' || answer === 'y' || answer === 'yes';
+  } finally {
+    rl.close();
+  }
+}
+
+/** Claude's window names, in the words its own status line uses. */
+function describeWindow(rateLimitType: string | undefined): string {
+  if (rateLimitType === 'five_hour') return '5-hour';
+  if (rateLimitType?.startsWith('seven_day')) return 'weekly';
+  return 'usage';
 }
 
 function resolveProfile(config: AimuxConfig, input: string): string {
@@ -230,6 +250,12 @@ program
   .action(async (profile: string | undefined, cliArgs: string[], options: { model?: string; auto?: boolean }) => {
     try {
       const config = requireConfig();
+      // With no profile named, commander hands the first passthrough flag to
+      // [profile] — `aimux run --auto --continue`. A profile name never starts with '-'.
+      if (profile?.startsWith('-')) {
+        cliArgs = [profile, ...cliArgs];
+        profile = undefined;
+      }
       let profileName = profile;
       const launchingSubcommand = looksLikeSubcommand(cliArgs[0]);
 
@@ -292,37 +318,115 @@ program
         }
       }
 
-      if (!config.profiles[profileName].is_source && !launchingSubcommand) {
-        const sync = syncProfile(config, profileName);
-        const hasChanges = sync.created.length > 0 || sync.repaired.length > 0 || sync.conflicts.length > 0;
-        if (hasChanges) {
-          console.log(`Auto-sync: ${formatSyncSummary(sync)}`);
+      // Everything a profile needs right before the CLI starts under it — run for the
+      // first launch and again for every subscription a session continues on.
+      const prepare = (name: string) => {
+        if (!config.profiles[name].is_source && !launchingSubcommand) {
+          const sync = syncProfile(config, name);
+          const hasChanges = sync.created.length > 0 || sync.repaired.length > 0 || sync.conflicts.length > 0;
+          if (hasChanges) {
+            console.log(`Auto-sync: ${formatSyncSummary(sync)}`);
+          }
         }
-      }
 
-      if (!launchingSubcommand) {
-        recordHistory(process.cwd(), profileName);
-      }
+        if (!launchingSubcommand) {
+          recordHistory(process.cwd(), name);
+        }
 
-      // Self-heal profiles created before the onboarding seed existed: an AUTHENTICATED
-      // claude profile with no `.claude.json` hits claude's first-run wizard and is asked
-      // for an account again. Gated on credentials being present so a genuinely
-      // unauthenticated profile still gets its real login prompt.
-      {
-        const p = config.profiles[profileName];
+        // Self-heal profiles created before the onboarding seed existed: an AUTHENTICATED
+        // claude profile with no `.claude.json` hits claude's first-run wizard and is asked
+        // for an account again. Gated on credentials being present so a genuinely
+        // unauthenticated profile still gets its real login prompt.
+        const p = config.profiles[name];
         const pPath = expandHome(p.path);
         if (p.cli === 'claude' && !p.is_source
             && existsSync(join(pPath, adapterFor(p.cli).credentialsFile()))) {
           seedClaudeOnboarding(pPath);
         }
+
+        const permWarning = checkDotenvPermissions(pPath);
+        if (permWarning) {
+          console.error(`\x1b[33m⚠ ${permWarning}\x1b[0m`);
+        }
+      };
+
+      let current = profileName;
+      prepare(current);
+      let launchedAt = Date.now();
+      let exitCode = await launchProfile(config, current, { model: options.model, extraArgs: cliArgs });
+
+      // A session whose subscription ran out can carry on under another one: the
+      // transcript is shared, only the login changes. Interactive claude sessions only —
+      // a subcommand or `-p` run has no conversation to continue, and without a TTY there
+      // is nobody to ask.
+      const continuable = (config.profiles[current].cli ?? 'claude') === 'claude'
+        && !launchingSubcommand
+        && !cliArgs.some((a) => a === '-p' || a === '--print')
+        && Boolean(process.stdin.isTTY);
+
+      while (continuable) {
+        const plan = await planContinuation(config, current, launchedAt);
+        if (!plan) break;
+
+        const resets = plan.hit.resetsAt ? ` (resets ${formatResetAt(plan.hit.resetsAt)})` : '';
+        const hitLine = `\n⚠ ${current} hit its ${describeWindow(plan.hit.rateLimitType)} limit${resets}`;
+        if (!plan.next) {
+          console.error(`${hitLine}, and no other claude subscription has room right now.`);
+          break;
+        }
+
+        const pct = (p: number | null) => (p === null ? '—' : `${p}%`);
+        const { fiveHourPct, weeklyPct } = plan.next.status;
+        const go = await askYes(
+          `${hitLine}.\nContinue this session on ${plan.next.profile} (5h ${pct(fiveHourPct)}, 7d ${pct(weeklyPct)})? [Y/n] `,
+        );
+        if (!go) break;
+
+        current = plan.next.profile;
+        prepare(current);
+        launchedAt = Date.now();
+        exitCode = await launchProfile(config, current, { model: options.model, extraArgs: ['--resume', plan.sessionId] });
       }
 
-      const permWarning = checkDotenvPermissions(expandHome(config.profiles[profileName].path));
-      if (permWarning) {
-        console.error(`\x1b[33m⚠ ${permWarning}\x1b[0m`);
-      }
-      const exitCode = await launchProfile(config, profileName, { model: options.model, extraArgs: cliArgs });
       process.exit(exitCode);
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('split [profiles...]')
+  .description('Open several subscriptions side by side in one terminal — one tmux pane each (default: every claude profile)')
+  .action((names: string[]) => {
+    try {
+      const config = requireConfig();
+      const profiles = names.length > 0
+        ? names.map((n) => resolveProfile(config, n))
+        : Object.keys(config.profiles).filter((n) => (config.profiles[n].cli ?? 'claude') === 'claude');
+      if (profiles.length === 0) {
+        console.error('No claude profiles to open. Name the profiles: aimux split <profile> <profile>');
+        process.exit(1);
+      }
+
+      if (spawnSync('tmux', ['-V']).error) {
+        console.error('aimux split needs tmux. Install it (sudo apt install tmux, or brew install tmux) and run again.');
+        process.exit(1);
+      }
+
+      // Each pane re-invokes this same aimux, so a pane never depends on what `aimux`
+      // resolves to on the PATH inside tmux.
+      const self = `${posixQuote(process.execPath)} ${posixQuote(process.argv[1])}`;
+      openSplit({
+        profiles,
+        cwd: process.cwd(),
+        command: (p) => `${self} run ${posixQuote(p)}`,
+        insideTmux: Boolean(process.env.TMUX),
+        sessionName: `aimux-${Date.now().toString(36)}`,
+      }, {
+        tmux: (args) => execFileSync('tmux', args, { encoding: 'utf-8' }),
+        attach: (args) => { spawnSync('tmux', args, { stdio: 'inherit' }); },
+      });
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);
@@ -960,7 +1064,7 @@ program
           console.log(`Launching auth for profile '${resolved}'...`);
           const result = spawnSync(p.cli, adapter.authArgs(), {
             stdio: 'inherit',
-            env: { ...process.env, ...env },
+            env: { ...baseEnvFor(p, profilePath), ...env },
           });
           if (result.error) {
             throw new Error(`Failed to launch ${p.cli}: ${result.error.message}`);
@@ -1021,7 +1125,7 @@ program
   COMPREPLY=()
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="init run status usage profile rebuild doctor auth logs prompt-indicator prompt completions"
+  commands="init run split status usage profile rebuild doctor auth logs prompt-indicator prompt completions"
 
   case "\${prev}" in
     run|auth)
@@ -1041,7 +1145,7 @@ complete -F _aimux aimux
       console.log(`#compdef aimux
 _aimux() {
   local -a commands profiles
-  commands=(init run status usage profile rebuild doctor auth logs prompt-indicator prompt completions)
+  commands=(init run split status usage profile rebuild doctor auth logs prompt-indicator prompt completions)
   profiles=(${profiles})
 
   _arguments '1:command:($commands)' '*::arg:->args'
@@ -1058,7 +1162,7 @@ _aimux() {
 _aimux
 # Add to ~/.zshrc: eval "$(aimux completions zsh)"`);
     } else if (shell === 'fish') {
-      console.log(`complete -c aimux -n '__fish_use_subcommand' -a 'init run status usage profile rebuild doctor auth logs prompt-indicator prompt completions'
+      console.log(`complete -c aimux -n '__fish_use_subcommand' -a 'init run split status usage profile rebuild doctor auth logs prompt-indicator prompt completions'
 complete -c aimux -n '__fish_seen_subcommand_from run' -a '${profiles}'
 complete -c aimux -n '__fish_seen_subcommand_from profile' -a 'add list update remove clone'
 complete -c aimux -n '__fish_seen_subcommand_from auth' -a 'login status'

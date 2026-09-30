@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { buildRunParams, runProfileHeadless, looksLikeSubcommand, parseDotenv, loadProfileEnv } from './run.js';
+import { baseEnvFor, buildRunParams, runProfileHeadless, looksLikeSubcommand, parseDotenv, loadProfileEnv } from './run.js';
 import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 
 function makeConfig(ownExtras?: Partial<ProfileConfig>): AimuxConfig {
@@ -285,5 +285,46 @@ describe('buildRunParams — claude invariant (characterization)', () => {
   it('honors a user-passed --model over the profile default', () => {
     const p = buildRunParams(makeConfig(), 'work', { extraArgs: ['--model', 'claude-sonnet-4-6'] });
     expect(p.args).toEqual(['--model', 'claude-sonnet-4-6']);
+  });
+});
+
+describe('baseEnvFor', () => {
+  // Another profile's identity reaches a launch two ways: `aimux use` exported it into
+  // the shell (listed in AIMUX_MANAGED), or aimux itself runs inside a session it
+  // launched (CLAUDE_CONFIG_DIR set for that session).
+  const dtDir = '/home/u/.aimux/profiles/dt';
+  const main: ProfileConfig = { cli: 'claude', path: '/home/u/.claude', is_source: true };
+  const dt: ProfileConfig = { cli: 'claude', path: dtDir };
+
+  it('drops another profile\'s config dir for the source profile — `aimux run main` after `aimux use dt`', () => {
+    // The source sets no config dir of its own, so it used to inherit dt's — and log in as dt.
+    const base = baseEnvFor(main, '/home/u/.claude', { CLAUDE_CONFIG_DIR: dtDir, PATH: '/usr/bin' });
+    expect(base).not.toHaveProperty('CLAUDE_CONFIG_DIR');
+    expect(base.PATH).toBe('/usr/bin');
+  });
+
+  it('drops every variable a shell switch exported, so the active profile cannot leak into another run', () => {
+    const base = baseEnvFor(dt, dtDir, {
+      AIMUX_MANAGED: 'CLAUDE_CONFIG_DIR ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL AIMUX_PROFILE',
+      CLAUDE_CONFIG_DIR: '/home/u/.aimux/profiles/myapi',
+      ANTHROPIC_BASE_URL: 'https://api.example.com',
+      ANTHROPIC_AUTH_TOKEN: 'sk-api-profile',
+      ANTHROPIC_MODEL: 'some-api-model',
+      AIMUX_PROFILE: 'myapi',
+    });
+    for (const key of ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_MODEL', 'AIMUX_PROFILE']) {
+      expect(base).not.toHaveProperty(key);
+    }
+  });
+
+  it('keeps the user\'s own variables', () => {
+    const base = baseEnvFor(dt, dtDir, { ANTHROPIC_API_KEY: 'mine', HOME: '/home/u' });
+    expect(base.ANTHROPIC_API_KEY).toBe('mine');
+    expect(base.HOME).toBe('/home/u');
+  });
+
+  it('keeps a config dir that already is this profile\'s own — a source relocated with CLAUDE_CONFIG_DIR', () => {
+    const relocated: ProfileConfig = { cli: 'claude', path: '/data/claude', is_source: true };
+    expect(baseEnvFor(relocated, '/data/claude', { CLAUDE_CONFIG_DIR: '/data/claude' }).CLAUDE_CONFIG_DIR).toBe('/data/claude');
   });
 });

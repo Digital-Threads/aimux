@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="988" height="347" viewBox="0 0 988 347" role="img" aria-label="aimux status: every subscription's live 5h and 7d usage and reset time in one table">
+  <rect width="100%" height="100%" rx="10" fill="#0d1117"/>
+  <circle cx="20" cy="18" r="5.5" fill="#f85149"/><circle cx="38" cy="18" r="5.5" fill="#d29922"/><circle cx="56" cy="18" r="5.5" fill="#3fb950"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13" fill="#c9d1d9">
+  <text x="22" y="44" fill="#58a6ff" font-weight="bold">aimux status</text>
+  <text x="22" y="63"></text>
+  <text x="22" y="82">Shared source: ~/.claude</text>
+  <text x="22" y="101">Profiles: 6 (6 authenticated)</text>
+  <text x="22" y="120">Shared elements: 29</text>
+  <text x="22" y="139">Private elements: 27</text>
+  <text x="22" y="158">Active here: none (run `aimux use &lt;profile&gt;`)</text>
+  <text x="22" y="177"></text>
+  <text x="45.4" y="196"><tspan font-weight="bold" fill="#e6edf3">NAME</tspan></text><text x="139.0" y="196"><tspan font-weight="bold" fill="#e6edf3">AUTH</tspan></text><text x="279.4" y="196"><tspan font-weight="bold" fill="#e6edf3">MODEL</tspan></text><text x="451.0" y="196"><tspan font-weight="bold" fill="#e6edf3">AUTOMODE</tspan></text><text x="591.4" y="196"><tspan font-weight="bold" fill="#e6edf3">SHARED</tspan></text><text x="747.4" y="196"><tspan font-weight="bold" fill="#e6edf3">USED 5H/7D</tspan></text><text x="864.4" y="196"><tspan font-weight="bold" fill="#e6edf3">RESETS</tspan></text>
+  <text x="45.4" y="215">personal</text><text x="139.0" y="215"><tspan fill="#3fb950">✓ oauth</tspan></text><text x="279.4" y="215">opus[1m]</text><text x="451.0" y="215">✓0 ✗0</text><text x="591.4" y="215">(source)</text><text x="747.4" y="215"><tspan fill="#3fb950">10%</tspan> / <tspan fill="#3fb950">16%</tspan></text><text x="864.4" y="215">13:10 / Oct 2</text>
+  <text x="45.4" y="234">work</text><text x="139.0" y="234"><tspan fill="#3fb950">✓ oauth</tspan></text><text x="279.4" y="234">opus[1m]</text><text x="451.0" y="234">✓0 ✗0</text><text x="591.4" y="234">29/29</text><text x="747.4" y="234"><tspan fill="#3fb950">28%</tspan> / <tspan fill="#3fb950">10%</tspan></text><text x="864.4" y="234">14:10 / Oct 6</text>
+  <text x="45.4" y="253">codex</text><text x="139.0" y="253"><tspan fill="#3fb950">✓ oauth</tspan></text><text x="279.4" y="253">default</text><text x="451.0" y="253">—</text><text x="591.4" y="253">9/29</text><text x="747.4" y="253">— / <tspan fill="#3fb950">24%</tspan></text><text x="864.4" y="253">— / Oct 4</text>
+  <text x="45.4" y="272">client</text><text x="139.0" y="272"><tspan fill="#3fb950">✓ oauth</tspan></text><text x="279.4" y="272">opus[1m]</text><text x="451.0" y="272">✓0 ✗0</text><text x="591.4" y="272">29/29</text><text x="747.4" y="272"><tspan fill="#3fb950">31%</tspan> / <tspan fill="#3fb950">36%</tspan></text><text x="864.4" y="272">13:30 / Oct 3</text>
+  <text x="45.4" y="291">side</text><text x="139.0" y="291"><tspan fill="#3fb950">✓ oauth</tspan></text><text x="279.4" y="291">opus[1m]</text><text x="451.0" y="291">✓0 ✗0</text><text x="591.4" y="291">29/29</text><text x="747.4" y="291"><tspan fill="#3fb950">23%</tspan> / <tspan fill="#3fb950">28%</tspan></text><text x="864.4" y="291">13:50 / Oct 1</text>
+  <text x="45.4" y="310">team</text><text x="139.0" y="310"><tspan fill="#3fb950">✓ oauth</tspan></text><text x="279.4" y="310">opus[1m]</text><text x="451.0" y="310">✓0 ✗0</text><text x="591.4" y="310">29/29</text><text x="747.4" y="310"><tspan fill="#3fb950">2%</tspan> / <tspan fill="#3fb950">2%</tspan></text><text x="864.4" y="310">14:20 / Oct 2</text>
+  </g>
+</svg>

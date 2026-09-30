@@ -8,6 +8,8 @@
 
 Run multiple Claude Code / Codex / Gemini subscriptions side by side: one shared brain — skills, agents, memory, settings — separate logins, and every subscription's live 5h/7d limits in a single view.
 
+![aimux status — every subscription's 5-hour and weekly usage and when it resets, in one table](docs/aimux-status.svg)
+
 ## Problem
 
 You have multiple Claude Code subscriptions (personal, work, client) each in separate `~/.claude-*` directories. You maintain symlinks manually, duplicate settings, and juggle bash functions to switch between them.
@@ -124,7 +126,35 @@ aimux use          # no name → interactive picker
 
 Each shell is independent, so different terminals can hold different active
 profiles at once. The switch only exports env vars into the current shell — it
-never changes global state. `aimux run` still works for one-off launches.
+never changes global state. `aimux run` still works for one-off launches, and it
+always runs the profile you name, whichever one the shell has active.
+
+### Several subscriptions side by side (`aimux split`)
+
+```bash
+aimux split              # one tmux pane per claude profile, all in this directory
+aimux split work client  # just these two
+```
+
+Each pane runs a full `aimux run <profile>`, labelled with its profile on the pane
+border. Inside tmux it opens a new window instead of nesting tmux. Needs tmux
+(`sudo apt install tmux`, or `brew install tmux`).
+
+### When a subscription runs out mid-session
+
+Transcripts are shared, so a session can carry on under another subscription — only
+the login changes. When a claude session started with `aimux run` stops because its
+window is spent, aimux offers to continue it where there is the most room left:
+
+```
+⚠ work hit its 5-hour limit (resets 23:10).
+Continue this session on personal (5h 10%, 7d 16%)? [Y/n]
+```
+
+Press Enter and the same session resumes there. aimux reads the hit from the
+session's own transcript, so an ordinary exit costs nothing; the other subscriptions
+are only checked when a limit was actually reached. It works inside `aimux split`
+panes too.
 
 ## Commands
 
@@ -134,13 +164,14 @@ never changes global state. `aimux run` still works for one-off launches.
 | `aimux init --source <path>` | Initialize with explicit source directory |
 | `aimux status` | TUI dashboard — profiles, auth, live 5h/7d limit usage and reset times (claude + codex), auto-mode posture, symlink health |
 | `aimux status --no-limits` | Same dashboard without the rate-limit probe (offline / faster) |
-| `aimux usage` | Show token usage by profile (Claude transcripts + codex rollouts) |
+| `aimux usage` | Show token usage by profile (Claude transcripts + codex rollouts), including sessions started outside aimux |
 | `aimux usage --profile work --since 24h` | Show usage for one profile over a recent window |
 | `aimux run [profile]` | Launch AI CLI with correct env and model |
 | `aimux run` | Interactive picker — history pre-selects last used profile |
 | `aimux run w` | Prefix matching — launches `work` if unambiguous |
 | `aimux run work -m claude-sonnet-5-5` | Launch with model override |
 | `aimux run --auto` | Probe every subscription's live limits and launch the one with the most headroom (stays within the same CLI) |
+| `aimux split [profiles...]` | Open several subscriptions side by side, one tmux pane each (default: every claude profile) |
 | `aimux use [profile]` | Switch the current shell to a profile (persistent) — plain `claude`/`codex` then use it. Requires `eval "$(aimux shell-init)"` in your rc |
 | `aimux shell-init` | Print the shell function that enables `aimux use` (add to `~/.zshrc`/`~/.bashrc`/fish config) |
 | `aimux agents` | Multi-profile agent view — see and manage claude background sessions across **all** profiles in one TUI |

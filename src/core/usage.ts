@@ -4,6 +4,7 @@ import type { AimuxConfig } from '../types/index.js';
 import { expandHome } from './paths.js';
 import { sourceFor } from './config.js';
 import { loadSessionHistory } from './sessionHistory.js';
+import { ownerAt, sessionOwners } from './sessionMarkers.js';
 import { buildProfileSessionMap } from './profileSessionMap.js';
 import { parseSessionJsonl, quickFirstLineType } from './sessionScanner.js';
 import { listRolloutFiles } from './codexSessionScanner.js';
@@ -174,6 +175,7 @@ function collectClaudeUsageRecords(config: AimuxConfig, options: UsageOptions = 
   const seenRequests = new Set<string>();
   const history = loadSessionHistory();
   const profileMap = buildProfileSessionMap(config);
+  const owners = sessionOwners(config);
 
   let cwdDirs: string[];
   try {
@@ -205,7 +207,7 @@ function collectClaudeUsageRecords(config: AimuxConfig, options: UsageOptions = 
 
       const fallbackSessionId = file.replace(/\.jsonl$/, '');
       const fallbackProfile =
-        history.get(fallbackSessionId)?.profile ?? profileMap.get(fallbackSessionId)?.profile ?? 'unknown';
+        history.get(fallbackSessionId)?.profile ?? profileMap.get(fallbackSessionId)?.profile;
       let lines: string[];
       try {
         lines = readFileSync(filePath, 'utf-8').split('\n');
@@ -223,8 +225,16 @@ function collectClaudeUsageRecords(config: AimuxConfig, options: UsageOptions = 
         if (options.sinceMs !== undefined && lineMs < options.sinceMs) continue;
 
         const sessionId = line.sessionId ?? fallbackSessionId;
+        // Last resort before 'unknown': the session-env marker Claude Code left in the
+        // config dir that ran this turn — covers `aimux use` + plain `claude`, background
+        // agents and anything else aimux did not launch itself. Decided per turn, so a
+        // session resumed under another subscription is split between the two.
         const profile =
-          history.get(sessionId)?.profile ?? profileMap.get(sessionId)?.profile ?? fallbackProfile;
+          history.get(sessionId)?.profile
+          ?? profileMap.get(sessionId)?.profile
+          ?? fallbackProfile
+          ?? ownerAt(owners.get(sessionId) ?? owners.get(fallbackSessionId), lineMs)
+          ?? 'unknown';
         if (options.profile && profile !== options.profile) continue;
 
         const key = requestKey(sessionId, line, i);

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 import { expandHome } from '../core/paths.js';
-import { loadProfileEnv } from '../core/run.js';
+import { baseEnvFor, loadProfileEnv } from '../core/run.js';
 import { readProfileAutoMode } from '../core/autoMode.js';
 import { getSharedElements, checkAllProfiles } from '../core/symlinks.js';
 import { adapterFor } from '../core/adapters/index.js';
@@ -60,7 +60,7 @@ function checkAuth(profile: ProfileConfig): AuthStatus {
   }
   try {
     const result = spawnSync(profile.cli, ['auth', 'status'], {
-      env: { ...process.env, ...probeEnv },
+      env: { ...baseEnvFor(profile, profilePath), ...probeEnv },
       timeout: 5000,
       stdio: ['pipe', 'pipe', 'pipe'],
     });

@@ -49,11 +49,11 @@ export {
 
 export type { DetectedDir, InitResult } from './init.js';
 
-export { buildRunParams, launchProfile, runProfileHeadless, looksLikeSubcommand, parseDotenv, loadProfileEnv } from './run.js';
+export { baseEnvFor, buildRunParams, launchProfile, runProfileHeadless, looksLikeSubcommand, parseDotenv, loadProfileEnv } from './run.js';
 export type { RunOptions, RunParams, HeadlessOptions, HeadlessResult } from './run.js';
 export { adapterFor } from './adapters/index.js';
 export type { CliAdapter } from './adapters/index.js';
-export { detectShell, parseShell, buildSwitchEnv, renderShellExports, renderShellInit } from './shellSwitch.js';
+export { detectShell, parseShell, buildSwitchEnv, renderShellExports, renderShellInit, posixQuote } from './shellSwitch.js';
 export type { SupportedShell, RenderExportsOptions } from './shellSwitch.js';
 export { openSession, buildSessionArgs } from './liveSession.js';
 export type { OpenSessionOptions, SessionEvent, TurnResult, LiveSession } from './liveSession.js';
@@ -95,4 +95,11 @@ export type { HandoffDeps, HandoffResult } from './handoff.js';
 export { loadActiveProfile, saveActiveProfile, getActiveProfilePath } from './activeProfile.js';
 
 export { formatTranscript } from './logs.js';
+
+export { sessionOwners, ownerAt, newestSessionSince, findTranscript, sessionQuotaHit } from './sessionMarkers.js';
+export type { QuotaHit, SessionOwner } from './sessionMarkers.js';
+export { planContinuation } from './continuation.js';
+export type { ContinuationPlan } from './continuation.js';
+export { openSplit } from './split.js';
+export type { SplitOptions, SplitDeps } from './split.js';
 

@@ -3,11 +3,12 @@ import type { AimuxConfig } from '../types/index.js';
 import { getProfile } from './config.js';
 import { expandHome } from './paths.js';
 import { adapterFor } from './adapters/index.js';
+import { baseEnvFor } from './run.js';
 
 function buildEnv(config: AimuxConfig, profileName: string): NodeJS.ProcessEnv {
   const profile = getProfile(config, profileName);
   const profilePath = expandHome(profile.path);
-  const env: NodeJS.ProcessEnv = { ...process.env };
+  const env: NodeJS.ProcessEnv = baseEnvFor(profile, profilePath);
   Object.assign(env, adapterFor(profile.cli).configDirEnv(profilePath, profile.is_source === true));
   return env;
 }

@@ -13,7 +13,9 @@
 // event carrying the text + total_cost_usd + permission_denials.
 
 import { spawn, type ChildProcess } from 'child_process';
-import { buildRunParams } from './run.js';
+import { baseEnvFor, buildRunParams } from './run.js';
+import { getProfile } from './config.js';
+import { expandHome } from './paths.js';
 import type { AimuxConfig } from '../types/index.js';
 
 // The headless multi-turn protocol flags. Owned here, never exposed to callers.
@@ -214,7 +216,9 @@ export function openSession(config: AimuxConfig, profileName: string, opts: Open
     if (proc) return proc;
     const resume = everSpawned; // dead/relocated → recover the same session id
     const { cli, args, env } = buildSessionArgs(config, profile, opts, resume);
-    const child = spawnFn(cli, args, { cwd: opts.cwd, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+    const p = getProfile(config, profile);
+    const baseEnv = baseEnvFor(p, expandHome(p.path));
+    const child = spawnFn(cli, args, { cwd: opts.cwd, env: { ...baseEnv, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
     everSpawned = true;
     proc = child;
     buf = '';
