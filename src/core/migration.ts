@@ -2,6 +2,7 @@ import { lstatSync, existsSync, unlinkSync, mkdirSync, readdirSync, rmdirSync, s
 import { join } from 'node:path';
 import type { AimuxConfig } from '../types/index.js';
 import { expandHome } from './paths.js';
+import { profileNotFound } from './config.js';
 
 const PRIVATE_DIR_ELEMENTS = new Set(['jobs', 'daemon']);
 
@@ -29,7 +30,7 @@ export function isolateProfile(
   profileName: string,
 ): IsolateProfileResult {
   const profile = config.profiles[profileName];
-  if (!profile) throw new Error(`Profile '${profileName}' not found`);
+  if (!profile) throw profileNotFound(config, profileName);
   const result: IsolateProfileResult = {
     profile: profileName,
     unlinkedSymlinks: [],
@@ -92,7 +93,7 @@ export function shareProjectsForProfile(
   profileName: string,
 ): ShareProjectsProfileResult {
   const profile = config.profiles[profileName];
-  if (!profile) throw new Error(`Profile '${profileName}' not found`);
+  if (!profile) throw profileNotFound(config, profileName);
   if (profile.is_source) return { profile: profileName, status: 'already-shared' };
 
   const profilePath = expandHome(profile.path);

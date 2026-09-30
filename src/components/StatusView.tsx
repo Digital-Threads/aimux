@@ -1,12 +1,13 @@
 import { Box, Text, useStdout } from 'ink';
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
+import stringWidth from 'string-width';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 import { expandHome } from '../core/paths.js';
 import { baseEnvFor, loadProfileEnv } from '../core/run.js';
-import { readProfileAutoMode } from '../core/autoMode.js';
+import { readProfileAutoMode, type AutoModeStatus } from '../core/autoMode.js';
 import { getSharedElements, checkAllProfiles } from '../core/symlinks.js';
 import { adapterFor } from '../core/adapters/index.js';
 import type { RateLimitProbe } from '../core/limits.js';
@@ -76,17 +77,30 @@ function capCount(n: number): string {
   return n > 99 ? '99+' : String(n);
 }
 
+function authText(auth: AuthStatus): string {
+  if (auth.kind === 'api') return `✓ api (${auth.varCount} vars)`;
+  return isAuthenticated(auth) ? '✓ oauth' : '✗ no auth';
+}
+
+function autoModeText(mode: AutoModeStatus): string {
+  return mode.configured ? `✓${capCount(mode.allowCount)} ✗${capCount(mode.softDenyCount)}` : '—';
+}
+
 /** One profile's rate-limit cell: the two windows, or whatever the probe has to
  *  say instead (never probed / stale token / network failure). */
 function limitCell(probe: RateLimitProbe | undefined) {
   if (!probe?.status) return probeFallback(probe);
   return (
-    <Text>
+    <Text wrap="truncate-end">
       {windowPct(probe.status.fiveHourPct)}
       <Text dimColor> / </Text>
       {windowPct(probe.status.weeklyPct)}
     </Text>
   );
+}
+
+function Head({ children }: { children: ReactNode }) {
+  return <Text bold underline wrap="truncate-end">{children}</Text>;
 }
 
 function safeGetSharedElements(config: AimuxConfig): string[] {
@@ -119,14 +133,41 @@ export function StatusView({ config, limits }: Props) {
   const staleAuth = limits
     ? [...limits].filter(([, probe]) => probe.error === 'auth').map(([name]) => name)
     : [];
-  // The reset times are the widest column and the least urgent one: on a narrow
-  // terminal Ink would wrap every row in half to fit them, which costs more
-  // readability than the column adds. Usage percentages always stay.
+
+  // Columns are as wide as their widest cell, not a fixed guess: fixed widths
+  // needed ~130 columns and Ink wrapped every row in half on a normal terminal.
+  // Measured in terminal cells, so a wide-glyph profile name lines up too.
+  const fit = (header: string, cells: string[]) => Math.max(stringWidth(header), ...cells.map((c) => stringWidth(c)));
+  const widths = {
+    name: fit('  NAME', profiles.map(([name]) => `  ${name}`)),
+    auth: fit('AUTH', profiles.map(([name]) => authText(authStatuses.get(name) ?? { kind: 'none' }))),
+    model: fit('MODEL', profiles.map(([, p]) => p.model ?? 'default')),
+    autoMode: fit('AUTOMODE', [...autoModes.values()].map(autoModeText)),
+    shared: fit('SHARED', ['(source)', `${sharedCount}/${sharedCount}`]),
+    used: '100% / 100%'.length,
+    resets: 'Sep 30 / Oct 10'.length,
+  };
+
+  // When the table would not fit, the least urgent columns go first — reset times,
+  // then auto-mode rules — rather than letting Ink wrap every row in half. Whatever
+  // is still too wide after that is cut short; usage percentages never are.
   const { stdout } = useStdout();
   // COLUMNS is the fallback when stdout is not a TTY (piped output), which is
   // also how Ink itself sizes the frame — without it the two disagree.
   const columns = stdout?.columns || Number(process.env.COLUMNS) || 80;
-  const showResets = Boolean(limits) && columns >= 120;
+  const GAP = 2;
+  const FRAME = 8; // outer padding, border and inner padding, both sides
+  const fits = (width: number) => FRAME + width <= columns;
+  let tableWidth = widths.name + widths.auth + widths.model + widths.shared + 3 * GAP
+    + (limits ? widths.used + GAP : 0);
+
+  // Auto-mode rules live in the shared settings.json, so a configured-but-empty
+  // block shows the same `✓0 ✗0` on every row — the column earns its space only
+  // when some profile actually has rules.
+  const showAutoMode = [...autoModes.values()].some((m) => m.allowCount + m.softDenyCount > 0)
+    && fits(tableWidth + GAP + widths.autoMode);
+  if (showAutoMode) tableWidth += GAP + widths.autoMode;
+  const showResets = Boolean(limits) && fits(tableWidth + GAP + widths.resets);
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -143,14 +184,14 @@ export function StatusView({ config, limits }: Props) {
         <Text> </Text>
 
         <Box flexDirection="column">
-          <Box gap={2}>
-            <Box width={12}><Text bold underline>{'  NAME'}</Text></Box>
-            <Box width={16}><Text bold underline>AUTH</Text></Box>
-            <Box width={20}><Text bold underline>MODEL</Text></Box>
-            <Box width={16}><Text bold underline>AUTOMODE</Text></Box>
-            <Box width={18}><Text bold underline>SHARED</Text></Box>
-            {limits ? <Box width={13}><Text bold underline>USED 5H/7D</Text></Box> : null}
-            {showResets ? <Box width={15}><Text bold underline>RESETS</Text></Box> : null}
+          <Box gap={GAP}>
+            <Box width={widths.name}><Head>{'  NAME'}</Head></Box>
+            <Box width={widths.auth}><Head>AUTH</Head></Box>
+            <Box width={widths.model}><Head>MODEL</Head></Box>
+            {showAutoMode ? <Box width={widths.autoMode}><Head>AUTOMODE</Head></Box> : null}
+            <Box width={widths.shared}><Head>SHARED</Head></Box>
+            {limits ? <Box width={widths.used} flexShrink={0}><Head>USED 5H/7D</Head></Box> : null}
+            {showResets ? <Box width={widths.resets}><Head>RESETS</Head></Box> : null}
           </Box>
 
           {profiles.map(([name, profile]) => {
@@ -177,34 +218,32 @@ export function StatusView({ config, limits }: Props) {
 
             const isActive = name === activeProfile;
             return (
-              <Box key={name} gap={2}>
-                <Box width={12}>
-                  <Text color={isActive ? 'green' : isSource ? 'yellow' : 'white'} bold={isActive}>
+              <Box key={name} gap={GAP}>
+                <Box width={widths.name}>
+                  <Text color={isActive ? 'green' : isSource ? 'yellow' : 'white'} bold={isActive} wrap="truncate-end">
                     {isActive ? '▸ ' : '  '}{name}
                   </Text>
                 </Box>
-                <Box width={16}>
-                  {auth.kind === 'api'
-                    ? <Text color="cyan">✓ api ({auth.varCount} vars)</Text>
-                    : <Text color={authed ? 'green' : 'red'}>{authed ? '✓ oauth' : '✗ no auth'}</Text>
-                  }
+                <Box width={widths.auth}>
+                  <Text color={auth.kind === 'api' ? 'cyan' : authed ? 'green' : 'red'} wrap="truncate-end">{authText(auth)}</Text>
                 </Box>
-                <Box width={20}>
-                  <Text dimColor>{profile.model ?? 'default'}</Text>
+                <Box width={widths.model}>
+                  <Text dimColor wrap="truncate-end">{profile.model ?? 'default'}</Text>
                 </Box>
-                <Box width={16}>
-                  {autoMode.configured
-                    ? <Text color="cyan">✓{capCount(autoMode.allowCount)} ✗{capCount(autoMode.softDenyCount)}</Text>
-                    : <Text dimColor>—</Text>
-                  }
-                </Box>
-                <Box width={18}>
-                  <Text color={sharedColor}>
+                {showAutoMode ? (
+                  <Box width={widths.autoMode}>
+                    <Text color={autoMode.configured ? 'cyan' : undefined} dimColor={!autoMode.configured} wrap="truncate-end">
+                      {autoModeText(autoMode)}
+                    </Text>
+                  </Box>
+                ) : null}
+                <Box width={widths.shared}>
+                  <Text color={sharedColor} wrap="truncate-end">
                     {sharedStatus}
                   </Text>
                 </Box>
-                {limits ? <Box width={13}>{limitCell(limits.get(name))}</Box> : null}
-                {showResets ? <Box width={15}>{resetCell(limits?.get(name))}</Box> : null}
+                {limits ? <Box width={widths.used} flexShrink={0}>{limitCell(limits.get(name))}</Box> : null}
+                {showResets ? <Box width={widths.resets}>{resetCell(limits?.get(name))}</Box> : null}
               </Box>
             );
           })}

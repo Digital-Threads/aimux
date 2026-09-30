@@ -219,6 +219,9 @@ function collectClaudeUsageRecords(config: AimuxConfig, options: UsageOptions = 
         const line = parseJson(raw);
         const usage = line?.message?.usage;
         if (!line || line.type !== 'assistant' || !usage) continue;
+        // Claude Code writes its own notices (a spent limit, an API error) as assistant
+        // records with model `<synthetic>` and zero usage — no request was made.
+        if (line.message?.model === '<synthetic>') continue;
         const lineMs = resolveLineTime(line, stat.mtimeMs);
         if (options.sinceMs !== undefined && lineMs < options.sinceMs) continue;
 

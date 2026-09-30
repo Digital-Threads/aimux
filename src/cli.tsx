@@ -8,7 +8,7 @@ import { isatty } from 'node:tty';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  loadConfig, saveConfig, addProfile, removeProfile, expandHome,
+  loadConfig, saveConfig, addProfile, removeProfile, profileNotFound, expandHome,
   ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs, detectCodex, detectGemini,
   syncProfile, syncAllProfiles, checkAllProfiles,
   launchProfile, getLastProfile, resolveProfileForDir, recordHistory, getProfile, loadActiveProfile,
@@ -95,7 +95,7 @@ function resolveProfile(config: AimuxConfig, input: string): string {
     console.error(`Ambiguous profile '${input}': ${matches.join(', ')}`);
     process.exit(1);
   }
-  console.error(`Profile '${input}' not found`);
+  console.error(profileNotFound(config, input).message);
   process.exit(1);
 }
 
@@ -168,6 +168,7 @@ program
 
 program
   .command('status')
+  .helpGroup('Everyday:')
   .description('Show overview of profiles and shared source')
   .option('--no-limits', 'Skip the live 5h/7d rate-limit probe (no network request)')
   .action(async (options: { limits: boolean }) => {
@@ -179,6 +180,7 @@ program
 
 program
   .command('usage')
+  .helpGroup('Everyday:')
   .description('Show token usage by profile (Claude transcripts + codex rollouts)')
   .option('-p, --profile <profile>', 'Only show one profile (supports prefix matching)')
   .option('--since <duration>', 'Only include usage since duration: 24h, 7d, 4w', '7d')
@@ -205,6 +207,7 @@ program
 
 program
   .command('init')
+  .helpGroup('Setup:')
   .description('Initialize aimux — detect and migrate existing Claude directories')
   .option('-s, --source <path>', 'Path to shared source directory (default: auto-detect)')
   .action((options: { source?: string }) => {
@@ -255,6 +258,7 @@ program
 
 program
   .command('run [profile] [cliArgs...]')
+  .helpGroup('Everyday:')
   .description('Launch AI CLI with the specified profile (extra flags forwarded to CLI)')
   .option('-m, --model <model>', 'Override default model')
   .option('--auto', 'Pick the subscription with the most limit headroom right now')
@@ -424,6 +428,7 @@ program
 
 program
   .command('split [profiles...]')
+  .helpGroup('Everyday:')
   .description('Open several subscriptions side by side in one terminal — one tmux pane each (default: every claude profile)')
   .action((names: string[]) => {
     try {
@@ -464,6 +469,7 @@ program
 
 program
   .command('use [profile]')
+  .helpGroup('Everyday:')
   .description('Switch the current shell to a profile (persistent until you switch again)')
   .option('--export', 'Emit shell export statements for eval (used by the shell wrapper)')
   .option('--shell <shell>', 'Target shell for --export: bash, zsh, or fish')
@@ -558,6 +564,7 @@ program
 
 program
   .command('shell-init')
+  .helpGroup('Setup:')
   .description('Print the shell function enabling `aimux use` (add to your rc: eval "$(aimux shell-init)")')
   .option('--shell <shell>', 'Target shell: bash, zsh, or fish')
   .action((options: { shell?: string }) => {
@@ -571,6 +578,7 @@ program
 
 program
   .command('migrate')
+  .helpGroup('Maintenance:')
   .description('Migration utilities')
   .addCommand(
     new Command('isolate')
@@ -676,6 +684,7 @@ program
 
 program
   .command('agents')
+  .helpGroup('Everyday:')
   .description('Multi-profile agent view — manage claude background sessions across all profiles')
   .action(async () => {
     try {
@@ -775,6 +784,7 @@ program
 
 program
   .command('profile')
+  .helpGroup('Setup:')
   .description('Manage profiles')
   .addCommand(
     new Command('add')
@@ -991,6 +1001,7 @@ program
 
 program
   .command('rebuild')
+  .helpGroup('Maintenance:')
   .description('Rebuild symlinks for all profiles and surface local conflicts')
   .argument('[profile]', 'Specific profile to rebuild')
   .action((profile?: string) => {
@@ -1017,6 +1028,7 @@ program
 
 program
   .command('handoff <sessionId>')
+  .helpGroup('Everyday:')
   .description('Continue a session under another profile/CLI via summary handoff')
   .requiredOption('--to <profile>', 'Target profile to continue the session under')
   .action(async (sessionId: string, options: { to: string }) => {
@@ -1035,6 +1047,7 @@ program
 
 program
   .command('doctor')
+  .helpGroup('Maintenance:')
   .description('Health check — find broken symlinks, missing shared entries, and local conflicts')
   .action(() => {
     try {
@@ -1072,6 +1085,7 @@ program
 
 program
   .command('auth')
+  .helpGroup('Setup:')
   .description('Manage authentication')
   .addCommand(
     new Command('login')
@@ -1142,6 +1156,7 @@ program
 
 program
   .command('completions')
+  .helpGroup('Setup:')
   .argument('<shell>', 'Shell type: bash, zsh, or fish')
   .description('Generate shell completion script')
   .action((shell: string) => {
@@ -1204,6 +1219,7 @@ complete -c aimux -n '__fish_seen_subcommand_from auth' -a 'login status'
 
 program
   .command('setup-shell')
+  .helpGroup('Setup:')
   .description('Install shell completions into your shell config')
   .action(async () => {
     const home = (await import('node:os')).homedir();
@@ -1237,6 +1253,7 @@ program
 
 program
   .command('prompt-indicator')
+  .helpGroup('Setup:')
   .alias('prompt')
   .description('Print the active profile name (for zsh/bash/Starship prompt)')
   .option('-f, --format <pattern>', 'Format pattern (e.g. "[aimux: %s]"). If omitted, outputs raw profile name.')
@@ -1259,6 +1276,7 @@ program
 
 program
   .command('logs [session]')
+  .helpGroup('Everyday:')
   .description('View and grep chat transcripts of a session')
   .option('--last', 'View logs of the most recent session')
   .option('-g, --grep <query>', 'Filter transcript lines matching the query')
@@ -1313,6 +1331,9 @@ program
       process.exit(1);
     }
   });
+
+// `help [command]` joins the everyday group instead of trailing alone under "Commands:".
+program.commandsGroup('Everyday:').helpCommand(true);
 
 program.parse();
 

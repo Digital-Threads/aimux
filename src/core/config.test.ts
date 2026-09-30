@@ -114,6 +114,11 @@ describe('getProfile / getSourceProfile', () => {
     expect(() => getProfile(config, 'nope')).toThrow('not found');
   });
 
+  it('names the profiles that do exist', () => {
+    const config = createDefaultConfig('~/.claude');
+    expect(() => removeProfile(config, 'nope')).toThrow("Profile 'nope' not found. Available: main");
+  });
+
   it('finds source profile', () => {
     const config = createDefaultConfig('~/.claude');
     const [name, profile] = getSourceProfile(config);

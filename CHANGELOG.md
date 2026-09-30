@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.30.0] - 2026-09-30
+
+### Changed
+- **`aimux status` fits a normal terminal.** Columns were fixed widths that added up to
+  about 130 characters, so on an 80-column terminal Ink wrapped every row in half. Each
+  column is now as wide as its widest cell, measured in terminal cells so wide-glyph
+  names line up. A typical table, reset times included, fits in 80 columns; when one
+  does not, the reset times go first, then the auto-mode rules, and anything still too
+  wide is cut short with `…` — rows never wrap, and usage percentages are never cut.
+- The AUTOMODE column only appears when some profile has auto-mode rules. The rules live
+  in the shared `settings.json`, so without any every row read the same `✓0 ✗0`.
+- **`aimux --help` is grouped** into Everyday, Setup and Maintenance commands instead of
+  one flat list of eighteen.
+- **"Profile not found" names the profiles that exist** — in `run`, `use`, `profile`
+  and every other command that takes a profile name — or says to run `aimux init` when
+  there are none.
+
+### Fixed
+- `aimux usage` counted the notices Claude Code writes into a transcript itself — a spent
+  limit, an API error — as requests, and listed their pseudo-model `<synthetic>` next to
+  the real ones. They are no longer counted: no request was made.
+
 ## [0.29.0] - 2026-09-30
 
 ### Fixed

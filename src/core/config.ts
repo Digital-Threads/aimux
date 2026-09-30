@@ -82,10 +82,18 @@ export function addProfile(
   return updated;
 }
 
+/** The error for a profile name that does not exist, naming the ones that do. */
+export function profileNotFound(config: AimuxConfig, name: string): Error {
+  const names = Object.keys(config.profiles);
+  return new Error(names.length > 0
+    ? `Profile '${name}' not found. Available: ${names.join(', ')}`
+    : `Profile '${name}' not found. No profiles yet — run: aimux init`);
+}
+
 export function removeProfile(config: AimuxConfig, name: string): AimuxConfig {
   const profile = config.profiles[name];
   if (!profile) {
-    throw new Error(`Profile '${name}' not found`);
+    throw profileNotFound(config, name);
   }
   if (profile.is_source) {
     throw new Error(`Cannot remove source profile '${name}'`);
@@ -99,7 +107,7 @@ export function removeProfile(config: AimuxConfig, name: string): AimuxConfig {
 export function getProfile(config: AimuxConfig, name: string): ProfileConfig {
   const profile = config.profiles[name];
   if (!profile) {
-    throw new Error(`Profile '${name}' not found. Available: ${Object.keys(config.profiles).join(', ')}`);
+    throw profileNotFound(config, name);
   }
   return profile;
 }

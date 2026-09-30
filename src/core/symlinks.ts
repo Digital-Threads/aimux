@@ -8,7 +8,7 @@ import { join, resolve, sep, dirname, basename } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { AimuxConfig } from '../types/index.js';
 import { expandHome } from './paths.js';
-import { sourceFor } from './config.js';
+import { profileNotFound, sourceFor } from './config.js';
 import { adapterFor } from './adapters/index.js';
 
 export interface SyncResult {
@@ -277,7 +277,7 @@ function reclaimable(path: string, stat: Stats): boolean {
 export function syncProfile(config: AimuxConfig, profileName: string): SyncResult {
   const profile = config.profiles[profileName];
   if (!profile) {
-    throw new Error(`Profile '${profileName}' not found`);
+    throw profileNotFound(config, profileName);
   }
   if (profile.is_source) {
     return {
@@ -481,7 +481,7 @@ export function syncAllProfiles(config: AimuxConfig): Map<string, SyncResult> {
 export function checkProfileHealth(config: AimuxConfig, profileName: string): HealthReport {
   const profile = config.profiles[profileName];
   if (!profile) {
-    throw new Error(`Profile '${profileName}' not found`);
+    throw profileNotFound(config, profileName);
   }
 
   const report: HealthReport = {

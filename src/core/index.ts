@@ -4,6 +4,7 @@ export {
   createDefaultConfig,
   addProfile,
   removeProfile,
+  profileNotFound,
   getProfile,
   getSourceProfile,
   sourceFor,

@@ -127,6 +127,18 @@ describe('summarizeUsage', () => {
     expect(work.outputTokens).toBe(5);
   });
 
+  it('does not count the notices Claude Code writes itself as requests', () => {
+    // A spent limit or an API error lands in the transcript as a `<synthetic>` record.
+    writeProfileSession('work', 'session-a', 1000);
+    const notice = assistantLine('session-a', 'req-2', { input_tokens: 0, output_tokens: 0 });
+    notice.message.model = '<synthetic>';
+    writeTranscript('-tmp-project', 'session-a', [assistantLine('session-a', 'req-1', { input_tokens: 10 }), notice]);
+
+    const work = summarizeUsage(makeConfig()).find((s) => s.profile === 'work')!;
+    expect(work.requests).toBe(1);
+    expect([...work.models.keys()]).toEqual(['claude-opus-4-7']);
+  });
+
   it('deduplicates forked sessions that share a requestId', () => {
     writeProfileSessions('work', [
       { sessionId: 'session-original', modified: 1000 },

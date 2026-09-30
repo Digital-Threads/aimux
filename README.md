@@ -163,7 +163,7 @@ works inside `aimux split` panes too.
 |---------|-------------|
 | `aimux init` | Auto-detect Claude dirs, create config, migrate profiles |
 | `aimux init --source <path>` | Initialize with explicit source directory |
-| `aimux status` | TUI dashboard — profiles, auth, live 5h/7d limit usage and reset times (claude + codex), auto-mode posture, symlink health |
+| `aimux status` | TUI dashboard — profiles, auth, live 5h/7d limit usage and reset times (claude + codex), auto-mode rules when any are set, symlink health |
 | `aimux status --no-limits` | Same dashboard without the rate-limit probe (offline / faster) |
 | `aimux usage` | Show token usage by profile (Claude transcripts + codex rollouts), including sessions started outside aimux |
 | `aimux usage --profile work --since 24h` | Show usage for one profile over a recent window |
