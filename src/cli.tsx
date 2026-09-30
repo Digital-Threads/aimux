@@ -736,18 +736,20 @@ program
       .argument('<name>', 'Profile name')
       .option('-m, --model <model>', 'Set default model')
       .option('--fallback-model <model>', 'Set fallback model (used when primary is overloaded/unavailable)')
+      .option('--unset-model', 'Remove the default model, so the CLI picks its own (newest) default')
       .option('--unset-fallback-model', 'Remove the fallback model')
       .option('--cli <cli>', 'Set CLI command')
       .option('-e, --env <KEY=VALUE>', 'Set an env var in the profile .env file (repeatable)', collectRepeatable, [])
       .option('--unset-env <KEY>', 'Remove an env var from the profile .env file (repeatable)', collectRepeatable, [])
       .description('Update profile settings')
-      .action((name: string, options: { model?: string; fallbackModel?: string; unsetFallbackModel?: boolean; cli?: string; env: string[]; unsetEnv: string[] }) => {
+      .action((name: string, options: { model?: string; unsetModel?: boolean; fallbackModel?: string; unsetFallbackModel?: boolean; cli?: string; env: string[]; unsetEnv: string[] }) => {
         try {
           const config = requireConfig();
           const resolved = resolveProfile(config, name);
           const profile = config.profiles[resolved];
           if (options.model) profile.model = options.model;
           if (options.fallbackModel) profile.fallback_model = options.fallbackModel;
+          if (options.unsetModel) delete profile.model;
           if (options.unsetFallbackModel) delete profile.fallback_model;
           if (options.cli) profile.cli = options.cli;
           config.profiles[resolved] = profile;

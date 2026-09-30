@@ -1,5 +1,7 @@
 import type { AimuxConfig } from '../types/index.js';
 import { buildRunParams } from './run.js';
+import { getProfile } from './config.js';
+import { adapterFor } from './adapters/index.js';
 
 export type SupportedShell = 'bash' | 'zsh' | 'fish';
 
@@ -32,7 +34,18 @@ export function parseShell(value: string | undefined, shellPath: string | undefi
  * plus any profile `.env` (ANTHROPIC_BASE_URL, tokens, model overrides).
  */
 export function buildSwitchEnv(config: AimuxConfig, profileName: string): Record<string, string> {
-  return buildRunParams(config, profileName).env;
+  const env = { ...buildRunParams(config, profileName).env };
+  const profile = getProfile(config, profileName);
+
+  // `run` passes the profile model as --model. A shell switch has no command line, so
+  // without this a plain `claude` afterwards ran on claude's own default — `run` and
+  // `use` of one profile could start different models. Applied after the profile's
+  // .env, the same precedence --model has over an ANTHROPIC_MODEL set there.
+  if (profile.model) {
+    Object.assign(env, adapterFor(profile.cli).modelEnv?.(profile.model));
+  }
+
+  return env;
 }
 
 /** Single-quote a value for POSIX shells, escaping embedded single quotes. */

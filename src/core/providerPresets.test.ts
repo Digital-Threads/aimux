@@ -16,9 +16,9 @@ describe('providerEnv', () => {
   it('maps base URL + model tiers from a preset', () => {
     const env = providerEnv(PROVIDER_PRESETS.deepseek);
     expect(env.ANTHROPIC_BASE_URL).toBe('https://api.deepseek.com/anthropic');
-    expect(env.ANTHROPIC_MODEL).toBe('deepseek-chat');
-    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('deepseek-reasoner');
-    expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('deepseek-chat');
+    expect(env.ANTHROPIC_MODEL).toBe('deepseek-flash');
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('deepseek-v4-pro');
+    expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('deepseek-flash');
     expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
   });
 

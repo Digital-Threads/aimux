@@ -15,6 +15,10 @@ export const claudeAdapter: CliAdapter = {
     return args;
   },
 
+  modelEnv(model) {
+    return { ANTHROPIC_MODEL: model };
+  },
+
   configDirEnv(profilePath, isSource): Record<string, string> {
     return isSource ? {} : { CLAUDE_CONFIG_DIR: profilePath };
   },

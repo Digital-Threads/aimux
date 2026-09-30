@@ -44,7 +44,7 @@ npm install -g aimux
 aimux init              # creates config with main profile
 aimux profile add work  # add a new profile
 aimux auth login work   # OAuth for the new account
-aimux profile update w -m claude-opus-4-6
+aimux profile update w -m 'opus[1m]'
 aimux run w
 ```
 
@@ -55,9 +55,9 @@ aimux profile add myapi --api
 # Configure API endpoint (leave blank to use default):
 #   Base URL:                          https://api.your-provider.com/v1
 #   Auth token:                        [hidden]
-#   Default model [claude-sonnet-4-6]:
-#   Opus model    [claude-opus-4-6]:
-#   Sonnet model  [claude-sonnet-4-6]:
+#   Default model [claude-sonnet-5-5]:
+#   Opus model    [claude-opus-5-5]:
+#   Sonnet model  [claude-sonnet-5-5]:
 #   Haiku model   [claude-haiku-4-5]:
 # ✓ Credentials saved to ~/.aimux/profiles/myapi/.env (chmod 600)
 aimux run myapi
@@ -81,19 +81,23 @@ aimux auth login work
 ```bash
 aimux run               # interactive picker (↑↓ + Enter)
 aimux run w             # prefix match → work
-aimux run o -m claude-sonnet-4-6  # one-time model override
+aimux run o -m claude-sonnet-5-5  # one-time model override
 aimux run w --resume    # flags pass through to Claude CLI
 aimux run --auto        # launch whichever subscription has the most headroom left
 aimux status            # dashboard
 aimux usage             # token usage by profile for the last 7 days
 aimux usage --all       # all known transcript usage
 
-# Set default model per profile (quote model names with special chars)
-aimux profile update w -m claude-opus-4-6
-aimux profile update o -m "claude-opus-4-6[1m]"
+# Set a default model per profile. Prefer a family alias: `opus[1m]` always means the
+# newest Opus, so a new release is picked up without touching aimux. A full id such
+# as `claude-opus-5-5` pins that exact version until you change it. Quote names with
+# brackets, or the shell will try to expand them.
+aimux profile update w -m 'opus[1m]'
+aimux profile update w -m claude-opus-5-5   # pin one version
+aimux profile update w --unset-model        # let the CLI choose its own default
 
 # Set a fallback model, tried automatically when the primary is overloaded/unavailable
-aimux profile update w --fallback-model claude-sonnet-4-6
+aimux profile update w --fallback-model claude-sonnet-5-5
 aimux profile update w --unset-fallback-model   # remove it
 ```
 
@@ -112,7 +116,7 @@ Then:
 
 ```bash
 aimux use work     # activate 'work' in this shell (persistent until you switch)
-claude             # runs under 'work' — no `aimux run` needed
+claude             # runs under 'work', on its model — no `aimux run` needed
 codex              # same; the CLI adapter sets CODEX_HOME for you
 aimux use api      # switch profiles — stale ANTHROPIC_*/tokens are cleaned up
 aimux use          # no name → interactive picker
@@ -135,7 +139,7 @@ never changes global state. `aimux run` still works for one-off launches.
 | `aimux run [profile]` | Launch AI CLI with correct env and model |
 | `aimux run` | Interactive picker — history pre-selects last used profile |
 | `aimux run w` | Prefix matching — launches `work` if unambiguous |
-| `aimux run work -m claude-sonnet-4-6` | Launch with model override |
+| `aimux run work -m claude-sonnet-5-5` | Launch with model override |
 | `aimux run --auto` | Probe every subscription's live limits and launch the one with the most headroom (stays within the same CLI) |
 | `aimux use [profile]` | Switch the current shell to a profile (persistent) — plain `claude`/`codex` then use it. Requires `eval "$(aimux shell-init)"` in your rc |
 | `aimux shell-init` | Print the shell function that enables `aimux use` (add to `~/.zshrc`/`~/.bashrc`/fish config) |
@@ -146,6 +150,7 @@ never changes global state. `aimux run` still works for one-off launches.
 | `aimux handoff <sessionId> --to <profile>` | Continue a session under another profile/CLI via summary handoff |
 | `aimux profile update <name>` | Update model/cli settings |
 | `aimux profile update <name> --fallback-model <model>` | Set a fallback model, used when the primary is overloaded/unavailable |
+| `aimux profile update <name> --unset-model` | Remove the default model, so the CLI uses its own (newest) default |
 | `aimux profile update <name> --unset-fallback-model` | Remove the fallback model |
 | `aimux profile update <name> -e KEY=VALUE` | Set an env var in the profile `.env` file |
 | `aimux profile update <name> --unset-env KEY` | Remove an env var from the profile `.env` file |
@@ -279,7 +284,7 @@ The fastest way to set up an API profile is the interactive prompt:
 
 ```bash
 aimux profile add myapi --api      # prompts for Base URL, hidden token, models
-aimux profile update myapi -e ANTHROPIC_MODEL=claude-opus-4-6   # edit later
+aimux profile update myapi -e ANTHROPIC_MODEL=claude-opus-5-5   # edit later
 ```
 
 …which writes something like:
@@ -288,9 +293,9 @@ aimux profile update myapi -e ANTHROPIC_MODEL=claude-opus-4-6   # edit later
 # ~/.aimux/profiles/myapi/.env — do not commit
 ANTHROPIC_BASE_URL=https://api.your-provider.com/v1
 ANTHROPIC_AUTH_TOKEN=sk-your-token...
-ANTHROPIC_MODEL=claude-sonnet-4-6
-ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-6
-ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-4-6
+ANTHROPIC_MODEL=claude-sonnet-5-5
+ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-5-5
+ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-5-5
 ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4-5
 ```
 
@@ -310,15 +315,15 @@ profiles:
     is_source: true
   work:
     cli: claude
-    model: claude-opus-4-6
+    model: opus[1m]            # follows the newest Opus
     path: /home/user/.aimux/profiles/work
   myapi:
     cli: claude
-    model: claude-sonnet-4-6
+    model: claude-sonnet-5-5
     path: /home/user/.aimux/profiles/myapi   # secrets live in this dir's .env
     # Optional non-secret env injected into the spawned CLI (overrides .env).
     # env:
-    #   ANTHROPIC_DEFAULT_OPUS_MODEL: claude-opus-4-6
+    #   ANTHROPIC_DEFAULT_OPUS_MODEL: claude-opus-5-5
 
 private:
   - .credentials.json

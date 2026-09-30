@@ -8,9 +8,9 @@ import { parseDotenv } from './run.js';
  * accepts the default by entering nothing.
  */
 export const API_MODEL_DEFAULTS = {
-  ANTHROPIC_MODEL: 'claude-sonnet-4-6',
-  ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-opus-4-6',
-  ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-4-6',
+  ANTHROPIC_MODEL: 'claude-sonnet-5-5',
+  ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-opus-5-5',
+  ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-5-5',
   ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5',
 } as const;
 
@@ -33,7 +33,9 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
   deepseek: {
     label: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com/anthropic',
-    models: { default: 'deepseek-chat', opus: 'deepseek-reasoner' },
+    // `deepseek-chat` / `deepseek-reasoner` are gone; `deepseek-v4-flash` is a retired
+    // alias DeepSeek now serves with `deepseek-flash`.
+    models: { default: 'deepseek-flash', opus: 'deepseek-v4-pro' },
   },
   kimi: {
     label: 'Kimi (Moonshot)',

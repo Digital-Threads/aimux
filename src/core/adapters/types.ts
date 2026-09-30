@@ -22,6 +22,11 @@ export interface CliAdapter {
    *  Optional — when absent the base dir is used unchanged. */
   configPathFor?(baseDir: string): string;
 
+  /** Env that selects a model, for launches with no command line to carry the model
+   *  flag (`aimux use` + a plain CLI call). Optional — absent when the CLI reads its
+   *  model from nowhere but flags and its own config. */
+  modelEnv?(model: string): Record<string, string>;
+
   /** Whether the first passthrough arg is a CLI subcommand (suppresses model flags). */
   isSubcommand(firstArg: string | undefined): boolean;
 

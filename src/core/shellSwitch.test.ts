@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { detectShell, parseShell, renderShellExports, renderShellInit } from './shellSwitch.js';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import type { AimuxConfig, ProfileConfig } from '../types/index.js';
+import { buildSwitchEnv, detectShell, parseShell, renderShellExports, renderShellInit } from './shellSwitch.js';
 
 describe('detectShell', () => {
   it('detects zsh, fish, and falls back to bash', () => {
@@ -104,5 +108,39 @@ describe('renderShellInit', () => {
     expect(out).toContain('function aimux');
     expect(out).toContain('--export --shell fish');
     expect(out).toContain('command aimux $argv');
+  });
+});
+
+describe('buildSwitchEnv carries the profile model', () => {
+  // `aimux run` hands the model over as --model. `aimux use` has no command line to
+  // put it on, so a plain `claude` afterwards ran on claude's own default — `run pl`
+  // and `use pl` + `claude` could start two different models.
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'aimux-use-model-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  const config = (profile: Partial<ProfileConfig>): AimuxConfig => ({
+    version: 1,
+    shared_source: join(dir, 'src'),
+    profiles: { p: { cli: 'claude', path: join(dir, 'p'), ...profile } },
+    private: [],
+  });
+
+  it('exports ANTHROPIC_MODEL for a claude profile that sets a model', () => {
+    expect(buildSwitchEnv(config({ model: 'opus[1m]' }), 'p').ANTHROPIC_MODEL).toBe('opus[1m]');
+  });
+
+  it('leaves ANTHROPIC_MODEL unset when the profile sets none, so claude uses its default', () => {
+    expect(buildSwitchEnv(config({}), 'p')).not.toHaveProperty('ANTHROPIC_MODEL');
+  });
+
+  it('lets the profile model win over one in the profile .env, as --model does for run', () => {
+    mkdirSync(join(dir, 'p'), { recursive: true });
+    writeFileSync(join(dir, 'p', '.env'), 'ANTHROPIC_MODEL=from-dotenv\n');
+    expect(buildSwitchEnv(config({ model: 'opus[1m]' }), 'p').ANTHROPIC_MODEL).toBe('opus[1m]');
+  });
+
+  it('does not export ANTHROPIC_MODEL for a codex profile, which claude settings do not steer', () => {
+    expect(buildSwitchEnv(config({ cli: 'codex', model: 'gpt-6.1-sol' }), 'p')).not.toHaveProperty('ANTHROPIC_MODEL');
   });
 });

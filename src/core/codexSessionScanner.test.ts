@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { scanCodexInteractive } from './codexSessionScanner.js';
@@ -73,10 +73,14 @@ describe('scanCodexInteractive', () => {
   it('honors the scan window when a clock is provided', () => {
     const day = 86_400_000;
     const now = Date.parse('2026-06-18T12:00:00.000Z');
-    rollout(join(SRC, 'sessions', '2026', '06', '18'), 'rollout-2026-06-18T11-00-00-11111111-1111-1111-1111-111111111111.jsonl', [
+    const dir = join(SRC, 'sessions', '2026', '06', '18');
+    const file = 'rollout-2026-06-18T11-00-00-11111111-1111-1111-1111-111111111111.jsonl';
+    rollout(dir, file, [
       { timestamp: '2026-06-18T11:00:00.000Z', type: 'session_meta', payload: { id: '11111111-1111-1111-1111-111111111111', cwd: '/y' } },
     ]);
-    // windowDays=0.0001 → cutoff ~8.6s ago; the file's mtime is "now" so it stays in window.
+    // Pin the file's mtime to the test clock. Left at the real "now", the check below
+    // only held until 100 days after 2026-06-18 — the test expired on its own.
+    utimesSync(join(dir, file), now / 1000, now / 1000);
     const recent = scanCodexInteractive(SRC, { now, windowDays: 1 });
     expect(recent).toHaveLength(1);
     // A 100-day window cutoff in the FUTURE relative to mtime would exclude it.

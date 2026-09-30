@@ -4,6 +4,46 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.28.0] - 2026-09-30
+
+### Fixed
+- **`aimux usage` overstated cost several times over.** Any model missing from the
+  price table fell back to the Opus 4.1 rate of $15/$75 per million tokens, and so did
+  Opus 4.6–4.8, which have cost $5/$25 since Opus 4.5. Opus 5.5 ($4/$20) was priced
+  almost 4× too high, Sonnet 5 and 5.5 ($2/$10) 1.5× too high, and codex's GPT-6 models
+  had no price at all and counted as $0. Prices are now taken from the providers' own
+  pages (checked 2026-09-30) for Opus 4.5–5.5, Sonnet 4–5.5, Fable 5 and 5.1, Haiku 4.5,
+  GPT-6.1 Sol / 6 Sol / Luna / Astra, GPT-5.6, and DeepSeek Flash and V4 Pro. Cache
+  reads are now priced per model — Opus 5.5 reads its cache at 0.05× input, not the
+  0.1× the table used to assume. On a real week of Opus 5 / 5.5 use the estimate fell
+  from $8,719 to $2,333.
+  - DeepSeek is priced at its off-peak rate; peak doubles it, but only on weekday
+    mornings UTC, about a fifth of the week.
+- **`aimux use` now carries the profile's model.** `aimux run` passes it as `--model`,
+  but a shell switch has no command line, so a plain `claude` afterwards ran on
+  claude's own default: `aimux run pl` and `aimux use pl` + `claude` could start
+  different models. The model is exported as `ANTHROPIC_MODEL`, taking precedence over
+  one in the profile's `.env` the same way `--model` does, and is cleared on the next
+  switch like every other managed variable. codex reads its model from flags and its
+  own config only, so codex profiles are unchanged.
+- **API-profile defaults and the DeepSeek preset named retired models.** Blank model
+  prompts in `aimux profile add --api` defaulted to `claude-opus-4-6` /
+  `claude-sonnet-4-6`; they now default to `claude-opus-5-5` / `claude-sonnet-5-5`.
+  The DeepSeek preset used `deepseek-chat` / `deepseek-reasoner`, which DeepSeek no
+  longer lists; it now uses `deepseek-flash` and `deepseek-v4-pro`.
+- A codex scanner test asserted a date window relative to the real clock and expired
+  on its own 100 days after it was written; it now pins the file time to the test clock.
+
+### Added
+- **`aimux profile update <name> --unset-model`** removes a profile's pinned model so the
+  CLI picks its own default. Previously the only way was editing `config.yaml` by hand.
+
+### Changed
+- The README now recommends a family alias such as `opus[1m]` for a profile's model.
+  A full id like `claude-opus-5` pins that version: when Opus 5.5 became Claude Code's
+  default, profiles pinned to Opus 5 stayed on it, which read as "the new model does
+  not switch on".
+
 ## [0.27.0] - 2026-09-24
 
 ### Fixed

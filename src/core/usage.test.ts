@@ -206,8 +206,9 @@ describe('summarizeUsage', () => {
     ]);
 
     const work = summarizeUsage(makeConfig()).find((s) => s.profile === 'work')!;
-    // assistantLine() uses model claude-opus-4-7 = $15 in + $75 out per 1M.
-    expect(work.estimatedCostUsd).toBeCloseTo(90, 6);
+    // assistantLine() uses model claude-opus-4-7 = $5 in + $25 out per 1M (list price
+    // since Opus 4.5; the $15/$75 this used to assert was Opus 4.1's).
+    expect(work.estimatedCostUsd).toBeCloseTo(30, 6);
   });
 
   it('prefers transcript cost over the price-table estimate when present', () => {
