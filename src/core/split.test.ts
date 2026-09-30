@@ -31,7 +31,17 @@ describe('openSplit', () => {
     expect(verbs[0]).toBe('new-session');
     expect(t.calls[0]).toContain('aimux run dt');
     expect(t.calls.filter((c) => c[0] === 'split-window').map((c) => c.at(-1))).toEqual(['aimux run pl', 'aimux run plat']);
-    expect(t.attached).toEqual([['attach-session', '-t', 'aimux-x']]);
+    expect(t.attached).toEqual([
+      ['attach-session', '-t', 'aimux-x', ';', 'set-option', '-t', 'aimux-x', 'destroy-unattached', 'on'],
+    ]);
+  });
+
+  it('ends its session when the window closes, like any other terminal', () => {
+    // Set only once attached: tmux destroys an unattached session with the option at once.
+    const t = fakeTmux();
+    openSplit({ profiles: ['dt'], cwd: '/work', command: run, insideTmux: false, sessionName: 's' }, t.deps);
+    expect(t.calls.some((c) => c.includes('destroy-unattached'))).toBe(false);
+    expect(t.attached[0].slice(-2)).toEqual(['destroy-unattached', 'on']);
   });
 
   it('labels every pane with its subscription, so you can tell them apart', () => {

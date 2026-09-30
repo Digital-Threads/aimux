@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.31.0] - 2026-09-30
+
+### Changed
+- **Closing the `aimux split` window ends its panes, as in any terminal.** The tmux
+  session it opened used to live on in the background after the window closed, with
+  every claude in it still running. It now ends with its window, and so does detaching
+  from it (`Ctrl-b d`). The conversations are saved as always — `aimux run <profile>
+  --resume` picks one up again. A split opened from inside your own tmux is unchanged:
+  that window is yours to manage.
+
 ## [0.30.0] - 2026-09-30
 
 ### Changed

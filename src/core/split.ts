@@ -74,5 +74,13 @@ export function openSplit(opts: SplitOptions, deps: SplitDeps): void {
     throw err;
   }
 
-  if (!opts.insideTmux) deps.attach(['attach-session', '-t', opts.sessionName]);
+  // A session of its own ends when its window closes, like any other terminal, instead
+  // of living on in the background. The option is set only once attached: tmux destroys
+  // an unattached session with it at once. Inside tmux the window is the user's to manage.
+  if (!opts.insideTmux) {
+    deps.attach([
+      'attach-session', '-t', opts.sessionName,
+      ';', 'set-option', '-t', opts.sessionName, 'destroy-unattached', 'on',
+    ]);
+  }
 }

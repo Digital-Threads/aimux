@@ -137,9 +137,11 @@ aimux split work client  # just these two
 ```
 
 Each pane runs a full `aimux run <profile>`, labelled with its profile on the pane
-border; a pane whose run fails stays open with its error. Inside tmux it opens a new
-window instead of nesting tmux. Needs tmux (`sudo apt install tmux`, or
-`brew install tmux`).
+border; a pane whose run fails stays open with its error. Closing the window ends the
+panes, as in any terminal — the conversations are saved, and `aimux run <profile>
+--resume` picks one up again. Inside tmux it opens a new window instead of nesting
+tmux, and that window is yours to keep or close. Needs tmux (`sudo apt install tmux`,
+or `brew install tmux`).
 
 ### When a subscription runs out mid-session
 
