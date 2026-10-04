@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.32.4] - 2026-10-04
+
+### Fixed
+- A subscription could show `–` for up to five minutes after one failed check — a busy
+  API or a dropped connection at the moment its limits were read. A check that fails
+  fast for any reason but a stale login is now made once more right away.
+
 ## [0.32.3] - 2026-10-04
 
 ### Changed

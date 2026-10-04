@@ -345,17 +345,28 @@ export async function fetchRateLimits(
     return { status: null };
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 5000);
-  try {
-    return cli === 'codex'
-      ? await fetchCodexLimits(profilePath, controller.signal)
-      : await fetchClaudeLimits(profilePath, profile.is_source === true, controller.signal);
-  } catch {
-    return { status: null, error: 'unavailable' };
-  } finally {
-    clearTimeout(timer);
-  }
+  const attempt = async (): Promise<RateLimitProbe> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 5000);
+    try {
+      return cli === 'codex'
+        ? await fetchCodexLimits(profilePath, controller.signal)
+        : await fetchClaudeLimits(profilePath, profile.is_source === true, controller.signal);
+    } catch {
+      return { status: null, error: 'unavailable' };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  // A busy API or a dropped connection answers differently a moment later, and the
+  // figures are shown for minutes: worth one more try. A stale login is not, and
+  // neither is a request that already waited out its whole timeout.
+  const startedAt = Date.now();
+  const first = await attempt();
+  const failedFast = first.error === 'unavailable' && Date.now() - startedAt < 2000;
+
+  return failedFast ? attempt() : first;
 }
 
 /** What `aimux status --json` prints: every subscription's windows and when they were read. */

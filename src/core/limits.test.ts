@@ -447,15 +447,63 @@ describe('fetchRateLimits — codex', () => {
   });
 
   it('gives up after a few refusals in a row', async () => {
-    const calls = answers(403, 403, 403, 403, 403, 200);
+    // Five tries a beat apart, and the whole round once more.
+    const calls = answers(...Array<number>(10).fill(403), 200);
     const probe = await fetchRateLimits({ cli: 'codex', path: dir }, dir);
     expect(probe).toEqual({ status: null, error: 'unavailable' });
-    expect(calls).toHaveLength(5);
+    expect(calls).toHaveLength(10);
   });
 
   it('does not retry a stale login', async () => {
     const calls = answers(401, 200);
     expect(await fetchRateLimits({ cli: 'codex', path: dir }, dir)).toEqual({ status: null, error: 'auth' });
     expect(calls).toEqual([401]);
+  });
+});
+
+describe('fetchRateLimits — a passing failure', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'aimux-claude-probe-'));
+    writeFileSync(join(dir, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 't' } }));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const windows = { 'anthropic-ratelimit-unified-5h-utilization': '0.09', 'anthropic-ratelimit-unified-7d-utilization': '0.08' };
+  const profile = { cli: 'claude' as const, path: '' };
+
+  it('asks once more when the API was busy, instead of showing no figures for minutes', async () => {
+    let calls = 0;
+    vi.stubGlobal('fetch', async () => (++calls === 1
+      ? new Response('overloaded', { status: 529 })
+      : new Response('{}', { status: 200, headers: windows })));
+
+    const probe = await fetchRateLimits(profile, dir);
+    expect(probe.status).toMatchObject({ fiveHourPct: 9, weeklyPct: 8 });
+    expect(calls).toBe(2);
+  });
+
+  it('asks once more after a dropped connection too', async () => {
+    let calls = 0;
+    vi.stubGlobal('fetch', async () => {
+      if (++calls === 1) throw new TypeError('fetch failed');
+      return new Response('{}', { status: 200, headers: windows });
+    });
+
+    expect((await fetchRateLimits(profile, dir)).status?.weeklyPct).toBe(8);
+  });
+
+  it('does not ask again about a stale login', async () => {
+    let calls = 0;
+    vi.stubGlobal('fetch', async () => {
+      calls++;
+      return new Response('unauthorized', { status: 401 });
+    });
+
+    expect(await fetchRateLimits(profile, dir)).toEqual({ status: null, error: 'auth' });
+    expect(calls).toBe(1);
   });
 });
