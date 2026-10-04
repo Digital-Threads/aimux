@@ -60,18 +60,27 @@ export function resetsIn(resetsAt: string | undefined, now: number): string {
   return ` (resets in ${text})`;
 }
 
+/**
+ * `▸main 5h:10% 7d:4% · dt 5h:7% 7d:41% · cx 7d:31%` — each window named, as claude's
+ * own status line names them; one a subscription does not have is left out.
+ */
 export function statusLine(current: string, others: Record<string, Probe>, live: Usage | undefined): string {
   const names = current in others ? Object.keys(others) : [current, ...Object.keys(others)];
 
   const cells = names.map((name) => {
-    const mark = name === current ? '▸' : '';
-    const usage = name === current && live ? live : others[name]?.status;
-    if (usage) return `${mark}${name} ${pct(usage.fiveHourPct)}/${pct(usage.weeklyPct)}`;
+    const label = name === current ? `▸${name}` : name;
+    if (others[name]?.error === 'auth') return `${label}: login expired`;
 
-    return `${mark}${name} ${others[name]?.error === 'auth' ? 'login?' : '–'}`;
+    const usage = name === current && live ? live : others[name]?.status;
+    const windows = [
+      usage?.fiveHourPct != null ? `5h:${usage.fiveHourPct}%` : '',
+      usage?.weeklyPct != null ? `7d:${usage.weeklyPct}%` : '',
+    ].filter(Boolean);
+
+    return windows.length > 0 ? `${label} ${windows.join(' ')}` : `${label} –`;
   });
 
-  return `5h/7d %  ${cells.join(' · ')}`;
+  return cells.join(' · ');
 }
 
 export function warning(current: string, window: SessionRateLimit, others: Record<string, Probe>, own: number, now: number): string {

@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.32.1] - 2026-10-04
+
+### Changed
+- The Claude Code status line names each window: `▸main 5h:10% 7d:4% · dt 5h:7% 7d:41%`
+  instead of `▸main 10/4 · dt 7/41`, which did not say what the numbers were. It now
+  reads like claude's own status line; a window a subscription does not have (codex's
+  5-hour one) is left out, and a stale login says `login expired`.
+
 ## [0.32.0] - 2026-10-04
 
 ### Added

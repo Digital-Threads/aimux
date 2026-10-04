@@ -75,7 +75,7 @@ describe('aimux mod', () => {
 
     await clock.settle();
     expect(seen.runs).toEqual([['node', '/aimux/dist/cli.js', 'status', '--json', '--max-age', '240']]);
-    expect(seen.statuses.at(-1)).toBe('5h/7d %  ▸dt 48/12 · main 13/17 · busy 5/100 · cx –/25 · old login?');
+    expect(seen.statuses.at(-1)).toBe('▸dt 5h:48% 7d:12% · main 5h:13% 7d:17% · busy 5h:5% 7d:100% · cx 7d:25% · old: login expired');
   });
 
   test('takes this session\'s own figures from its responses', async ($, on) => {
@@ -85,7 +85,7 @@ describe('aimux mod', () => {
     await clock.settle();
 
     await $.session.measure(measure([{ kind: 'five_hour', percentUsed: 61.4 }, { kind: 'seven_day', percentUsed: 14 }]));
-    expect(seen.statuses.at(-1)).toContain('▸dt 61/14 · main 13/17');
+    expect(seen.statuses.at(-1)).toContain('▸dt 5h:61% 7d:14% · main 5h:13% 7d:17%');
   });
 
   test('asks aimux again only once the figures are five minutes old', async ($, on) => {

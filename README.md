@@ -165,7 +165,7 @@ A claude session started with `aimux run` — or in an `aimux split` pane — sh
 subscription on its status line, the one it runs on marked:
 
 ```
-aimux: 5h/7d %  personal 3/2 · ▸work 4/41 · codex – · client 4/1
+aimux: personal 5h:3% 7d:2% · ▸work 5h:4% 7d:41% · codex 7d:31% · client 5h:4% 7d:1%
 ```
 
 The marked one updates with every reply. When it passes 90% of a window, a notice says
