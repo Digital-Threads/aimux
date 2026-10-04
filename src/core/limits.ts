@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ProfileConfig } from '../types/index.js';
+import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 import { loadProfileEnv } from './run.js';
-import { expandHome } from './paths.js';
+import { expandHome, getAimuxDir } from './paths.js';
 import { adapterFor } from './adapters/index.js';
 
 /** Live subscription rate-limit windows, as whole-percent utilization.
@@ -347,4 +347,54 @@ export async function fetchRateLimits(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** What `aimux status --json` prints: every subscription's windows and when they were read. */
+export interface LimitsSnapshot {
+  fetchedAt: number;
+  profiles: Record<string, RateLimitProbe & { cli: string }>;
+}
+
+/**
+ * Every subscription's windows, read now — or, within `maxAgeMs`, the last reading.
+ *
+ * Each probe is a request per subscription, and every claude session the Claude Code
+ * mod runs in asks for these figures; the shared file under ~/.aimux keeps a dozen
+ * open sessions to one probe every few minutes.
+ */
+export async function limitsSnapshot(
+  config: AimuxConfig,
+  maxAgeMs: number,
+  now: number = Date.now(),
+  probe: (profile: ProfileConfig, profilePath: string) => Promise<RateLimitProbe> = fetchRateLimits,
+): Promise<LimitsSnapshot> {
+  const cachePath = join(getAimuxDir(), 'limits-cache.json');
+
+  if (maxAgeMs > 0) {
+    try {
+      const cached = JSON.parse(readFileSync(cachePath, 'utf-8')) as LimitsSnapshot;
+      // Only a reading of the same subscriptions: one added or removed since is news.
+      const sameProfiles = Object.keys(cached.profiles).sort().join() === rateLimitProfiles(config.profiles).sort().join();
+      if (sameProfiles && cached.fetchedAt <= now && now - cached.fetchedAt < maxAgeMs) return cached;
+    } catch {
+      // no reading yet, or a broken one: probe
+    }
+  }
+
+  const profiles = Object.fromEntries(await Promise.all(rateLimitProfiles(config.profiles).map(async (name) => {
+    const p = config.profiles[name];
+    return [name, { cli: p.cli ?? 'claude', ...(await probe(p, expandHome(p.path))) }] as const;
+  })));
+  const snapshot: LimitsSnapshot = { fetchedAt: now, profiles };
+
+  // Written aside and renamed, so a session reading it never sees half a file.
+  try {
+    const tmp = `${cachePath}.${process.pid}`;
+    writeFileSync(tmp, JSON.stringify(snapshot));
+    renameSync(tmp, cachePath);
+  } catch {
+    // an unwritable ~/.aimux costs only the sharing
+  }
+
+  return snapshot;
 }

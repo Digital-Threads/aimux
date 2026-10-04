@@ -159,13 +159,31 @@ aimux reads the hit from the session's own transcript, so an ordinary exit costs
 nothing; the other subscriptions are only checked when a limit was actually reached. It
 works inside `aimux split` panes too.
 
+### Every subscription's usage inside Claude Code
+
+A claude session started with `aimux run` — or in an `aimux split` pane — shows every
+subscription on its status line, the one it runs on marked:
+
+```
+aimux: 5h/7d %  personal 3/2 · ▸work 4/41 · codex – · client 4/1
+```
+
+The marked one updates with every reply. When it passes 90% of a window, a notice
+names the subscription with the most room left, before the limit stops the session.
+The others are refreshed at most every five minutes, and only while you work: an idle
+session sends nothing, and all open sessions share one reading.
+
+It is a Claude Code mod (Claude Code 2.1.287 or newer), loaded only into the sessions
+aimux starts; `AIMUX_NO_MOD=1` turns it off. The same figures are available to scripts
+as `aimux status --json`.
+
 ## Commands
 
 | Command | Description |
 |---------|-------------|
 | `aimux init` | Auto-detect Claude dirs, create config, migrate profiles |
 | `aimux init --source <path>` | Initialize with explicit source directory |
-| `aimux status` | TUI dashboard — profiles, auth, live 5h/7d limit usage and reset times (claude + codex), auto-mode rules when any are set, symlink health |
+| `aimux status` | TUI dashboard — profiles, auth, live 5h/7d limit usage and reset times (claude + codex), auto-mode rules when any are set, symlink health. `--json` prints the limits for scripts; `--max-age <s>` reuses a reading that recent |
 | `aimux status --no-limits` | Same dashboard without the rate-limit probe (offline / faster) |
 | `aimux usage` | Show token usage by profile (Claude transcripts + codex rollouts), including sessions started outside aimux |
 | `aimux usage --profile work --since 24h` | Show usage for one profile over a recent window |

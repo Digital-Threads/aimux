@@ -1,0 +1,5 @@
+{
+  "name": "aimux",
+  "description": "Every aimux subscription's 5-hour and weekly usage on the status line, and a warning before this one runs out",
+  "author": { "name": "Digital Threads", "url": "https://github.com/Digital-Threads/aimux" }
+}

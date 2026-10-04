@@ -16,7 +16,7 @@ import {
   summarizeUsage, parseSinceDuration, totalTokens,
   loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedClaudeOnboarding, confirm,
   parseShell, buildSwitchEnv, renderShellExports, renderShellInit,
-  fetchRateLimits, rateLimitProfiles, pickFreestProfile,
+  fetchRateLimits, rateLimitProfiles, pickFreestProfile, limitsSnapshot,
   planContinuation, formatResetAt, openSplit, posixQuote, baseEnvFor,
   continuationArgs, sessionIdFromArgs, followProcessSession, keepOpenOnFailure,
 } from './core/index.js';
@@ -99,6 +99,9 @@ function resolveProfile(config: AimuxConfig, input: string): string {
   process.exit(1);
 }
 
+/** The Claude Code mod shipped beside dist/ (see mod/hooks/register.ts). */
+const MOD_DIR = fileURLToPath(new URL('../mod', import.meta.url));
+
 function getCliVersion(): string {
   try {
     const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url));
@@ -171,10 +174,23 @@ program
   .helpGroup('Everyday:')
   .description('Show overview of profiles and shared source')
   .option('--no-limits', 'Skip the live 5h/7d rate-limit probe (no network request)')
-  .action(async (options: { limits: boolean }) => {
+  .option('--json', 'Print every subscription\'s 5h/7d usage as JSON instead (for scripts)')
+  .option('--max-age <seconds>', 'With --json: reuse a reading this recent instead of probing again', '0')
+  .action(async (options: { limits: boolean; json?: boolean; maxAge: string }) => {
+    const config = requireConfig();
+    if (options.json) {
+      const maxAge = Number(options.maxAge);
+      if (!Number.isFinite(maxAge) || maxAge < 0) {
+        console.error(`--max-age takes a number of seconds, not '${options.maxAge}'`);
+        process.exit(1);
+      }
+
+      console.log(JSON.stringify(await limitsSnapshot(config, maxAge * 1000)));
+      return;
+    }
+
     const { render } = await import('ink');
     const { StatusView } = await import('./components/StatusView.js');
-    const config = requireConfig();
     render(<StatusView config={config} limits={await probeRateLimits(config, options.limits)} />);
   });
 
@@ -378,12 +394,20 @@ program
       // the process, which follows /clear and /resume, so a continuation never picks up a
       // session another terminal runs under the same profile. Without that record: the id
       // the args name, then (in planContinuation) the transcript this profile wrote last.
+      // The Claude Code mod (mod/): every subscription's usage on the status line, and a
+      // warning before this one runs out. Only in the interactive sessions aimux starts.
+      const withMod = continuable && !process.env.AIMUX_NO_MOD && !cliArgs.includes('--bare') && existsSync(MOD_DIR);
+
       const launch = async (profile: string, extraArgs: string[]) => {
         let follower: ReturnType<typeof followProcessSession> | undefined;
         const since = Date.now();
         const code = await launchProfile(config, profile, {
           model: options.model,
-          extraArgs,
+          extraArgs: withMod ? ['--plugin-dir', MOD_DIR, ...extraArgs] : extraArgs,
+          env: withMod
+            // execArgv too: under tsx (npm run dev) the loader flags are what run a .tsx entry
+            ? { AIMUX_RUN_PROFILE: profile, AIMUX_SELF: JSON.stringify([process.execPath, ...process.execArgv, process.argv[1]]) }
+            : undefined,
           onSpawn: continuable
             ? (pid) => { follower = followProcessSession(expandHome(config.profiles[profile].path), pid); }
             : undefined,

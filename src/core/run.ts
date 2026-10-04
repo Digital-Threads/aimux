@@ -11,6 +11,8 @@ export interface RunOptions {
   extraArgs?: string[];
   /** Called with the CLI's pid right after it starts (interactive launches only). */
   onSpawn?: (pid: number) => void;
+  /** Extra variables for this launch, over the profile's own. */
+  env?: Record<string, string>;
 }
 
 const ENV_LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/;
@@ -194,7 +196,7 @@ export function launchProfile(
   return new Promise((resolve, reject) => {
     const child = spawn(params.cli, params.args, {
       stdio: 'inherit',
-      env: { ...baseEnv, ...params.env },
+      env: { ...baseEnv, ...params.env, ...options.env },
     });
     if (child.pid !== undefined) options.onSpawn?.(child.pid);
 
@@ -244,7 +246,7 @@ export function runProfileHeadless(
   options: HeadlessOptions = {},
 ): Promise<HeadlessResult> {
   const params = buildRunParams(config, profileName, options);
-  const env: NodeJS.ProcessEnv = { ...baseEnvFor(getProfile(config, profileName), params.profilePath), ...params.env };
+  const env: NodeJS.ProcessEnv = { ...baseEnvFor(getProfile(config, profileName), params.profilePath), ...params.env, ...options.env };
   if (options.taskId) env.LOOM_TASK_ID = options.taskId;
   if (options.workflowId) env.LOOM_WORKFLOW_ID = options.workflowId;
 

@@ -1,6 +1,6 @@
 {
   "name": "@digital-threads/aimux",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "description": "Run multiple Claude Code, Codex and Gemini subscriptions side by side — shared skills, agents and memory, isolated logins, live 5h/7d limits in one view",
   "type": "module",
   "bin": {
@@ -47,7 +47,11 @@
     "node": ">=22"
   },
   "files": [
-    "dist"
+    "dist",
+    "mod",
+    "!mod/**/*.test.ts",
+    "!mod/tsconfig.json",
+    "!mod/.claude-plugin/types"
   ],
   "dependencies": {
     "commander": "^14.0.3",

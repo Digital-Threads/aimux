@@ -15,3 +15,7 @@ AGENTS.md
 .token-pilot-fingerprint.json
 .codex
 .docs/
+
+# Written by Claude Code each time it loads the mod
+mod/tsconfig.json
+mod/.claude-plugin/types/

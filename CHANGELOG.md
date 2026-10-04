@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.32.0] - 2026-10-04
+
+### Added
+- **Every subscription's usage inside Claude Code.** A claude session started with
+  `aimux run` (or in an `aimux split` pane) shows every subscription's 5-hour and weekly
+  usage on its status line, the one it runs on marked, and warns when that one passes
+  90% of a window — naming the subscription with the most room left — instead of
+  leaving you to find out when the limit stops the session. It is a Claude Code mod
+  (2.1.287 or newer) shipped in the package and loaded with `--plugin-dir` into the
+  interactive sessions aimux starts, nowhere else. The session's own figures come with
+  every reply; the others are refreshed at most every five minutes and only after a
+  turn, so an idle session sends nothing. `AIMUX_NO_MOD=1` turns it off.
+- **`aimux status --json`** prints every subscription's windows for scripts, and
+  `--max-age <seconds>` reuses a reading that recent: the reading is kept under
+  `~/.aimux`, so a dozen open sessions share one probe instead of each sending its own.
+
 ## [0.31.0] - 2026-09-30
 
 ### Changed

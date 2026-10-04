@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import type { ProfileConfig } from '../types/index.js';
-import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt, pickFreestProfile, keychainService, classifyProfile } from './limits.js';
+import type { AimuxConfig } from '../types/index.js';
+import { getAimuxDir, setAimuxDir } from './paths.js';
+import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt, pickFreestProfile, keychainService, classifyProfile, limitsSnapshot } from './limits.js';
 
 // Real header keys captured from a live HTTP 200 probe (see plan spike result).
 const REAL = {
@@ -307,5 +309,93 @@ describe('pickFreestProfile', () => {
     expect(pickFreestProfile(new Map())).toBeNull();
     // Both windows unknown is not the same as both windows free.
     expect(pickFreestProfile(new Map([['a', probe(null, null)]]))).toBeNull();
+  });
+});
+
+describe('limitsSnapshot', () => {
+  let root: string;
+  let originalAimuxDir: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'aimux-snapshot-'));
+    originalAimuxDir = getAimuxDir();
+    setAimuxDir(join(root, '.aimux'));
+    mkdirSync(join(root, '.aimux'), { recursive: true });
+  });
+  afterEach(() => {
+    setAimuxDir(originalAimuxDir);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  function config(): AimuxConfig {
+    for (const name of ['dt', 'cx']) mkdirSync(join(root, name), { recursive: true });
+    writeFileSync(join(root, 'dt', '.credentials.json'), '{}');
+    writeFileSync(join(root, 'cx', 'auth.json'), '{}');
+    return {
+      version: 1,
+      shared_source: join(root, 'src'),
+      private: [],
+      profiles: {
+        dt: { cli: 'claude', path: join(root, 'dt') },
+        cx: { cli: 'codex', path: join(root, 'cx') },
+      },
+    };
+  }
+
+  const counting = () => {
+    const probed: string[] = [];
+    const probe = async (_p: ProfileConfig, path: string) => {
+      probed.push(path.endsWith('dt') ? 'dt' : 'cx');
+      return { status: { fiveHourPct: 10, weeklyPct: 20 } };
+    };
+    return { probed, probe };
+  };
+
+  it('reads every subscription, with its CLI, and remembers when', async () => {
+    const { probe } = counting();
+    const snapshot = await limitsSnapshot(config(), 0, 1_000, probe);
+
+    expect(snapshot).toEqual({
+      fetchedAt: 1_000,
+      profiles: {
+        dt: { cli: 'claude', status: { fiveHourPct: 10, weeklyPct: 20 } },
+        cx: { cli: 'codex', status: { fiveHourPct: 10, weeklyPct: 20 } },
+      },
+    });
+    expect(JSON.parse(readFileSync(join(root, '.aimux', 'limits-cache.json'), 'utf-8'))).toEqual(snapshot);
+  });
+
+  it('shares one probe between callers while the figures are fresh enough', async () => {
+    // Every open claude session asks; only the first one in a while should probe.
+    const { probed, probe } = counting();
+    const cfg = config();
+
+    await limitsSnapshot(cfg, 240_000, 1_000, probe);
+    const again = await limitsSnapshot(cfg, 240_000, 200_000, probe);
+    expect(probed).toEqual(['dt', 'cx']);
+    expect(again.fetchedAt).toBe(1_000);
+
+    await limitsSnapshot(cfg, 240_000, 300_000, probe);
+    expect(probed).toHaveLength(4);
+  });
+
+  it('probes again when the subscriptions changed since the reading', async () => {
+    const { probed, probe } = counting();
+    const cfg = config();
+    await limitsSnapshot(cfg, 240_000, 1_000, probe);
+
+    delete cfg.profiles.cx;
+    const again = await limitsSnapshot(cfg, 240_000, 2_000, probe);
+    expect(Object.keys(again.profiles)).toEqual(['dt']);
+    expect(probed).toEqual(['dt', 'cx', 'dt']);
+  });
+
+  it('always probes when asked for no cache, and survives a broken one', async () => {
+    const { probed, probe } = counting();
+    const cfg = config();
+    writeFileSync(join(root, '.aimux', 'limits-cache.json'), '{"fetchedAt": 99');
+
+    await limitsSnapshot(cfg, 240_000, 100, probe);
+    await limitsSnapshot(cfg, 0, 101, probe);
+    expect(probed).toHaveLength(4);
   });
 });
