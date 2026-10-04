@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 import { loadProfileEnv } from './run.js';
@@ -369,19 +369,25 @@ export async function limitsSnapshot(
   probe: (profile: ProfileConfig, profilePath: string) => Promise<RateLimitProbe> = fetchRateLimits,
 ): Promise<LimitsSnapshot> {
   const cachePath = join(getAimuxDir(), 'limits-cache.json');
+  const names = rateLimitProfiles(config.profiles);
 
   if (maxAgeMs > 0) {
     try {
       const cached = JSON.parse(readFileSync(cachePath, 'utf-8')) as LimitsSnapshot;
-      // Only a reading of the same subscriptions: one added or removed since is news.
-      const sameProfiles = Object.keys(cached.profiles).sort().join() === rateLimitProfiles(config.profiles).sort().join();
-      if (sameProfiles && cached.fetchedAt <= now && now - cached.fetchedAt < maxAgeMs) return cached;
+      // Only a reading of the same subscriptions, with no login since: a profile added,
+      // removed or logged in again is news, and "login expired" must not outlive a login.
+      const sameProfiles = Object.keys(cached.profiles).sort().join() === [...names].sort().join();
+      const loggedInSince = names.some((name) => {
+        const p = config.profiles[name];
+        return statSync(join(expandHome(p.path), adapterFor(p.cli).credentialsFile())).mtimeMs > cached.fetchedAt;
+      });
+      if (sameProfiles && !loggedInSince && cached.fetchedAt <= now && now - cached.fetchedAt < maxAgeMs) return cached;
     } catch {
       // no reading yet, or a broken one: probe
     }
   }
 
-  const profiles = Object.fromEntries(await Promise.all(rateLimitProfiles(config.profiles).map(async (name) => {
+  const profiles = Object.fromEntries(await Promise.all(names.map(async (name) => {
     const p = config.profiles[name];
     return [name, { cli: p.cli ?? 'claude', ...(await probe(p, expandHome(p.path))) }] as const;
   })));

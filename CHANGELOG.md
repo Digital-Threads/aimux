@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.32.2] - 2026-10-04
+
+### Fixed
+- After logging in again, the Claude Code status line kept saying `login expired` for
+  that subscription for up to nine minutes — even in a session running on it. The
+  shared reading under `~/.aimux` is now taken again as soon as any subscription's login
+  changes, and the session's own subscription is never marked as needing a login:
+  the session running is proof enough.
+
 ## [0.32.1] - 2026-10-04
 
 ### Changed

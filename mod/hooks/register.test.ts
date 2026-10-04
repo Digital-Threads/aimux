@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from 'claude-code/testing';
 import type { On, SessionRateLimit } from 'claude-code';
+import { statusLine } from './register';
 
 const LIMITS = {
   fetchedAt: 0,
@@ -205,6 +206,13 @@ describe('aimux mod', () => {
 
     await $.command.run(EXIT);
     expect(seen.written).toEqual([]);
+  });
+
+  test('never says the session it runs in needs a login', () => {
+    // `old` read as expired before this session logged in; the session is the proof.
+    expect(statusLine('old', LIMITS.profiles, undefined)).toContain('▸old –');
+    expect(statusLine('old', LIMITS.profiles, { fiveHourPct: 3, weeklyPct: 1 })).toContain('▸old 5h:3% 7d:1%');
+    expect(statusLine('dt', LIMITS.profiles, undefined)).toContain('old: login expired');
   });
 
   test('stays silent in a session aimux did not launch', async ($, on) => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import type { ProfileConfig } from '../types/index.js';
@@ -341,6 +341,9 @@ describe('limitsSnapshot', () => {
     };
   }
 
+  // Later than the credentials the tests write, as a real reading always is.
+  const T = Date.now() + 60_000;
+
   const counting = () => {
     const probed: string[] = [];
     const probe = async (_p: ProfileConfig, path: string) => {
@@ -352,10 +355,10 @@ describe('limitsSnapshot', () => {
 
   it('reads every subscription, with its CLI, and remembers when', async () => {
     const { probe } = counting();
-    const snapshot = await limitsSnapshot(config(), 0, 1_000, probe);
+    const snapshot = await limitsSnapshot(config(), 0, T, probe);
 
     expect(snapshot).toEqual({
-      fetchedAt: 1_000,
+      fetchedAt: T,
       profiles: {
         dt: { cli: 'claude', status: { fiveHourPct: 10, weeklyPct: 20 } },
         cx: { cli: 'codex', status: { fiveHourPct: 10, weeklyPct: 20 } },
@@ -369,24 +372,35 @@ describe('limitsSnapshot', () => {
     const { probed, probe } = counting();
     const cfg = config();
 
-    await limitsSnapshot(cfg, 240_000, 1_000, probe);
-    const again = await limitsSnapshot(cfg, 240_000, 200_000, probe);
+    await limitsSnapshot(cfg, 240_000, T, probe);
+    const again = await limitsSnapshot(cfg, 240_000, T + 199_000, probe);
     expect(probed).toEqual(['dt', 'cx']);
-    expect(again.fetchedAt).toBe(1_000);
+    expect(again.fetchedAt).toBe(T);
 
-    await limitsSnapshot(cfg, 240_000, 300_000, probe);
+    await limitsSnapshot(cfg, 240_000, T + 299_000, probe);
     expect(probed).toHaveLength(4);
   });
 
   it('probes again when the subscriptions changed since the reading', async () => {
     const { probed, probe } = counting();
     const cfg = config();
-    await limitsSnapshot(cfg, 240_000, 1_000, probe);
+    await limitsSnapshot(cfg, 240_000, T, probe);
 
     delete cfg.profiles.cx;
-    const again = await limitsSnapshot(cfg, 240_000, 2_000, probe);
+    const again = await limitsSnapshot(cfg, 240_000, T + 1_000, probe);
     expect(Object.keys(again.profiles)).toEqual(['dt']);
     expect(probed).toEqual(['dt', 'cx', 'dt']);
+  });
+
+  it('probes again once a subscription logged in since the reading', async () => {
+    // A fresh login must not keep showing "login expired" for minutes.
+    const { probed, probe } = counting();
+    const cfg = config();
+    await limitsSnapshot(cfg, 240_000, T, probe);
+
+    utimesSync(join(root, 'dt', '.credentials.json'), new Date(T + 5_000), new Date(T + 5_000));
+    await limitsSnapshot(cfg, 240_000, T + 10_000, probe);
+    expect(probed).toHaveLength(4);
   });
 
   it('always probes when asked for no cache, and survives a broken one', async () => {
@@ -394,8 +408,8 @@ describe('limitsSnapshot', () => {
     const cfg = config();
     writeFileSync(join(root, '.aimux', 'limits-cache.json'), '{"fetchedAt": 99');
 
-    await limitsSnapshot(cfg, 240_000, 100, probe);
-    await limitsSnapshot(cfg, 0, 101, probe);
+    await limitsSnapshot(cfg, 240_000, T, probe);
+    await limitsSnapshot(cfg, 0, T + 1, probe);
     expect(probed).toHaveLength(4);
   });
 });

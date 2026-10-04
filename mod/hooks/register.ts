@@ -68,10 +68,13 @@ export function statusLine(current: string, others: Record<string, Probe>, live:
   const names = current in others ? Object.keys(others) : [current, ...Object.keys(others)];
 
   const cells = names.map((name) => {
-    const label = name === current ? `▸${name}` : name;
-    if (others[name]?.error === 'auth') return `${label}: login expired`;
+    const own = name === current;
+    const label = own ? `▸${name}` : name;
+    // This session running is proof enough of its own login; an older reading that
+    // said otherwise predates it.
+    if (!own && others[name]?.error === 'auth') return `${label}: login expired`;
 
-    const usage = name === current && live ? live : others[name]?.status;
+    const usage = own && live ? live : others[name]?.status;
     const windows = [
       usage?.fiveHourPct != null ? `5h:${usage.fiveHourPct}%` : '',
       usage?.weeklyPct != null ? `7d:${usage.weeklyPct}%` : '',
