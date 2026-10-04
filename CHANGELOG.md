@@ -12,6 +12,8 @@ All notable changes to this project are documented here. The format is based on
   shared reading under `~/.aimux` is now taken again as soon as any subscription's login
   changes, and the session's own subscription is never marked as needing a login:
   the session running is proof enough.
+- The status line leads with the session's own subscription, `▸ omni (this session)`,
+  then the rest after `│` — a `▸` somewhere along the list was easy to miss.
 - Codex limits came and went: about one check in three showed `–` (in `aimux status`
   and on the status line). Cloudflare, in front of the ChatGPT usage endpoint, turns
   away a request every so often with an instant 403 while the next one goes through;

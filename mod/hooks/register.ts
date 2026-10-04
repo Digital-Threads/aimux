@@ -60,30 +60,31 @@ export function resetsIn(resetsAt: string | undefined, now: number): string {
   return ` (resets in ${text})`;
 }
 
+/** `5h:10% 7d:4%` — each window named, as claude's own status line names them; one a
+ *  subscription does not have (codex's 5-hour one) is left out. */
+function windows(usage: Usage | null | undefined): string {
+  const named = [
+    usage?.fiveHourPct != null ? `5h:${usage.fiveHourPct}%` : '',
+    usage?.weeklyPct != null ? `7d:${usage.weeklyPct}%` : '',
+  ].filter(Boolean);
+
+  return named.length > 0 ? named.join(' ') : '–';
+}
+
 /**
- * `▸main 5h:10% 7d:4% · dt 5h:7% 7d:41% · cx 7d:31%` — each window named, as claude's
- * own status line names them; one a subscription does not have is left out.
+ * `▸ main (this session) 5h:10% 7d:4% │ dt 5h:7% 7d:41% · cx 7d:31%` — the session's
+ * own subscription first and named as such, wherever it sits in the profile list.
  */
 export function statusLine(current: string, others: Record<string, Probe>, live: Usage | undefined): string {
-  const names = current in others ? Object.keys(others) : [current, ...Object.keys(others)];
+  // This session running is proof enough of its own login; an older reading that said
+  // otherwise predates it.
+  const own = `▸ ${current} (this session) ${windows(live ?? others[current]?.status)}`;
 
-  const cells = names.map((name) => {
-    const own = name === current;
-    const label = own ? `▸${name}` : name;
-    // This session running is proof enough of its own login; an older reading that
-    // said otherwise predates it.
-    if (!own && others[name]?.error === 'auth') return `${label}: login expired`;
+  const rest = Object.entries(others)
+    .filter(([name]) => name !== current)
+    .map(([name, probe]) => (probe.error === 'auth' ? `${name}: login expired` : `${name} ${windows(probe.status)}`));
 
-    const usage = own && live ? live : others[name]?.status;
-    const windows = [
-      usage?.fiveHourPct != null ? `5h:${usage.fiveHourPct}%` : '',
-      usage?.weeklyPct != null ? `7d:${usage.weeklyPct}%` : '',
-    ].filter(Boolean);
-
-    return windows.length > 0 ? `${label} ${windows.join(' ')}` : `${label} –`;
-  });
-
-  return cells.join(' · ');
+  return rest.length > 0 ? `${own} │ ${rest.join(' · ')}` : own;
 }
 
 export function warning(current: string, window: SessionRateLimit, others: Record<string, Probe>, own: number, now: number): string {

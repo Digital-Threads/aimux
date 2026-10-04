@@ -76,7 +76,9 @@ describe('aimux mod', () => {
 
     await clock.settle();
     expect(seen.runs).toEqual([['node', '/aimux/dist/cli.js', 'status', '--json', '--max-age', '240']]);
-    expect(seen.statuses.at(-1)).toBe('▸dt 5h:48% 7d:12% · main 5h:13% 7d:17% · busy 5h:5% 7d:100% · cx 7d:25% · old: login expired');
+    expect(seen.statuses.at(-1)).toBe(
+      '▸ dt (this session) 5h:48% 7d:12% │ main 5h:13% 7d:17% · busy 5h:5% 7d:100% · cx 7d:25% · old: login expired',
+    );
   });
 
   test('takes this session\'s own figures from its responses', async ($, on) => {
@@ -86,7 +88,7 @@ describe('aimux mod', () => {
     await clock.settle();
 
     await $.session.measure(measure([{ kind: 'five_hour', percentUsed: 61.4 }, { kind: 'seven_day', percentUsed: 14 }]));
-    expect(seen.statuses.at(-1)).toContain('▸dt 5h:61% 7d:14% · main 5h:13% 7d:17%');
+    expect(seen.statuses.at(-1)).toContain('▸ dt (this session) 5h:61% 7d:14% │ main 5h:13% 7d:17%');
   });
 
   test('asks aimux again only once the figures are five minutes old', async ($, on) => {
@@ -210,8 +212,8 @@ describe('aimux mod', () => {
 
   test('never says the session it runs in needs a login', () => {
     // `old` read as expired before this session logged in; the session is the proof.
-    expect(statusLine('old', LIMITS.profiles, undefined)).toContain('▸old –');
-    expect(statusLine('old', LIMITS.profiles, { fiveHourPct: 3, weeklyPct: 1 })).toContain('▸old 5h:3% 7d:1%');
+    expect(statusLine('old', LIMITS.profiles, undefined)).toMatch(/^▸ old \(this session\) – │/);
+    expect(statusLine('old', LIMITS.profiles, { fiveHourPct: 3, weeklyPct: 1 })).toMatch(/^▸ old \(this session\) 5h:3% 7d:1% │/);
     expect(statusLine('dt', LIMITS.profiles, undefined)).toContain('old: login expired');
   });
 
