@@ -168,10 +168,12 @@ subscription on its status line, the one it runs on marked:
 aimux: 5h/7d %  personal 3/2 · ▸work 4/41 · codex – · client 4/1
 ```
 
-The marked one updates with every reply. When it passes 90% of a window, a notice
-names the subscription with the most room left, before the limit stops the session.
-The others are refreshed at most every five minutes, and only while you work: an idle
-session sends nothing, and all open sessions share one reading.
+The marked one updates with every reply. When it passes 90% of a window, a notice says
+when the window resets and names the subscription with the most room left. Once it is
+spent, `/exit` is already in the prompt: press Enter and aimux carries the conversation
+over to that subscription without asking again. The others are refreshed at most every
+five minutes, and only while you work: an idle session sends nothing, and all open
+sessions share one reading.
 
 It is a Claude Code mod (Claude Code 2.1.287 or newer), loaded only into the sessions
 aimux starts; `AIMUX_NO_MOD=1` turns it off. The same figures are available to scripts

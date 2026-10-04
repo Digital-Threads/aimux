@@ -18,14 +18,24 @@ const ran = (stdout: string, exitCode = 0) => ({ exitCode, stdout, stderr: '', i
 function engineBeneath(on: On) {
   on('session.start', (_$, e) => ({ cwd: e.cwd }));
   on('session.measure', (_$, e) => ({ changed: e.changed }));
+  on('command.run', () => ({ text: '' }));
 }
 
-/** A session aimux launched as `dt`, with aimux answering `status --json` (or failing). */
-function launchedByAimux(on: On, answer = ran(JSON.stringify(LIMITS))) {
+/**
+ * A session aimux launched as `dt`, with aimux answering `status --json` (or failing)
+ * and the prompt box holding `draft`.
+ */
+function launchedByAimux(on: On, answer = ran(JSON.stringify(LIMITS)), draft = '') {
   engineBeneath(on);
-  const seen = { statuses: [] as (string | undefined)[], toasts: [] as string[], runs: [] as (readonly string[])[] };
+  const seen = {
+    statuses: [] as (string | undefined)[],
+    toasts: [] as string[],
+    runs: [] as (readonly string[])[],
+    filled: [] as string[],
+    written: [] as [string, string][],
+  };
 
-  mock.env(on, { AIMUX_RUN_PROFILE: 'dt', AIMUX_SELF: '["node","/aimux/dist/cli.js"]' });
+  mock.env(on, { AIMUX_RUN_PROFILE: 'dt', AIMUX_SELF: '["node","/aimux/dist/cli.js"]', AIMUX_HANDOFF: '/aimux/handoff/1' });
   on('process.run', (_$, e) => {
     seen.runs.push(e.argv);
     return { value: answer };
@@ -38,11 +48,21 @@ function launchedByAimux(on: On, answer = ran(JSON.stringify(LIMITS))) {
     seen.toasts.push(e.text);
     return { value: undefined };
   });
+  on('prompt.read', () => ({ value: { text: draft, cursor: draft.length } }));
+  on('prompt.fill', (_$, e) => {
+    seen.filled.push(e.text);
+    return { isFilled: true, text: e.text, cursor: e.text.length };
+  });
+  on('fs.write', (_$, e) => {
+    seen.written.push([e.path, e.text]);
+    return { value: undefined };
+  });
 
   return seen;
 }
 
 const START = { cwd: '/work', surface: 'terminal', isInteractive: true } as const;
+const EXIT = { command: 'exit', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 200 } } as const;
 const measure = (rateLimits: SessionRateLimit[]) => ({ context: { window: 1_000_000 }, rateLimits, changed: ['rateLimits' as const] });
 
 describe('aimux mod', () => {
@@ -84,8 +104,8 @@ describe('aimux mod', () => {
     expect(seen.runs).toHaveLength(2);
   });
 
-  test('warns once per window before it runs out, naming the freest other subscription', async ($, on) => {
-    const clock = mock.clock(on);
+  test('warns once per window before it runs out, with its reset and the freest other subscription', async ($, on) => {
+    const clock = mock.clock(on, { now: Date.parse('2026-10-04T15:50:00Z') });
     const seen = launchedByAimux(on);
     await $.session.start(START);
     await clock.settle();
@@ -96,8 +116,8 @@ describe('aimux mod', () => {
 
     // `busy` has the emptiest 5-hour window but a spent week; codex cannot take a claude session.
     expect(seen.toasts).toEqual([
-      'dt has used 92% of its 5-hour window. Freest now: main (5h 13%, 7d 17%). '
-        + 'When this one runs out, exit and aimux will offer to continue there.',
+      'dt has used 92% of its 5-hour window (resets in 2h 10m). Freest now: main (5h 13%, 7d 17%). '
+        + 'When this one runs out, aimux will offer to move this conversation there.',
     ]);
   });
 
@@ -148,6 +168,43 @@ describe('aimux mod', () => {
 
     for (const percentUsed of [92, 80, 93]) await $.session.measure(measure([{ kind: 'seven_day', percentUsed }]));
     expect(seen.toasts).toHaveLength(2);
+  });
+
+  test('once spent, puts /exit in the prompt, and running it tells aimux to move without asking', async ($, on) => {
+    const clock = mock.clock(on);
+    const seen = launchedByAimux(on);
+    await $.session.start(START);
+    await clock.settle();
+
+    await $.session.measure(measure([{ kind: 'five_hour', percentUsed: 92, resetsAt: 'r1' }]));
+    await $.session.measure(measure([{ kind: 'five_hour', percentUsed: 100, resetsAt: 'r1' }]));
+    expect(seen.filled).toEqual(['/exit']);
+    expect(seen.toasts.at(-1)).toBe('dt is out of its 5-hour window. Press Enter to carry this conversation over to main (5h 13%, 7d 17%).');
+    expect(seen.written).toEqual([]);
+
+    await $.command.run(EXIT);
+    expect(seen.written).toEqual([['/aimux/handoff/1', 'main']]);
+  });
+
+  test('leaves a draft alone when the window runs out', async ($, on) => {
+    const clock = mock.clock(on);
+    const seen = launchedByAimux(on, undefined, 'half-written thought');
+    await $.session.start(START);
+    await clock.settle();
+
+    await $.session.measure(measure([{ kind: 'five_hour', percentUsed: 100, resetsAt: 'r1' }]));
+    expect(seen.filled).toEqual([]);
+    expect(seen.toasts.at(-1)).toContain('Run /exit to carry this conversation over to main');
+  });
+
+  test('an ordinary /exit moves nothing', async ($, on) => {
+    const clock = mock.clock(on);
+    const seen = launchedByAimux(on);
+    await $.session.start(START);
+    await clock.settle();
+
+    await $.command.run(EXIT);
+    expect(seen.written).toEqual([]);
   });
 
   test('stays silent in a session aimux did not launch', async ($, on) => {

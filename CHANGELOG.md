@@ -10,8 +10,13 @@ All notable changes to this project are documented here. The format is based on
 - **Every subscription's usage inside Claude Code.** A claude session started with
   `aimux run` (or in an `aimux split` pane) shows every subscription's 5-hour and weekly
   usage on its status line, the one it runs on marked, and warns when that one passes
-  90% of a window — naming the subscription with the most room left — instead of
-  leaving you to find out when the limit stops the session. It is a Claude Code mod
+  90% of a window — when it resets, and which subscription has more room left — instead
+  of leaving you to find out when the limit stops the session.
+- **Moving to another subscription is one Enter.** Once the window is spent, the mod
+  puts `/exit` in the prompt (never over a draft) and says where the conversation goes;
+  pressing Enter on it tells aimux you already agreed, so it carries the session over
+  without the `Continue … [Y/n]` question. Leaving any other way (Ctrl-C, Ctrl-D) still
+  asks. Both pieces are a Claude Code mod
   (2.1.287 or newer) shipped in the package and loaded with `--plugin-dir` into the
   interactive sessions aimux starts, nowhere else. The session's own figures come with
   every reply; the others are refreshed at most every five minutes and only after a

@@ -8,7 +8,7 @@ import { isatty } from 'node:tty';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  loadConfig, saveConfig, addProfile, removeProfile, profileNotFound, expandHome,
+  loadConfig, saveConfig, addProfile, removeProfile, profileNotFound, expandHome, getAimuxDir,
   ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs, detectCodex, detectGemini,
   syncProfile, syncAllProfiles, checkAllProfiles,
   launchProfile, getLastProfile, resolveProfileForDir, recordHistory, getProfile, loadActiveProfile,
@@ -75,6 +75,18 @@ function askYes(question: string): boolean {
 
   const reply = read.stdout.trim().toLowerCase();
   return reply === '' || reply === 'y' || reply === 'yes';
+}
+
+/**
+ * Whether the Claude Code mod recorded, for one launch, that the person agreed to move
+ * the session (they ran the `/exit` it offered once the subscription ran out). Read
+ * once: the file goes with it.
+ */
+function takeHandoff(path: string): boolean {
+  if (!existsSync(path)) return false;
+
+  rmSync(path, { force: true });
+  return true;
 }
 
 /** A window's utilization for one-line messages; an unreported window is unknown, not 0%. */
@@ -390,23 +402,31 @@ program
         && !cliArgs.some((a) => a === '-p' || a === '--print')
         && isatty(0);
 
+      // The Claude Code mod (mod/): every subscription's usage on the status line, a
+      // warning before this one runs out, and `/exit` offered once it has. Only in the
+      // interactive sessions aimux starts.
+      const withMod = continuable && !process.env.AIMUX_NO_MOD && !cliArgs.includes('--bare') && existsSync(MOD_DIR);
+      let launches = 0;
+
       // Run one claude and learn which session it ended on — from claude's own record of
       // the process, which follows /clear and /resume, so a continuation never picks up a
       // session another terminal runs under the same profile. Without that record: the id
       // the args name, then (in planContinuation) the transcript this profile wrote last.
-      // The Claude Code mod (mod/): every subscription's usage on the status line, and a
-      // warning before this one runs out. Only in the interactive sessions aimux starts.
-      const withMod = continuable && !process.env.AIMUX_NO_MOD && !cliArgs.includes('--bare') && existsSync(MOD_DIR);
-
+      // `moveAgreed`: the person already said yes inside claude, by running the mod's /exit.
       const launch = async (profile: string, extraArgs: string[]) => {
         let follower: ReturnType<typeof followProcessSession> | undefined;
         const since = Date.now();
+        const handoff = withMod ? join(getAimuxDir(), 'handoff', `${process.pid}-${launches++}`) : undefined;
         const code = await launchProfile(config, profile, {
           model: options.model,
           extraArgs: withMod ? ['--plugin-dir', MOD_DIR, ...extraArgs] : extraArgs,
-          env: withMod
-            // execArgv too: under tsx (npm run dev) the loader flags are what run a .tsx entry
-            ? { AIMUX_RUN_PROFILE: profile, AIMUX_SELF: JSON.stringify([process.execPath, ...process.execArgv, process.argv[1]]) }
+          env: withMod && handoff
+            ? {
+              AIMUX_RUN_PROFILE: profile,
+              // execArgv too: under tsx (npm run dev) the loader flags are what run a .tsx entry
+              AIMUX_SELF: JSON.stringify([process.execPath, ...process.execArgv, process.argv[1]]),
+              AIMUX_HANDOFF: handoff,
+            }
             : undefined,
           onSpawn: continuable
             ? (pid) => { follower = followProcessSession(expandHome(config.profiles[profile].path), pid); }
@@ -414,7 +434,8 @@ program
         });
         follower?.stop();
 
-        return { code, since, sessionId: follower?.current() ?? sessionIdFromArgs(extraArgs) };
+        const moveAgreed = handoff !== undefined && takeHandoff(handoff);
+        return { code, since, moveAgreed, sessionId: follower?.current() ?? sessionIdFromArgs(extraArgs) };
       };
 
       let current = profileName;
@@ -433,10 +454,12 @@ program
         }
 
         const { fiveHourPct, weeklyPct } = plan.next.status;
-        const go = askYes(
-          `${hitLine}.\nContinue this session on ${plan.next.profile} (5h ${fmtPct(fiveHourPct)}, 7d ${fmtPct(weeklyPct)})? [Y/n] `,
-        );
-        if (!go) break;
+        const where = `${plan.next.profile} (5h ${fmtPct(fiveHourPct)}, 7d ${fmtPct(weeklyPct)})`;
+        if (run.moveAgreed) {
+          console.error(`${hitLine}. Continuing this session on ${where}.`);
+        } else if (!askYes(`${hitLine}.\nContinue this session on ${where}? [Y/n] `)) {
+          break;
+        }
 
         current = plan.next.profile;
         prepare(current);
