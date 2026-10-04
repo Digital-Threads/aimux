@@ -447,10 +447,10 @@ describe('fetchRateLimits — codex', () => {
   });
 
   it('gives up after a few refusals in a row', async () => {
-    const calls = answers(403, 403, 403, 200);
+    const calls = answers(403, 403, 403, 403, 403, 200);
     const probe = await fetchRateLimits({ cli: 'codex', path: dir }, dir);
     expect(probe).toEqual({ status: null, error: 'unavailable' });
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(5);
   });
 
   it('does not retry a stale login', async () => {

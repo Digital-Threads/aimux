@@ -1,9 +1,13 @@
+import { atom, read, update } from 'claude-code';
 import type { EngineInterface, Register, SessionRateLimit } from 'claude-code';
 
+import type { Probe, Usage, View } from '../types';
+
 /**
- * aimux inside Claude Code: every subscription's 5-hour and weekly usage on the
- * status line, a warning before the one this session runs on is spent, and — once it
- * is — `/exit` in the prompt, so one Enter moves the conversation to the freest one.
+ * aimux inside Claude Code: every subscription's 5-hour and weekly usage in a band
+ * above the prompt, a warning before the one this session runs on is spent, and —
+ * once it is — `/exit` in the prompt, so one Enter moves the conversation to the
+ * freest one.
  *
  * This session's own windows arrive with every response (`session.measure`). The
  * other subscriptions are asked of aimux (`aimux status --json`), at the start and
@@ -14,11 +18,11 @@ import type { EngineInterface, Register, SessionRateLimit } from 'claude-code';
  * finds the hit in the transcript. The mod only tells it the person already agreed —
  * by running the `/exit` it offered — so aimux does not ask a second time.
  *
+ * A band of its own rather than `$.ui.status`: the engine draws that line as one of
+ * its pinned warnings, yellow with a ⚠, which reads as something being wrong.
+ *
  * Inert in a session aimux did not launch: nothing names the profile or aimux.
  */
-
-type Usage = { fiveHourPct: number | null; weeklyPct: number | null };
-type Probe = { cli: string; status: Usage | null; error?: string };
 
 const REFRESH_MS = 5 * 60_000;
 const WARN_AT = 90;
@@ -26,6 +30,9 @@ const WINDOW_NAME: Record<string, string> = { five_hour: '5-hour', seven_day: 'w
 
 const pct = (p: number | null) => (p === null ? '–' : String(p));
 const windowName = (w: SessionRateLimit) => WINDOW_NAME[w.kind] ?? w.kind;
+
+/** The band's colors for a window's use, as `aimux status` paints them. */
+const levelColor = (p: number) => (p >= 80 ? 'red' : p >= 60 ? 'yellow' : 'green');
 
 /**
  * The freest other claude subscription: its tightest window lowest, and lower than
@@ -60,31 +67,30 @@ export function resetsIn(resetsAt: string | undefined, now: number): string {
   return ` (resets in ${text})`;
 }
 
-/** `5h:10% 7d:4%` — each window named, as claude's own status line names them; one a
- *  subscription does not have (codex's 5-hour one) is left out. */
-function windows(usage: Usage | null | undefined): string {
-  const named = [
-    usage?.fiveHourPct != null ? `5h:${usage.fiveHourPct}%` : '',
-    usage?.weeklyPct != null ? `7d:${usage.weeklyPct}%` : '',
-  ].filter(Boolean);
-
-  return named.length > 0 ? named.join(' ') : '–';
-}
+/** One subscription in the band: its windows, each named as claude's own status line
+ *  names them; one it does not have (codex's 5-hour one) is left out. */
+export type Cell = { name: string; isExpired: boolean; windows: { label: string; pct: number }[] };
 
 /**
- * `▸ main (this session) 5h:10% 7d:4% │ dt 5h:7% 7d:41% · cx 7d:31%` — the session's
- * own subscription first and named as such, wherever it sits in the profile list.
+ * The session's own subscription first, wherever it sits in the profile list, then
+ * the rest. Its own login is never in doubt: the session running is proof enough, and
+ * an older reading that said otherwise predates it.
  */
-export function statusLine(current: string, others: Record<string, Probe>, live: Usage | undefined): string {
-  // This session running is proof enough of its own login; an older reading that said
-  // otherwise predates it.
-  const own = `▸ ${current} (this session) ${windows(live ?? others[current]?.status)}`;
+export function cells(view: View): Cell[] {
+  const cell = (name: string, usage: Usage | null | undefined, isExpired: boolean): Cell => ({
+    name,
+    isExpired,
+    windows: [
+      ...(usage?.fiveHourPct != null ? [{ label: '5h', pct: usage.fiveHourPct }] : []),
+      ...(usage?.weeklyPct != null ? [{ label: '7d', pct: usage.weeklyPct }] : []),
+    ],
+  });
 
-  const rest = Object.entries(others)
-    .filter(([name]) => name !== current)
-    .map(([name, probe]) => (probe.error === 'auth' ? `${name}: login expired` : `${name} ${windows(probe.status)}`));
+  const rest = Object.entries(view.others)
+    .filter(([name]) => name !== view.current)
+    .map(([name, probe]) => cell(name, probe.status, probe.error === 'auth'));
 
-  return rest.length > 0 ? `${own} │ ${rest.join(' · ')}` : own;
+  return [cell(view.current, view.live ?? view.others[view.current]?.status, false), ...rest];
 }
 
 export function warning(current: string, window: SessionRateLimit, others: Record<string, Probe>, own: number, now: number): string {
@@ -98,6 +104,9 @@ export function warning(current: string, window: SessionRateLimit, others: Recor
   return `${head} Freest now: ${name} (5h ${pct(usage.fiveHourPct)}%, 7d ${pct(usage.weeklyPct)}%). `
     + 'When this one runs out, aimux will offer to move this conversation there.';
 }
+
+// What the band draws: host state, so a write redraws it.
+const view = atom({ plugin: 'aimux', key: 'view' } as const, null);
 
 // The session's own figures. Module state: a hot reload starts it over, which only
 // means one more probe.
@@ -114,8 +123,9 @@ let refreshing = false;
 let offered: string | undefined;
 const warned = new Set<string>();
 
-function show($: EngineInterface) {
-  if (current) $.ui.status(statusLine(current, others, live));
+async function show($: EngineInterface) {
+  const name = current;
+  if (name) await update($, view, () => ({ current: name, others, live: live ?? null }));
 }
 
 async function refresh($: EngineInterface) {
@@ -135,7 +145,7 @@ async function refresh($: EngineInterface) {
     refreshing = false;
   }
 
-  show($);
+  await show($);
 }
 
 /** The window is spent: name where to go, and put `/exit` where one Enter runs it. */
@@ -215,7 +225,7 @@ export const register: Register = (on) => {
       else $.ui.toast(warning(current, window, others, own, now), { timeoutMs: 15_000 });
     }
 
-    show($);
+    await show($);
     $.clock.after(0, () => void refresh($));
     return next(e);
   });
@@ -223,5 +233,44 @@ export const register: Register = (on) => {
   on('command.run', { command: 'exit' }, async ($, e, next) => {
     await agreeToMove($);
     return next(e);
+  });
+
+  // `aimux  ▸ dt (this session) 5h:27% 7d:43%  │  main 5h:13% 7d:12% · cx 7d:36%`
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const drawn = await read($, view);
+    if (drawn === null || e.props.hasSurvey) return next(e);
+
+    const { Box, Text } = $.ui.resolve(e);
+    const [own, ...rest] = cells(drawn);
+    if (!own) return next(e);
+
+    const usage = (cell: Cell) => {
+      if (cell.isExpired) return [<Text color="yellow">login expired</Text>];
+      if (cell.windows.length === 0) return [<Text dimColor>–</Text>];
+
+      return cell.windows.flatMap((w, i) => [
+        <Text dimColor>{`${i > 0 ? ' ' : ''}${w.label}:`}</Text>,
+        <Text color={levelColor(w.pct)}>{`${w.pct}%`}</Text>,
+      ]);
+    };
+
+    // One Text of colored spans, not a row of boxes: a row squeezes each box on a
+    // narrow terminal and wraps them one by one; a single text wraps as a line does.
+    return (
+      <Box>
+        <Text>
+          <Text dimColor>aimux  </Text>
+          <Text bold>{`▸ ${own.name} `}</Text>
+          <Text dimColor>(this session) </Text>
+          {usage(own)}
+          {rest.length > 0 ? <Text dimColor>{'  │  '}</Text> : null}
+          {rest.flatMap((cell, i) => [
+            <Text dimColor>{`${i > 0 ? ' · ' : ''}`}</Text>,
+            <Text>{`${cell.name} `}</Text>,
+            ...usage(cell),
+          ])}
+        </Text>
+      </Box>
+    );
   });
 };

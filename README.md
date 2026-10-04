@@ -162,10 +162,10 @@ works inside `aimux split` panes too.
 ### Every subscription's usage inside Claude Code
 
 A claude session started with `aimux run` — or in an `aimux split` pane — shows every
-subscription on its status line, the one it runs on first:
+subscription in a band above the prompt, the one it runs on first:
 
 ```
-aimux: ▸ work (this session) 5h:4% 7d:41% │ personal 5h:3% 7d:2% · codex 7d:31% · client 5h:4% 7d:1%
+aimux  ▸ work (this session) 5h:4% 7d:41%  │  personal 5h:3% 7d:2% · codex 7d:31% · client 5h:4% 7d:1%
 ```
 
 This session's own one updates with every reply. When it passes 90% of a window, a notice says

@@ -1,5 +1,9 @@
 {
   "name": "aimux",
-  "description": "Every aimux subscription's 5-hour and weekly usage on the status line, and a warning before this one runs out",
-  "author": { "name": "Digital Threads", "url": "https://github.com/Digital-Threads/aimux" }
+  "description": "Every aimux subscription's 5-hour and weekly usage above the prompt, a warning before this one runs out, and one Enter to move on",
+  "author": {
+    "name": "Digital Threads",
+    "url": "https://github.com/Digital-Threads/aimux"
+  },
+  "types": "./types/index.d.ts"
 }

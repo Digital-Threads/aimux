@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.32.3] - 2026-10-04
+
+### Changed
+- **The subscriptions' usage is drawn in a band of its own above the prompt.** Claude
+  Code draws a mod's status line as one of its pinned warnings — yellow, with a `⚠` in
+  front — so the usage looked like something was wrong. The band has plain colors:
+  labels dim, this session's subscription bold, each percentage green, yellow from 60%
+  and red from 80%, as in `aimux status`. On a narrow terminal it wraps as a line.
+
+### Fixed
+- Codex limits still went missing now and then: Cloudflare refuses the first requests
+  on a new connection, sometimes several in a row. aimux now tries up to five times, a
+  beat apart (a refusal costs about 30 ms).
+
 ## [0.32.2] - 2026-10-04
 
 ### Fixed

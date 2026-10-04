@@ -317,10 +317,14 @@ async function fetchCodexLimits(profilePath: string, signal: AbortSignal): Promi
     },
   });
 
-  // Even so, Cloudflare's edge turns away a request every so often with an instant
-  // 403, and the next one goes through: a few tries before calling it unavailable.
+  // Even so, Cloudflare's edge turns away the first requests on a new connection every
+  // so often — an instant 403, sometimes several in a row — and then lets one through.
+  // A refusal costs ~30 ms, so a handful of tries a beat apart before giving up.
   let res = await request();
-  for (let tries = 1; res.status === 403 && tries < 3; tries++) res = await request();
+  for (let tries = 1; res.status === 403 && tries < 5; tries++) {
+    await new Promise((next) => setTimeout(next, 200));
+    res = await request();
+  }
   if (!res.ok) return { status: null, error: probeError(res.status) };
   const status = parseCodexUsage(await res.json());
   return status ? { status } : { status: null, error: 'unavailable' };

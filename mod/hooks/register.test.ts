@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing';
+import type { Engine } from 'claude-code/testing';
 import type { On, SessionRateLimit } from 'claude-code';
-import { statusLine } from './register';
+import { cells } from './register';
 
 const LIMITS = {
   fetchedAt: 0,
@@ -29,7 +30,6 @@ function engineBeneath(on: On) {
 function launchedByAimux(on: On, answer = ran(JSON.stringify(LIMITS)), draft = '') {
   engineBeneath(on);
   const seen = {
-    statuses: [] as (string | undefined)[],
     toasts: [] as string[],
     runs: [] as (readonly string[])[],
     filled: [] as string[],
@@ -40,10 +40,6 @@ function launchedByAimux(on: On, answer = ran(JSON.stringify(LIMITS)), draft = '
   on('process.run', (_$, e) => {
     seen.runs.push(e.argv);
     return { value: answer };
-  });
-  on('ui.status', (_$, e) => {
-    seen.statuses.push(e.text);
-    return { value: undefined };
   });
   on('ui.toast', (_$, e) => {
     seen.toasts.push(e.text);
@@ -62,6 +58,19 @@ function launchedByAimux(on: On, answer = ran(JSON.stringify(LIMITS)), draft = '
   return seen;
 }
 
+/** The band above the prompt as the terminal draws it, and its text read straight through. */
+async function band($: Engine) {
+  const props = { hasSurvey: false, isWorking: false } as never;
+  const ui = await $.ui.mount({ plugin: 'aimux', surface: 'terminal', component: 'AbovePrompt', props });
+  const textOf = (node: unknown): string => {
+    if (typeof node === 'string') return node;
+    const children = (node as { children?: unknown[] } | null)?.children ?? [];
+    return children.map(textOf).join('');
+  };
+
+  return { ui, text: textOf(await ui.drawn()) };
+}
+
 const START = { cwd: '/work', surface: 'terminal', isInteractive: true } as const;
 const EXIT = { command: 'exit', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 200 } } as const;
 const measure = (rateLimits: SessionRateLimit[]) => ({ context: { window: 1_000_000 }, rateLimits, changed: ['rateLimits' as const] });
@@ -76,9 +85,14 @@ describe('aimux mod', () => {
 
     await clock.settle();
     expect(seen.runs).toEqual([['node', '/aimux/dist/cli.js', 'status', '--json', '--max-age', '240']]);
-    expect(seen.statuses.at(-1)).toBe(
-      '▸ dt (this session) 5h:48% 7d:12% │ main 5h:13% 7d:17% · busy 5h:5% 7d:100% · cx 7d:25% · old: login expired',
+    const { ui, text } = await band($);
+    expect(text).toBe(
+      'aimux  ▸ dt (this session) 5h:48% 7d:12%  │  main 5h:13% 7d:17% · busy 5h:5% 7d:100% · cx 7d:25% · old login expired',
     );
+
+    // Its own colors, not a warning's: a spent window red, a roomy one green.
+    expect((await ui.find({ type: 'Text', text: /^100%$/ }))?.props).toMatchObject({ color: 'red' });
+    expect((await ui.find({ type: 'Text', text: /^48%$/ }))?.props).toMatchObject({ color: 'green' });
   });
 
   test('takes this session\'s own figures from its responses', async ($, on) => {
@@ -88,7 +102,7 @@ describe('aimux mod', () => {
     await clock.settle();
 
     await $.session.measure(measure([{ kind: 'five_hour', percentUsed: 61.4 }, { kind: 'seven_day', percentUsed: 14 }]));
-    expect(seen.statuses.at(-1)).toContain('▸ dt (this session) 5h:61% 7d:14% │ main 5h:13% 7d:17%');
+    expect((await band($)).text).toContain('▸ dt (this session) 5h:61% 7d:14%  │  main 5h:13% 7d:17%');
   });
 
   test('asks aimux again only once the figures are five minutes old', async ($, on) => {
@@ -212,9 +226,13 @@ describe('aimux mod', () => {
 
   test('never says the session it runs in needs a login', () => {
     // `old` read as expired before this session logged in; the session is the proof.
-    expect(statusLine('old', LIMITS.profiles, undefined)).toMatch(/^▸ old \(this session\) – │/);
-    expect(statusLine('old', LIMITS.profiles, { fiveHourPct: 3, weeklyPct: 1 })).toMatch(/^▸ old \(this session\) 5h:3% 7d:1% │/);
-    expect(statusLine('dt', LIMITS.profiles, undefined)).toContain('old: login expired');
+    const others = LIMITS.profiles;
+    expect(cells({ current: 'old', others, live: null })[0]).toEqual({ name: 'old', isExpired: false, windows: [] });
+    expect(cells({ current: 'old', others, live: { fiveHourPct: 3, weeklyPct: 1 } })[0]?.windows).toEqual([
+      { label: '5h', pct: 3 },
+      { label: '7d', pct: 1 },
+    ]);
+    expect(cells({ current: 'dt', others, live: null }).find((c) => c.name === 'old')?.isExpired).toBe(true);
   });
 
   test('stays silent in a session aimux did not launch', async ($, on) => {
@@ -226,17 +244,20 @@ describe('aimux mod', () => {
       runs++;
       return { value: ran('{}') };
     });
-    const statuses: (string | undefined)[] = [];
-    on('ui.status', (_$, e) => {
-      statuses.push(e.text);
-      return { value: undefined };
-    });
 
     await $.session.start(START);
     await clock.settle();
     await $.session.measure(measure([{ kind: 'five_hour', percentUsed: 99 }]));
 
     expect(runs).toBe(0);
-    expect(statuses).toEqual([]);
+
+    // The mod passes the band on, and in a test nothing beneath it draws one.
+    let drew = true;
+    try {
+      await band($);
+    } catch {
+      drew = false;
+    }
+    expect(drew).toBe(false);
   });
 });
