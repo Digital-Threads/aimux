@@ -304,7 +304,7 @@ async function fetchCodexLimits(profilePath: string, signal: AbortSignal): Promi
   const auth = readCodexAuth(profilePath);
   if (!auth) return { status: null, error: 'auth' };
 
-  const res = await fetch('https://chatgpt.com/backend-api/codex/usage', {
+  const request = () => fetch('https://chatgpt.com/backend-api/codex/usage', {
     signal,
     headers: {
       authorization: `Bearer ${auth.token}`,
@@ -316,6 +316,11 @@ async function fetchCodexLimits(profilePath: string, signal: AbortSignal): Promi
       'user-agent': 'aimux',
     },
   });
+
+  // Even so, Cloudflare's edge turns away a request every so often with an instant
+  // 403, and the next one goes through: a few tries before calling it unavailable.
+  let res = await request();
+  for (let tries = 1; res.status === 403 && tries < 3; tries++) res = await request();
   if (!res.ok) return { status: null, error: probeError(res.status) };
   const status = parseCodexUsage(await res.json());
   return status ? { status } : { status: null, error: 'unavailable' };

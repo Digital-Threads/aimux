@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import type { ProfileConfig } from '../types/index.js';
 import type { AimuxConfig } from '../types/index.js';
 import { getAimuxDir, setAimuxDir } from './paths.js';
-import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt, pickFreestProfile, keychainService, classifyProfile, limitsSnapshot } from './limits.js';
+import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt, pickFreestProfile, keychainService, classifyProfile, limitsSnapshot, fetchRateLimits } from './limits.js';
 
 // Real header keys captured from a live HTTP 200 probe (see plan spike result).
 const REAL = {
@@ -411,5 +411,51 @@ describe('limitsSnapshot', () => {
     await limitsSnapshot(cfg, 240_000, T, probe);
     await limitsSnapshot(cfg, 0, T + 1, probe);
     expect(probed).toHaveLength(4);
+  });
+});
+
+describe('fetchRateLimits — codex', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'aimux-codex-probe-'));
+    writeFileSync(join(dir, 'auth.json'), JSON.stringify({ tokens: { access_token: 't', account_id: 'a' } }));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const usage = {
+    rate_limit: { secondary_window: { used_percent: 31, limit_window_seconds: 604800, reset_at: 1791608760 } },
+  };
+  const answers = (...statuses: number[]) => {
+    const calls: number[] = [];
+    vi.stubGlobal('fetch', async () => {
+      const status = statuses[calls.length] ?? 200;
+      calls.push(status);
+      return new Response(status === 200 ? JSON.stringify(usage) : '<html>blocked</html>', { status });
+    });
+    return calls;
+  };
+
+  it('asks again when Cloudflare turns a request away, as it does every so often', async () => {
+    // chatgpt.com's edge answers some requests with an instant 403; the next one goes through.
+    const calls = answers(403, 200);
+    const probe = await fetchRateLimits({ cli: 'codex', path: dir }, dir);
+    expect(probe.status?.weeklyPct).toBe(31);
+    expect(calls).toEqual([403, 200]);
+  });
+
+  it('gives up after a few refusals in a row', async () => {
+    const calls = answers(403, 403, 403, 200);
+    const probe = await fetchRateLimits({ cli: 'codex', path: dir }, dir);
+    expect(probe).toEqual({ status: null, error: 'unavailable' });
+    expect(calls).toHaveLength(3);
+  });
+
+  it('does not retry a stale login', async () => {
+    const calls = answers(401, 200);
+    expect(await fetchRateLimits({ cli: 'codex', path: dir }, dir)).toEqual({ status: null, error: 'auth' });
+    expect(calls).toEqual([401]);
   });
 });
