@@ -164,16 +164,17 @@ works inside `aimux split` panes too.
 A claude session started with `aimux run` — or in an `aimux split` pane — shows every
 subscription in a band above the prompt, the one it runs on first:
 
-```
-aimux  ▸ work (this session) 5h:4% 7d:41%  │  personal 5h:3% 7d:2% · codex 7d:31% · client 5h:4% 7d:1%
-```
+![Inside Claude Code: every subscription's usage above the prompt, this session's first, with a warning before it runs out](docs/aimux-band.svg)
 
-This session's own one updates with every reply. When it passes 90% of a window, a notice says
-when the window resets and names the subscription with the most room left. Once it is
-spent, `/exit` is already in the prompt: press Enter and aimux carries the conversation
-over to that subscription without asking again. The others are refreshed at most every
-five minutes, and only while you work: an idle session sends nothing, and all open
-sessions share one reading.
+- **The band.** This session's own subscription updates with every reply; a window
+  close to its limit turns red and says when it resets. The others are refreshed at
+  most every five minutes, and only while you work: an idle session sends nothing, and
+  all open sessions share one reading.
+- **A warning at 90%**, naming the subscription with more room left.
+- **One Enter to move.** Once the window is spent, `/exit` is already in the prompt:
+  press Enter and aimux carries the conversation over to that subscription without
+  asking again.
+- **`/aimux`** prints the whole table, each window with its reset time.
 
 It is a Claude Code mod (Claude Code 2.1.287 or newer), loaded only into the sessions
 aimux starts; `AIMUX_NO_MOD=1` turns it off. The same figures are available to scripts
@@ -185,7 +186,7 @@ as `aimux status --json`.
 |---------|-------------|
 | `aimux init` | Auto-detect Claude dirs, create config, migrate profiles |
 | `aimux init --source <path>` | Initialize with explicit source directory |
-| `aimux status` | TUI dashboard — profiles, auth, live 5h/7d limit usage and reset times (claude + codex), auto-mode rules when any are set, symlink health. `--json` prints the limits for scripts; `--max-age <s>` reuses a reading that recent |
+| `aimux status` | TUI dashboard — profiles, auth, live 5h/7d limit usage and reset times (claude + codex), auto-mode rules when any are set, symlink health. `--watch [s]` keeps it on screen and re-reads the limits; `--json` prints them for scripts; `--max-age <s>` reuses a reading that recent |
 | `aimux status --no-limits` | Same dashboard without the rate-limit probe (offline / faster) |
 | `aimux usage` | Show token usage by profile (Claude transcripts + codex rollouts), including sessions started outside aimux |
 | `aimux usage --profile work --since 24h` | Show usage for one profile over a recent window |

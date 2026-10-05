@@ -7,7 +7,7 @@ import type { Probe, Usage, View } from '../types';
  * aimux inside Claude Code: every subscription's 5-hour and weekly usage in a band
  * above the prompt, a warning before the one this session runs on is spent, and —
  * once it is — `/exit` in the prompt, so one Enter moves the conversation to the
- * freest one.
+ * freest one. `/aimux` prints the whole table with reset times.
  *
  * This session's own windows arrive with every response (`session.measure`). The
  * other subscriptions are asked of aimux (`aimux status --json`), at the start and
@@ -25,14 +25,21 @@ import type { Probe, Usage, View } from '../types';
  */
 
 const REFRESH_MS = 5 * 60_000;
+/** Where the warning comes, and where a window counts as spent after a refused turn. */
 const WARN_AT = 90;
+const SPENT_AT = 95;
+/** Where the band paints a window red and says when it resets. */
+const NEAR = 80;
 const WINDOW_NAME: Record<string, string> = { five_hour: '5-hour', seven_day: 'weekly' };
 
 const pct = (p: number | null) => (p === null ? '–' : String(p));
 const windowName = (w: SessionRateLimit) => WINDOW_NAME[w.kind] ?? w.kind;
 
+/** A window's reset as epoch milliseconds, from the ISO time the engine reports. */
+const parseTime = (iso: string | undefined) => (iso ? Date.parse(iso) : undefined);
+
 /** The band's colors for a window's use, as `aimux status` paints them. */
-const levelColor = (p: number) => (p >= 80 ? 'red' : p >= 60 ? 'yellow' : 'green');
+const levelColor = (p: number) => (p >= NEAR ? 'red' : p >= 60 ? 'yellow' : 'green');
 
 /**
  * The freest other claude subscription: its tightest window lowest, and lower than
@@ -54,12 +61,12 @@ function freest(others: Record<string, Probe>, current: string, own: number): [s
   return best && [best[0], best[1]];
 }
 
-/** ` (resets in 2h 10m)`, or nothing when the reset time is unknown or past. */
-export function resetsIn(resetsAt: string | undefined, now: number): string {
-  const at = resetsAt ? Date.parse(resetsAt) : NaN;
-  if (!Number.isFinite(at) || at <= now) return '';
+/** ` (resets in 2h 10m)`, or nothing when the reset time is unknown or past. Counted
+ *  from `now` rather than printed as a clock time: the mod's sandbox has no time zone. */
+export function resetsIn(resetsAt: number | undefined, now: number): string {
+  if (resetsAt === undefined || !Number.isFinite(resetsAt) || resetsAt <= now) return '';
 
-  const minutes = Math.ceil((at - now) / 60_000);
+  const minutes = Math.ceil((resetsAt - now) / 60_000);
   const days = Math.floor(minutes / 1440);
   const hours = Math.floor((minutes % 1440) / 60);
   const text = days > 0 ? `${days}d ${hours}h` : hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
@@ -67,9 +74,9 @@ export function resetsIn(resetsAt: string | undefined, now: number): string {
   return ` (resets in ${text})`;
 }
 
-/** One subscription in the band: its windows, each named as claude's own status line
- *  names them; one it does not have (codex's 5-hour one) is left out. */
-export type Cell = { name: string; isExpired: boolean; windows: { label: string; pct: number }[] };
+/** One subscription: its windows, each named as claude's own status line names them;
+ *  one it does not have (codex's 5-hour one) is left out. */
+export type Cell = { name: string; isExpired: boolean; windows: { label: string; pct: number; resetsAt?: number }[] };
 
 /**
  * The session's own subscription first, wherever it sits in the profile list, then
@@ -81,8 +88,8 @@ export function cells(view: View): Cell[] {
     name,
     isExpired,
     windows: [
-      ...(usage?.fiveHourPct != null ? [{ label: '5h', pct: usage.fiveHourPct }] : []),
-      ...(usage?.weeklyPct != null ? [{ label: '7d', pct: usage.weeklyPct }] : []),
+      ...(usage?.fiveHourPct != null ? [{ label: '5h', pct: usage.fiveHourPct, resetsAt: usage.fiveHourResetsAt }] : []),
+      ...(usage?.weeklyPct != null ? [{ label: '7d', pct: usage.weeklyPct, resetsAt: usage.weeklyResetsAt }] : []),
     ],
   });
 
@@ -93,8 +100,25 @@ export function cells(view: View): Cell[] {
   return [cell(view.current, view.live ?? view.others[view.current]?.status, false), ...rest];
 }
 
+/** What `/aimux` prints: every subscription on its own line, each window with its reset. */
+export function table(view: View): string {
+  const all = cells(view);
+  const width = Math.max(...all.map((c) => c.name.length));
+
+  const lines = all.map((c, i) => {
+    const name = `${i === 0 ? '▸' : ' '} ${c.name.padEnd(width)}`;
+    if (c.isExpired) return `${name}  login expired — run: aimux run ${c.name}`;
+    if (c.windows.length === 0) return `${name}  no figures right now`;
+
+    const windows = c.windows.map((w) => `${w.label} ${w.pct}%${resetsIn(w.resetsAt, view.now)}`).join(' · ');
+    return `${name}  ${windows}${i === 0 ? '  ← this session' : ''}`;
+  });
+
+  return ['How much of each subscription is used', ...lines].join('\n');
+}
+
 export function warning(current: string, window: SessionRateLimit, others: Record<string, Probe>, own: number, now: number): string {
-  const head = `${current} has used ${Math.round(window.percentUsed)}% of its ${windowName(window)} window${resetsIn(window.resetsAt, now)}.`;
+  const head = `${current} has used ${Math.round(window.percentUsed)}% of its ${windowName(window)} window${resetsIn(parseTime(window.resetsAt), now)}.`;
   if (Object.keys(others).length === 0) return `${head} aimux could not read the other subscriptions.`;
 
   const next = freest(others, current, own);
@@ -119,40 +143,77 @@ let handoff: string | undefined;
 let others: Record<string, Probe> = {};
 let live: Usage | undefined;
 let fetchedAt: number | undefined;
-let refreshing = false;
+let reading: Promise<boolean> | undefined;
 let offered: string | undefined;
 const warned = new Set<string>();
 
+async function snapshot($: EngineInterface): Promise<View | undefined> {
+  return current ? { current, others, live: live ?? null, now: await $.clock.now() } : undefined;
+}
+
 async function show($: EngineInterface) {
-  const name = current;
-  if (name) await update($, view, () => ({ current: name, others, live: live ?? null }));
+  const next = await snapshot($);
+  if (next) await update($, view, () => next);
+}
+
+/** One question to aimux; whether it answered. */
+async function readOthers($: EngineInterface, command: string[]): Promise<boolean> {
+  try {
+    const { exitCode, stdout } = await $.process.run(command, { timeoutMs: 60_000 });
+    if (exitCode !== 0) return false;
+
+    others = JSON.parse(stdout).profiles;
+    return true;
+  } catch {
+    // aimux unreachable this time: keep the figures we have
+    return false;
+  } finally {
+    // A failed attempt waits its turn too: this runs after every response, and a
+    // broken aimux must not be started again each time.
+    fetchedAt = await $.clock.now();
+  }
+}
+
+/**
+ * Ask aimux for every subscription's figures, no older than `maxAgeSeconds`; whether
+ * it answered. One question at a time: a second caller waits for the one under way.
+ */
+function fetchOthers($: EngineInterface, maxAgeSeconds: number): Promise<boolean> {
+  if (!aimux) return Promise.resolve(false);
+
+  reading ??= readOthers($, [...aimux, 'status', '--json', '--max-age', String(maxAgeSeconds)])
+    .finally(() => { reading = undefined; });
+
+  return reading;
 }
 
 async function refresh($: EngineInterface) {
   const now = await $.clock.now();
-  if (!aimux || refreshing || (fetchedAt !== undefined && now - fetchedAt < REFRESH_MS)) return;
+  if (fetchedAt !== undefined && now - fetchedAt < REFRESH_MS) return;
 
-  refreshing = true;
-  try {
-    const { exitCode, stdout } = await $.process.run([...aimux, 'status', '--json', '--max-age', '240'], { timeoutMs: 60_000 });
-    if (exitCode === 0) others = JSON.parse(stdout).profiles;
-  } catch {
-    // aimux unreachable this time: keep the figures we have
-  } finally {
-    // A failed attempt waits its turn too: this runs after every response, and a
-    // broken aimux must not be started again each time.
-    fetchedAt = now;
-    refreshing = false;
-  }
-
+  await fetchOthers($, 240);
   await show($);
+}
+
+/** `/aimux`: the whole table, read fresh — or saying so when it could not be. */
+async function report($: EngineInterface): Promise<string> {
+  // A background reading under way may be an older one than asked for here: let it
+  // land, then ask again.
+  await reading;
+  const isFresh = await fetchOthers($, 30);
+  await show($);
+
+  const now = await snapshot($);
+  if (!now) return 'aimux did not start this session, so it has nothing to show here.';
+
+  return isFresh ? table(now) : `${table(now)}\n(aimux could not be reached just now — these are the last figures it gave)`;
 }
 
 /** The window is spent: name where to go, and put `/exit` where one Enter runs it. */
 async function offerMove($: EngineInterface, window: SessionRateLimit, now: number) {
   if (!current) return;
 
-  const head = `${current} is out of its ${windowName(window)} window${resetsIn(window.resetsAt, now)}.`;
+  const head = `${current} is out of its ${windowName(window)} window${resetsIn(parseTime(window.resetsAt), now)}.`;
   const next = freest(others, current, 100);
   if (!next) {
     $.ui.toast(`${head} No other claude subscription has room right now.`, { timeoutMs: 30_000 });
@@ -173,6 +234,31 @@ async function offerMove($: EngineInterface, window: SessionRateLimit, now: numb
   );
 }
 
+/**
+ * A spent window, by whichever sign came first — its use reaching 100%, or a turn the
+ * API refused over the limit. One offer per window, and not before aimux has answered
+ * once: the offer is about where to go next.
+ */
+async function spent($: EngineInterface, window: SessionRateLimit, now: number) {
+  const key = `${window.kind}:${window.resetsAt ?? ''}:out`;
+  if (fetchedAt === undefined || warned.has(key)) return;
+
+  warned.add(key);
+  await offerMove($, window, now);
+}
+
+/** A turn the API refused over a rate limit: spent, if a window is in fact nearly full. */
+async function refusedOverLimit($: EngineInterface) {
+  const { rateLimits } = await $.session.usage();
+  const tightest = rateLimits
+    .filter((w) => w.kind in WINDOW_NAME)
+    .sort((a, b) => b.percentUsed - a.percentUsed)[0];
+
+  // A refusal with room left in every window is the API being busy, not a spent
+  // subscription: nothing to move for.
+  if (tightest && tightest.percentUsed >= SPENT_AT) await spent($, tightest, await $.clock.now());
+}
+
 /** The person ran /exit after the offer: tell aimux, so it moves without asking again. */
 async function agreeToMove($: EngineInterface) {
   if (offered && handoff) await $.fs.write(handoff, offered);
@@ -185,8 +271,13 @@ export const register: Register = (on) => {
     aimux = current && self ? JSON.parse(self) : undefined;
     handoff = await $.env.get('AIMUX_HANDOFF');
 
-    // On a timer, not awaited: the first prompt must not wait on a network probe.
-    if (aimux) $.clock.after(0, () => void refresh($));
+    if (aimux) {
+      await $.command.register({ name: 'aimux', description: 'How much of every subscription is used, and when each resets' });
+
+      // On a timer, not awaited: the first prompt must not wait on a network probe.
+      $.clock.after(0, () => void refresh($));
+    }
+
     return next(e);
   });
 
@@ -200,6 +291,8 @@ export const register: Register = (on) => {
       live = {
         fiveHourPct: five ? Math.round(five.percentUsed) : null,
         weeklyPct: week ? Math.round(week.percentUsed) : null,
+        fiveHourResetsAt: parseTime(five?.resetsAt),
+        weeklyResetsAt: parseTime(week?.resetsAt),
       };
     }
 
@@ -216,13 +309,16 @@ export const register: Register = (on) => {
         continue;
       }
 
-      // Not before aimux has answered once: both notices are about where to go next.
-      const key = `${at}:${window.percentUsed >= 100 ? 'out' : 'near'}`;
-      if (fetchedAt === undefined || warned.has(key)) continue;
+      if (window.percentUsed >= 100) {
+        await spent($, window, now);
+        continue;
+      }
 
-      warned.add(key);
-      if (window.percentUsed >= 100) await offerMove($, window, now);
-      else $.ui.toast(warning(current, window, others, own, now), { timeoutMs: 15_000 });
+      // Not before aimux has answered once: the notice names where to go next.
+      if (fetchedAt === undefined || warned.has(`${at}:near`)) continue;
+
+      warned.add(`${at}:near`);
+      $.ui.toast(warning(current, window, others, own, now), { timeoutMs: 15_000 });
     }
 
     await show($);
@@ -230,10 +326,17 @@ export const register: Register = (on) => {
     return next(e);
   });
 
+  on('classic.StopFailure', async ($, e, next) => {
+    if (current && e.error === 'rate_limit') await refusedOverLimit($);
+    return next(e);
+  });
+
   on('command.run', { command: 'exit' }, async ($, e, next) => {
     await agreeToMove($);
     return next(e);
   });
+
+  on('command.run', { command: 'aimux' }, async ($) => ({ text: await report($) }));
 
   // `aimux  ▸ dt (this session) 5h:27% 7d:43%  │  main 5h:13% 7d:12% · cx 7d:36%`
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -248,9 +351,11 @@ export const register: Register = (on) => {
       if (cell.isExpired) return [<Text color="yellow">login expired</Text>];
       if (cell.windows.length === 0) return [<Text dimColor>–</Text>];
 
+      // A window close to its limit also says when it frees up.
       return cell.windows.flatMap((w, i) => [
         <Text dimColor>{`${i > 0 ? ' ' : ''}${w.label}:`}</Text>,
         <Text color={levelColor(w.pct)}>{`${w.pct}%`}</Text>,
+        <Text dimColor>{w.pct >= NEAR ? resetsIn(w.resetsAt, drawn.now) : ''}</Text>,
       ]);
     };
 

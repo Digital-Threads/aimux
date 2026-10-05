@@ -17,8 +17,8 @@ import {
   loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedClaudeOnboarding, confirm,
   parseShell, buildSwitchEnv, renderShellExports, renderShellInit,
   fetchRateLimits, rateLimitProfiles, pickFreestProfile, limitsSnapshot,
-  planContinuation, formatResetAt, openSplit, posixQuote, baseEnvFor,
-  continuationArgs, sessionIdFromArgs, followProcessSession, keepOpenOnFailure,
+  planContinuation, runWithContinuation, fmtPct, openSplit, posixQuote, baseEnvFor,
+  sessionIdFromArgs, followProcessSession, keepOpenOnFailure,
 } from './core/index.js';
 
 function collectRepeatable(value: string, previous: string[]): string[] {
@@ -78,26 +78,18 @@ function askYes(question: string): boolean {
 }
 
 /**
- * Whether the Claude Code mod recorded, for one launch, that the person agreed to move
- * the session (they ran the `/exit` it offered once the subscription ran out). Read
- * once: the file goes with it.
+ * What the Claude Code mod recorded for one launch: the subscription the person agreed
+ * to move the session to (they ran the `/exit` it offered once theirs ran out), or
+ * nothing. Read once: the file goes with it.
  */
-function takeHandoff(path: string): boolean {
-  if (!existsSync(path)) return false;
+function takeHandoff(path: string): string | undefined {
+  if (!existsSync(path)) return undefined;
 
+  const profile = readFileSync(path, 'utf-8').trim();
   rmSync(path, { force: true });
-  return true;
+  return profile || undefined;
 }
 
-/** A window's utilization for one-line messages; an unreported window is unknown, not 0%. */
-const fmtPct = (p: number | null) => (p === null ? '—' : `${p}%`);
-
-/** Claude's window names, in the words its own status line uses. */
-function describeWindow(rateLimitType: string | undefined): string {
-  if (rateLimitType === 'five_hour') return '5-hour';
-  if (rateLimitType?.startsWith('seven_day')) return 'weekly';
-  return 'usage';
-}
 
 function resolveProfile(config: AimuxConfig, input: string): string {
   if (config.profiles[input]) return input;
@@ -188,9 +180,15 @@ program
   .option('--no-limits', 'Skip the live 5h/7d rate-limit probe (no network request)')
   .option('--json', 'Print every subscription\'s 5h/7d usage as JSON instead (for scripts)')
   .option('--max-age <seconds>', 'With --json: reuse a reading this recent instead of probing again', '0')
-  .action(async (options: { limits: boolean; json?: boolean; maxAge: string }) => {
+  .option('--watch [seconds]', 'Keep the table on screen and read the limits again every N seconds (default 60, at least 15)')
+  .action(async (options: { limits: boolean; json?: boolean; maxAge: string; watch?: string | true }) => {
     const config = requireConfig();
     if (options.json) {
+      if (options.watch !== undefined) {
+        console.error('--watch keeps the table on screen; it cannot be combined with --json');
+        process.exit(1);
+      }
+
       const maxAge = Number(options.maxAge);
       if (!Number.isFinite(maxAge) || maxAge < 0) {
         console.error(`--max-age takes a number of seconds, not '${options.maxAge}'`);
@@ -201,9 +199,29 @@ program
       return;
     }
 
+    const every = options.watch === undefined ? undefined : options.watch === true ? 60 : Number(options.watch);
+    // A day at most: past ~24 days Node turns a timer's delay into 1 ms.
+    if (every !== undefined && !(every >= 15 && every <= 86_400)) {
+      console.error(`--watch takes a number of seconds from 15 to 86400, not '${options.watch}'`);
+      process.exit(1);
+    }
+    if (every !== undefined && !options.limits) {
+      console.error('--watch re-reads the limits, so it cannot be combined with --no-limits');
+      process.exit(1);
+    }
+
     const { render } = await import('ink');
     const { StatusView } = await import('./components/StatusView.js');
-    render(<StatusView config={config} limits={await probeRateLimits(config, options.limits)} />);
+    const draw = async () => {
+      const limits = await probeRateLimits(config, options.limits);
+      const footer = every && `Read at ${new Date().toLocaleTimeString('en-GB')} · again every ${every}s · Ctrl-C to stop`;
+
+      return <StatusView config={config} limits={limits} footer={footer || undefined} />;
+    };
+
+    const app = render(await draw());
+    // Each reading is a request per subscription, so the pace has a floor (15s above).
+    if (every) setInterval(async () => app.rerender(await draw()), every * 1000);
   });
 
 program
@@ -434,39 +452,19 @@ program
         });
         follower?.stop();
 
-        const moveAgreed = handoff !== undefined && takeHandoff(handoff);
+        const moveAgreed = handoff ? takeHandoff(handoff) : undefined;
         return { code, since, moveAgreed, sessionId: follower?.current() ?? sessionIdFromArgs(extraArgs) };
       };
 
-      let current = profileName;
-      prepare(current);
-      let run = await launch(current, cliArgs);
+      const exitCode = await runWithContinuation(profileName, cliArgs, continuable, {
+        prepare,
+        launch,
+        plan: (name, session) => planContinuation(config, name, session),
+        ask: askYes,
+        say: (line) => console.error(line),
+      });
 
-      while (continuable) {
-        const plan = await planContinuation(config, current, { id: run.sessionId, since: run.since });
-        if (!plan) break;
-
-        const resets = plan.hit.resetsAt ? ` (resets ${formatResetAt(plan.hit.resetsAt)})` : '';
-        const hitLine = `\n⚠ ${current} hit its ${describeWindow(plan.hit.rateLimitType)} limit${resets}`;
-        if (!plan.next) {
-          console.error(`${hitLine}, and no other claude subscription has room right now.`);
-          break;
-        }
-
-        const { fiveHourPct, weeklyPct } = plan.next.status;
-        const where = `${plan.next.profile} (5h ${fmtPct(fiveHourPct)}, 7d ${fmtPct(weeklyPct)})`;
-        if (run.moveAgreed) {
-          console.error(`${hitLine}. Continuing this session on ${where}.`);
-        } else if (!askYes(`${hitLine}.\nContinue this session on ${where}? [Y/n] `)) {
-          break;
-        }
-
-        current = plan.next.profile;
-        prepare(current);
-        run = await launch(current, continuationArgs(cliArgs, plan.sessionId));
-      }
-
-      process.exit(run.code);
+      process.exit(exitCode);
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);

@@ -4,6 +4,37 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.33.0] - 2026-10-04
+
+### Added
+- **`/aimux` inside Claude Code** prints every subscription on its own line, each window
+  with the time until it resets, read fresh. It is a local command: no model request.
+- **`aimux status --watch [seconds]`** keeps the table on screen and reads the limits
+  again every N seconds (default 60, at least 15 — each reading is a request per
+  subscription), with the time of the last reading under the table.
+- The band above the prompt says when a window resets once it passes 80%:
+  `5h:92% (resets in 40m)`.
+
+### Changed
+- **A spent subscription is recognised by a second sign.** The offer to move (`/exit`
+  placed in the prompt) used to wait for Claude Code to report a window at 100%. It now
+  also comes when a turn is refused over a rate limit while a window is at 95% or more
+  — a refusal with room left in every window is the API being busy, and moves nothing.
+  And if you pressed Enter on the offer but the transcript records no spent window,
+  aimux no longer just exits: it says so and prints the command to carry on elsewhere.
+- **codex no longer warns "--profile requires embedded mode" at every start.** aimux
+  layers the shared settings with `-p`, with which codex cannot use its shared
+  background server; on codex 0.156 and newer aimux now asks for that mode outright
+  (`--no-daemon`) for the interactive TUI, `resume` and `fork`. Nothing is lost: that
+  server is one per CODEX_HOME, copies the whole CLI into each profile to start, and
+  only backs `codex agents` and remote control.
+
+### Internal
+- The run → limit → ask → move loop moved out of the CLI entry point into the core
+  (`runWithContinuation`) and is covered by tests: no hit, asking and resuming with the
+  user's flags, a refusal, a move already agreed inside claude, no subscription with
+  room, and a chain of moves.
+
 ## [0.32.4] - 2026-10-04
 
 ### Fixed

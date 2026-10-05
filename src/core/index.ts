@@ -81,7 +81,7 @@ export type { ProfileUsageSummary, SessionUsageSummary, UsageOptions, UsageTotal
 export { readProfileAutoMode } from './autoMode.js';
 export type { AutoModeStatus } from './autoMode.js';
 
-export { fetchRateLimits, limitsSnapshot, parseRateLimitHeaders, parseCodexUsage, classifyProfile, rateLimitProfiles, pctColor, formatResetAt, probeError, pickFreestProfile } from './limits.js';
+export { fetchRateLimits, limitsSnapshot, fmtPct, parseRateLimitHeaders, parseCodexUsage, classifyProfile, rateLimitProfiles, pctColor, formatResetAt, probeError, pickFreestProfile } from './limits.js';
 export type { RateLimitStatus, RateLimitProbe, ProfileKind } from './limits.js';
 
 export { estimateCost, resolvePricing, hasPricing } from './pricing.js';
@@ -99,7 +99,8 @@ export { formatTranscript } from './logs.js';
 
 export { sessionOwners, ownerAt, sessionTouchedSince, followProcessSession, findTranscript, sessionQuotaHit } from './sessionMarkers.js';
 export type { QuotaHit, SessionOwner } from './sessionMarkers.js';
-export { planContinuation, continuationArgs, sessionIdFromArgs } from './continuation.js';
+export { planContinuation, continuationArgs, sessionIdFromArgs, runWithContinuation } from './continuation.js';
+export type { LaunchResult, RunDeps } from './continuation.js';
 export type { ContinuationPlan } from './continuation.js';
 export { openSplit, keepOpenOnFailure } from './split.js';
 export type { SplitOptions, SplitDeps } from './split.js';

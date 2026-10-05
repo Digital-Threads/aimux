@@ -3,6 +3,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { adapterFor } from './index.js';
+import { codexProbe } from './codex.js';
+
+// A codex older than `--no-daemon` unless a test says otherwise, so the expectations
+// below do not depend on which codex this machine has installed.
+beforeEach(() => { codexProbe.version = () => '0.150.0'; });
 
 describe('codexAdapter run-path', () => {
   it('is selected for cli "codex"', () => {
@@ -140,6 +145,28 @@ describe('codex overlay (globalArgs + extraLinks)', () => {
     expect(a.globalArgs('plugin')).toEqual([]); // management subcommand rejects -p
     expect(a.globalArgs('doctor')).toEqual([]);
     expect(a.globalArgs('login')).toEqual([]);
+  });
+
+  it('spares codex the background server it cannot use with the overlay, where codex knows the flag', () => {
+    // With `-p` codex falls back to embedded mode and warns about it at every start;
+    // `--no-daemon` (codex 0.156+) asks for that mode outright. `exec` does not take it.
+    const a = adapterFor('codex');
+    codexProbe.version = () => '0.160.0';
+    expect(a.globalArgs(undefined)).toEqual(['-p', 'aimux', '--no-daemon']);
+    expect(a.globalArgs('--model')).toEqual(['-p', 'aimux', '--no-daemon']);
+    expect(a.globalArgs('resume')).toEqual(['-p', 'aimux', '--no-daemon']);
+    expect(a.globalArgs('fork')).toEqual(['-p', 'aimux', '--no-daemon']);
+    expect(a.globalArgs('exec')).toEqual(['-p', 'aimux']);
+    expect(a.globalArgs('login')).toEqual([]);
+
+    codexProbe.version = () => '0.156.0';
+    expect(a.globalArgs(undefined)).toEqual(['-p', 'aimux', '--no-daemon']);
+
+    // Older codex rejects the flag, and one that is not installed tells us nothing.
+    for (const version of ['0.155.9', null]) {
+      codexProbe.version = () => version;
+      expect(a.globalArgs(undefined)).toEqual(['-p', 'aimux']);
+    }
   });
 
   it('claude injects no global args', () => {

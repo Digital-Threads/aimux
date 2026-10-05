@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { looksLikeSubcommand } from '../subcommand.js';
@@ -12,8 +13,10 @@ import type { CliAdapter } from './types.js';
 //     subscriptions and `codex resume` the SAME session under another profile.
 // Settings + plugins are shared via the config OVERLAY (see extraLinks/globalArgs):
 // `config.toml` itself stays PRIVATE (codex churns it with trust-levels/runtime state),
-// but a symlinked `aimux.config.toml` overlay — which codex only READS, never writes —
-// carries the source's model/features/[plugins]/[marketplaces] when layered via `-p aimux`.
+// but a symlinked `aimux.config.toml` overlay carries the source's
+// model/features/[plugins]/[marketplaces] when layered via `-p aimux`. Settings changed
+// from inside a session land in that layer — through the link, in the source's own
+// config.toml, where every profile sees them; trust levels still go to the private file.
 const CODEX_SHARED_ENTRIES = new Set(['skills', 'rules', 'memories', 'sessions', 'session_index.jsonl']);
 
 // codex 0.14x moved the session/resume index out of session_index.jsonl into a SQLite DB
@@ -35,8 +38,37 @@ function readdirSafe(dir: string): string[] {
 }
 
 // The overlay profile name: codex layers `$CODEX_HOME/<name>.config.toml` on top of the
-// base config when invoked with `-p <name>`. Verified: codex reads it, never writes it.
+// base config when invoked with `-p <name>`.
 const OVERLAY_PROFILE = 'aimux';
+
+/** The installed codex's version (`0.160.0`), read once; null when codex cannot be asked.
+ *  A field, so tests can stand in for the machine's codex. */
+let installed: string | null | undefined;
+export const codexProbe = {
+  version(): string | null {
+    if (installed === undefined) {
+      const out = spawnSync('codex', ['--version'], { encoding: 'utf-8', timeout: 5000 }).stdout ?? '';
+      installed = /(\d+\.\d+\.\d+)/.exec(out)?.[1] ?? null;
+    }
+    return installed;
+  },
+};
+
+/**
+ * Whether to pass `--no-daemon`. With `-p`, codex cannot use its shared background
+ * server ("--profile requires embedded mode") and says so at every start; asking for
+ * embedded mode outright keeps it quiet. Embedded is also the right mode here: the
+ * server is one per CODEX_HOME with its environment frozen at start, and only backs
+ * `codex agents` and remote control. The flag exists from codex 0.156.0 and only on
+ * the interactive TUI, `resume` and `fork` — an older codex rejects it.
+ */
+function wantsNoDaemon(firstArg: string | undefined): boolean {
+  const isTui = !firstArg || firstArg.startsWith('-') || firstArg === 'resume' || firstArg === 'fork';
+  if (!isTui) return false;
+
+  const [major, minor] = (codexProbe.version() ?? '0.0.0').split('.').map(Number);
+  return major > 0 || minor >= 156;
+}
 
 // Codex subcommands that accept `-p` (runtime). Management subcommands (plugin, doctor,
 // login, logout, update, completion) reject it, so the overlay is skipped for them.
@@ -110,12 +142,14 @@ export const codexAdapter: CliAdapter = {
   headlessCaptureToFile: true,
 
   globalArgs(firstArg) {
-    return isRuntimeInvocation(firstArg) ? ['-p', OVERLAY_PROFILE] : [];
+    if (!isRuntimeInvocation(firstArg)) return [];
+
+    return wantsNoDaemon(firstArg) ? ['-p', OVERLAY_PROFILE, '--no-daemon'] : ['-p', OVERLAY_PROFILE];
   },
 
   extraLinks(sourceDir) {
     // Overlay (settings + plugin metadata) + plugin content. config.toml is read via the
-    // overlay symlink; codex never writes the overlay, so the symlink is safe.
+    // overlay symlink.
     const links = [
       { link: `${OVERLAY_PROFILE}.config.toml`, target: join(sourceDir, 'config.toml') },
       { link: 'plugins', target: join(sourceDir, 'plugins') },

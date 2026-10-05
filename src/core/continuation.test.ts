@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { AimuxConfig } from '../types/index.js';
 import type { RateLimitProbe } from './limits.js';
-import { continuationArgs, planContinuation, sessionIdFromArgs } from './continuation.js';
+import { continuationArgs, planContinuation, runWithContinuation, sessionIdFromArgs, type ContinuationPlan, type RunDeps } from './continuation.js';
 
 let root: string;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'aimux-continue-')); });
@@ -169,5 +169,100 @@ describe('sessionIdFromArgs', () => {
     expect(sessionIdFromArgs(['--continue'])).toBeUndefined();
     expect(sessionIdFromArgs(['--resume'])).toBeUndefined();
     expect(sessionIdFromArgs([])).toBeUndefined();
+  });
+});
+
+describe('runWithContinuation', () => {
+  const HIT: ContinuationPlan['hit'] = { rateLimitType: 'five_hour', resetsAt: FAR_FUTURE * 1000 };
+  const room = (profile: string) => ({ profile, status: { fiveHourPct: 10, weeklyPct: 20 } });
+
+  /** A run whose launches exit with `codes` in turn, and whose sessions hit a limit per `plans`. */
+  function scripted(plans: Array<ContinuationPlan | null>, opts: { answer?: boolean; agreed?: string[]; codes?: number[] } = {}) {
+    const seen = { launches: [] as Array<[string, string[]]>, prepared: [] as string[], asked: [] as string[], said: [] as string[] };
+    const deps: RunDeps = {
+      prepare: (profile) => { seen.prepared.push(profile); },
+      launch: async (profile, args) => {
+        const n = seen.launches.push([profile, args]) - 1;
+        return { code: opts.codes?.[n] ?? 0, since: n, sessionId: `s${n}`, moveAgreed: opts.agreed?.[n] };
+      },
+      plan: async () => plans.shift() ?? null,
+      ask: (question) => { seen.asked.push(question); return opts.answer ?? true; },
+      say: (line) => { seen.said.push(line); },
+    };
+    return { seen, deps };
+  }
+
+  it('runs once and hands back the exit code when no limit was hit', async () => {
+    const { seen, deps } = scripted([null], { codes: [3] });
+    expect(await runWithContinuation('work', ['--verbose'], true, deps)).toBe(3);
+    expect(seen.launches).toEqual([['work', ['--verbose']]]);
+    expect(seen.asked).toEqual([]);
+  });
+
+  it('asks, then resumes the same session on the freest subscription with the user\'s flags', async () => {
+    const { seen, deps } = scripted([{ sessionId: 'abc', hit: HIT, next: room('spare') }, null], { codes: [0, 7] });
+
+    expect(await runWithContinuation('work', ['--add-dir', 'x'], true, deps)).toBe(7);
+    expect(seen.asked).toHaveLength(1);
+    expect(seen.asked[0]).toContain('work hit its 5-hour limit');
+    expect(seen.asked[0]).toContain('Continue this session on spare (5h 10%, 7d 20%)? [Y/n]');
+    expect(seen.launches).toEqual([['work', ['--add-dir', 'x']], ['spare', ['--add-dir', 'x', '--resume', 'abc']]]);
+    expect(seen.prepared).toEqual(['work', 'spare']);
+  });
+
+  it('stops when the user says no', async () => {
+    const { seen, deps } = scripted([{ sessionId: 'abc', hit: HIT, next: room('spare') }], { answer: false, codes: [5] });
+    expect(await runWithContinuation('work', [], true, deps)).toBe(5);
+    expect(seen.launches).toHaveLength(1);
+  });
+
+  it('moves without asking when the person already agreed inside claude', async () => {
+    const { seen, deps } = scripted([{ sessionId: 'abc', hit: HIT, next: room('spare') }, null], { agreed: ['spare'] });
+    await runWithContinuation('work', [], true, deps);
+
+    expect(seen.asked).toEqual([]);
+    expect(seen.said.join('\n')).toContain('Continuing this session on spare (5h 10%, 7d 20%).');
+    expect(seen.launches.map(([profile]) => profile)).toEqual(['work', 'spare']);
+  });
+
+  it('says how to carry on when the person agreed to move but no spent limit was recorded', async () => {
+    // The mod offered the move after a refused turn; the transcript shows no spent window,
+    // so aimux does not move on its own — but it must not just exit without a word.
+    const { seen, deps } = scripted([null], { agreed: ['spare'], codes: [4] });
+
+    expect(await runWithContinuation('work', [], true, deps)).toBe(4);
+    expect(seen.launches).toHaveLength(1);
+    expect(seen.said.join('\n')).toContain('aimux run spare --resume s0');
+  });
+
+  it('says so and stops when no other subscription has room', async () => {
+    const { seen, deps } = scripted([{ sessionId: 'abc', hit: HIT, next: null }]);
+    await runWithContinuation('work', [], true, deps);
+
+    expect(seen.said.join('\n')).toContain('no other claude subscription has room right now');
+    expect(seen.launches).toHaveLength(1);
+    expect(seen.asked).toEqual([]);
+  });
+
+  it('keeps moving when the next subscription runs out too', async () => {
+    const { seen, deps } = scripted([
+      { sessionId: 'abc', hit: HIT, next: room('spare') },
+      { sessionId: 'abc', hit: HIT, next: room('third') },
+      null,
+    ]);
+    await runWithContinuation('work', ['-c'], true, deps);
+
+    // Whatever picked the old session is dropped each time; only the new --resume decides.
+    expect(seen.launches).toEqual([['work', ['-c']], ['spare', ['--resume', 'abc']], ['third', ['--resume', 'abc']]]);
+  });
+
+  it('never looks for a limit when the launch has no conversation to carry on', async () => {
+    let planned = 0;
+    const { seen, deps } = scripted([]);
+    deps.plan = async () => { planned++; return null; };
+
+    expect(await runWithContinuation('work', ['-p', 'hi'], false, deps)).toBe(0);
+    expect(planned).toBe(0);
+    expect(seen.launches).toHaveLength(1);
   });
 });

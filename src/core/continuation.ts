@@ -2,7 +2,7 @@ import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 import { getProfile } from './config.js';
 import { expandHome } from './paths.js';
 import {
-  fetchRateLimits, pickFreestProfile, rateLimitProfiles,
+  fetchRateLimits, fmtPct, formatResetAt, pickFreestProfile, rateLimitProfiles,
   type RateLimitProbe, type RateLimitStatus,
 } from './limits.js';
 import { findTranscript, sessionQuotaHit, sessionTouchedSince, type QuotaHit } from './sessionMarkers.js';
@@ -116,4 +116,87 @@ export function continuationArgs(original: string[], sessionId: string): string[
     kept.push(arg);
   }
   return [...kept, '--resume', sessionId];
+}
+
+/** One launch of the CLI: how it exited and which session it ended on. */
+export interface LaunchResult {
+  code: number;
+  /** When the launch began, for telling this run's hit from an earlier one's. */
+  since: number;
+  sessionId?: string;
+  /** The subscription the person already agreed to move to, inside claude (the mod's
+   *  `/exit`); absent when they did not. */
+  moveAgreed?: string;
+}
+
+/** What the loop needs from the outside world — the CLI wires the real ones. */
+export interface RunDeps {
+  /** Everything a profile needs right before the CLI starts under it. */
+  prepare(profile: string): void;
+  launch(profile: string, args: string[]): Promise<LaunchResult>;
+  plan(profile: string, session: { id?: string; since: number }): Promise<ContinuationPlan | null>;
+  ask(question: string): boolean;
+  say(line: string): void;
+}
+
+/** Claude's window names, in the words its own status line uses. */
+function describeWindow(rateLimitType: string | undefined): string {
+  if (rateLimitType === 'five_hour') return '5-hour';
+  if (rateLimitType?.startsWith('seven_day')) return 'weekly';
+  return 'usage';
+}
+
+/**
+ * Run the CLI under a profile and, each time its session stops on a spent window,
+ * carry that same session over to the subscription with the most room — asking first,
+ * unless the person already agreed inside claude. Returns the last launch's exit code.
+ *
+ * `continuable`: an interactive claude session. A subcommand or `-p` run has no
+ * conversation to carry on, and without a terminal there is nobody to ask.
+ */
+export async function runWithContinuation(
+  profile: string,
+  cliArgs: string[],
+  continuable: boolean,
+  deps: RunDeps,
+): Promise<number> {
+  let current = profile;
+  deps.prepare(current);
+  let run = await deps.launch(current, cliArgs);
+
+  while (continuable) {
+    const plan = await deps.plan(current, { id: run.sessionId, since: run.since });
+    if (!plan) {
+      // They pressed Enter on an offer to move, but the transcript records no spent
+      // window (a busy API, or a window that reset meanwhile): aimux moves nothing on
+      // its own account — and says how to, rather than exit without a word.
+      if (run.moveAgreed) {
+        const resume = run.sessionId ? `--resume ${run.sessionId}` : '--continue';
+        deps.say(`\naimux found no spent limit recorded for this session, so it stays on ${current}.`
+          + ` To carry it on elsewhere: aimux run ${run.moveAgreed} ${resume}`);
+      }
+      break;
+    }
+
+    const resets = plan.hit.resetsAt ? ` (resets ${formatResetAt(plan.hit.resetsAt)})` : '';
+    const hitLine = `\n⚠ ${current} hit its ${describeWindow(plan.hit.rateLimitType)} limit${resets}`;
+    if (!plan.next) {
+      deps.say(`${hitLine}, and no other claude subscription has room right now.`);
+      break;
+    }
+
+    const { fiveHourPct, weeklyPct } = plan.next.status;
+    const where = `${plan.next.profile} (5h ${fmtPct(fiveHourPct)}, 7d ${fmtPct(weeklyPct)})`;
+    if (run.moveAgreed) {
+      deps.say(`${hitLine}. Continuing this session on ${where}.`);
+    } else if (!deps.ask(`${hitLine}.\nContinue this session on ${where}? [Y/n] `)) {
+      break;
+    }
+
+    current = plan.next.profile;
+    deps.prepare(current);
+    run = await deps.launch(current, continuationArgs(cliArgs, plan.sessionId));
+  }
+
+  return run.code;
 }

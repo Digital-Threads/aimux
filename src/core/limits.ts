@@ -201,6 +201,9 @@ export function formatResetAt(resetsAt: number | undefined, now = Date.now()): s
     : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+/** A window's utilization for one-line messages; an unreported window is unknown, not 0%. */
+export const fmtPct = (p: number | null) => (p === null ? '—' : `${p}%`);
+
 /** Severity color for a utilization percent, shared by every view that shows it. */
 export function pctColor(pct: number): 'green' | 'yellow' | 'red' {
   return pct >= 80 ? 'red' : pct >= 60 ? 'yellow' : 'green';
