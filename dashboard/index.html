@@ -5,9 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="aimux-key" content="">
 <title>aimux dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231a1a19'/%3E%3Crect x='7' y='14' width='4' height='11' rx='2' fill='%230ca30c'/%3E%3Crect x='14' y='9' width='4' height='16' rx='2' fill='%23fab219'/%3E%3Crect x='21' y='6' width='4' height='19' rx='2' fill='%23ec835a'/%3E%3C/svg%3E">
+<script>
+  // Before the first paint, so the page never flashes the other theme: the reader's choice, else the system's.
+  try {
+    document.documentElement.dataset.theme = localStorage.getItem('aimux.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  } catch (e) {
+    document.documentElement.dataset.theme = 'light';
+  }
+</script>
 <style>
   /* A mixing desk at night: every subscription is a channel strip with its level meters.
      Colour belongs to the data alone; the chrome is ink, hairlines and one soft light. */
+  @font-face { font-family: 'Geist'; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/geist-latin-wght-normal.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: 'Geist'; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/geist-cyrillic-wght-normal.woff2) format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'Geist Mono'; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/geist-mono-latin-wght-normal.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: 'Geist Mono'; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/geist-mono-cyrillic-wght-normal.woff2) format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+
   :root {
     color-scheme: light;
     --plane: #f5f4f0;
@@ -17,7 +31,7 @@
     --inset: #efeee9;
     --ink: #0b0b0b;
     --ink-2: #52514e;
-    --muted: #898781;
+    --muted: #807e78;
     --grid: #e1e0d9;
     --axis: #c3c2b7;
     --edge: rgba(11, 11, 11, 0.10);
@@ -38,41 +52,42 @@
     --warning: #fab219;
     --serious: #ec835a;
     --critical: #d03b3b;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --mono: 'Geist Mono', ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      color-scheme: dark;
-      --plane: #0b0b0a;
-      --glow: rgba(255, 255, 255, 0.06);
-      --dots: rgba(255, 255, 255, 0.045);
-      --surface: #1a1a19;
-      --inset: #111110;
-      --ink: #f0efec;
-      --ink-2: #c3c2b7;
-      --muted: #898781;
-      --grid: #2c2c2a;
-      --axis: #383835;
-      --edge: rgba(255, 255, 255, 0.09);
-      --edge-hi: rgba(255, 255, 255, 0.06);
-      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 20px 44px -22px rgba(0, 0, 0, 0.85);
-      --wash: rgba(255, 255, 255, 0.06);
-      --series-1: #3987e5;
-      --series-2: #d95926;
-      --series-3: #199e70;
-      --series-4: #c98500;
-      --series-5: #d55181;
-      --series-6: #008300;
-      --series-7: #9085e9;
-      --series-8: #e66767;
-      --series-other: #5f5e58;
-    }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --plane: #0b0b0a;
+    --glow: rgba(255, 255, 255, 0.06);
+    --dots: rgba(255, 255, 255, 0.045);
+    --surface: #1a1a19;
+    --inset: #111110;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #8f8d86;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --edge: rgba(255, 255, 255, 0.09);
+    --edge-hi: rgba(255, 255, 255, 0.06);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 20px 44px -22px rgba(0, 0, 0, 0.85);
+    --wash: rgba(255, 255, 255, 0.06);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+    --series-other: #5f5e58;
   }
 
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  body { margin: 0; background: var(--plane); color: var(--ink); font: 14px/1.45 var(--sans); }
+  body {
+    margin: 0; background: var(--plane); color: var(--ink);
+    font: 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
   /* The room: one light from the upper left over a faint grid. Behind everything, never in the way. */
   body::before {
     content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
@@ -80,36 +95,57 @@
       radial-gradient(1100px 560px at 10% -10%, var(--glow), transparent 62%),
       radial-gradient(circle at 1px 1px, var(--dots) 1px, transparent 0) 0 0 / 22px 22px;
   }
-  main { max-width: 1180px; margin: 0 auto; padding: 18px 20px 64px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 0 20px 64px; }
   p { margin: 0; }
   .grow { flex: 1; }
-  .eyebrow { font: 600 11.5px/1.2 var(--mono); letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+  /* Labels in the mono face. Its word space is a whole letter wide, so it is drawn in. */
+  .eyebrow, .card h3, .wlabel, .badge, .spark .cap, .filters legend, th, #tip .t { word-spacing: -0.3em; }
+  .eyebrow { font: 500 11px/1.3 var(--mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
   .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block; }
 
-  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font: 13px var(--mono); }
-  .brand { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+  /* ---- the bar: stays in reach while the page scrolls ---- */
+  .bar {
+    position: sticky; top: 0; z-index: 5; margin: 0 -20px; padding: 12px 20px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+    font: 12.5px var(--mono); border-bottom: 1px solid var(--edge);
+    background: color-mix(in srgb, var(--plane) 80%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  .brand { font-weight: 600; font-size: 14.5px; letter-spacing: -0.01em; }
   .brand span { color: var(--muted); font-weight: 400; }
-  .stamp { color: var(--muted); }
-  @media (max-width: 520px) { .stamp { order: 3; flex-basis: 100%; } }
+  .stamp { color: var(--muted); margin-right: 4px; font: 12.5px var(--sans); }
+  @media (max-width: 640px) { .stamp { order: 9; flex-basis: 100%; margin: 0; } }
   button, .seg label {
-    font: 12.5px var(--mono); color: var(--ink); background: var(--surface);
+    font: 500 12.5px var(--mono); color: var(--ink); background: var(--surface);
     border: 1px solid var(--edge); border-radius: 8px; padding: 6px 12px; cursor: pointer;
-    transition: background-color 0.15s ease-out;
+    transition: background-color 0.15s ease-out, opacity 0.15s ease-out;
   }
   button:hover, .seg label:hover { background: var(--inset); }
   button:active { transform: translateY(1px); }
+  button:disabled { opacity: 0.55; cursor: progress; }
+  button.icon { padding: 6px 8px; display: inline-flex; }
+  button.icon svg { width: 16px; height: 16px; }
+  button.mini { padding: 4px 9px; font-size: 11.5px; }
+  /* The button shows where it takes you: the sun while it is dark. */
+  :root[data-theme="dark"] .moon, :root:not([data-theme="dark"]) .sun { display: none; }
   button:focus-visible, .seg input:focus-visible + label, [tabindex]:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+  .seg { display: inline-flex; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg label { border-radius: 0; margin-left: -1px; white-space: nowrap; }
+  .seg label:first-of-type { border-radius: 8px 0 0 8px; margin-left: 0; }
+  .seg label:last-of-type { border-radius: 0 8px 8px 0; }
+  .seg input:checked + label { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  @media (max-width: 420px) { .seg label { padding: 6px 8px; } }
 
   /* ---- the lead: one sentence, then three readouts ---- */
-  .hero { padding: clamp(28px, 6vw, 60px) 0 0; }
+  .hero { padding: clamp(28px, 5.5vw, 56px) 0 0; }
   .hero h1 {
-    margin: 14px 0 12px; max-width: 22ch;
-    font-size: clamp(30px, 4.8vw, 58px); line-height: 1.04; letter-spacing: -0.028em; font-weight: 650;
+    margin: 14px 0 14px; max-width: 20ch;
+    font-size: clamp(32px, 5vw, 60px); line-height: 1.02; letter-spacing: -0.04em; font-weight: 600;
     text-wrap: balance; overflow-wrap: anywhere;
   }
-  .lead { font-size: clamp(15px, 1.45vw, 18px); line-height: 1.45; color: var(--ink-2); max-width: 64ch; text-wrap: pretty; min-height: 1.45em; }
+  .lead { font-size: clamp(15px, 1.5vw, 18px); line-height: 1.5; color: var(--ink-2); max-width: 66ch; text-wrap: pretty; min-height: 1.5em; }
   .who { white-space: nowrap; }
-  .who .dot { width: 0.3em; height: 0.3em; min-width: 7px; min-height: 7px; margin-right: 0.18em; vertical-align: 0.16em; }
+  .who .dot { width: 0.3em; height: 0.3em; min-width: 7px; min-height: 7px; margin-right: 0.2em; vertical-align: 0.16em; }
 
   .readouts {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 1px;
@@ -117,7 +153,7 @@
     background: var(--edge); border: 1px solid var(--edge); box-shadow: var(--shadow);
   }
   .readout { background: var(--surface); padding: 16px 18px 17px; box-shadow: inset 0 1px 0 var(--edge-hi); }
-  .readout .value { font-size: 24px; font-weight: 650; letter-spacing: -0.015em; line-height: 1.2; margin-top: 8px; overflow-wrap: anywhere; }
+  .readout .value { font-size: 25px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.2; margin-top: 8px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
   .readout .sub { color: var(--ink-2); font-size: 13px; margin-top: 3px; }
 
   /* ---- channel strips ---- */
@@ -125,25 +161,25 @@
     position: relative; background: var(--surface); border: 1px solid var(--edge); border-radius: 14px; padding: 18px;
     box-shadow: inset 0 1px 0 var(--edge-hi), var(--shadow);
   }
-  .card h3 { margin: 0 0 14px; font: 600 11.5px/1.2 var(--mono); letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+  .card h3 { margin: 0 0 14px; font: 500 11px/1.3 var(--mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
   .subs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr)); gap: 14px; margin-top: 14px; }
   .strip { padding-left: 24px; }
   /* The strip's colour: the subscription's own, the same in every chart and table below. */
   .strip::before { content: ''; position: absolute; left: -1px; top: 18px; bottom: 18px; width: 4px; border-radius: 0 4px 4px 0; background: var(--id); }
   .sub-head { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
-  .sub-head .name { font-weight: 650; font-size: 17px; letter-spacing: -0.012em; overflow-wrap: anywhere; }
-  .cli { font: 11px var(--mono); color: var(--muted); border: 1px solid var(--edge); border-radius: 999px; padding: 2px 7px; white-space: nowrap; }
+  .sub-head .name { font-weight: 600; font-size: 17px; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+  .cli { font: 11px var(--mono); color: var(--muted); border: 1px solid var(--edge); border-radius: 999px; padding: 1px 7px 2px; white-space: nowrap; }
   .badge {
     display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
-    font: 600 11px/1 var(--mono); letter-spacing: 0.05em; text-transform: uppercase;
+    font: 500 11px/1 var(--mono); letter-spacing: 0.04em; text-transform: uppercase;
     padding: 5px 9px 5px 7px; border-radius: 999px; background: color-mix(in srgb, var(--tone) 15%, transparent);
   }
   .badge svg { width: 13px; height: 13px; flex: none; color: var(--tone); }
-  .win { display: grid; grid-template-columns: 62px 1fr auto; align-items: center; column-gap: 12px; margin-top: 16px; }
-  .wlabel { font: 11px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
-  .pct { min-width: 3.4ch; text-align: right; font-size: 20px; font-weight: 650; letter-spacing: -0.015em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .pct small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 1px; }
-  .note { grid-column: 2 / 4; color: var(--ink-2); font-size: 12.5px; margin-top: 6px; }
+  .win { display: grid; grid-template-columns: 68px 1fr auto; align-items: center; column-gap: 12px; margin-top: 16px; }
+  .wlabel { font: 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .pct { min-width: 3.2ch; text-align: right; font-size: 21px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .pct small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 1px; letter-spacing: 0; }
+  .note { grid-column: 2 / 4; color: var(--ink-2); font-size: 12.5px; line-height: 1.45; margin-top: 6px; }
   .meter { position: relative; height: 12px; border-radius: 6px; background: color-mix(in srgb, var(--tone) 18%, var(--inset)); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.16); }
   .meter .fill { height: 100%; border-radius: 6px; background: var(--tone); min-width: 3px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28); }
   /* The clock: how much of the window's time has gone. Ringed in the surface so it reads over the level. */
@@ -154,8 +190,10 @@
   .tone-spent { --tone: var(--critical); }
   .tone-unknown { --tone: var(--muted); }
   .problem { color: var(--ink-2); font-size: 13px; margin-top: 12px; }
+  .cmd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+  .cmd code { background: var(--inset); border: 1px solid var(--edge); border-radius: 6px; padding: 4px 8px; color: var(--ink); }
   .spark { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--grid); }
-  .spark .cap { font: 11px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .spark .cap { font: 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
   .spark .plot { position: relative; }
   .spark svg { display: block; width: 100%; height: 40px; }
   .spark .end { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; border: 2px solid var(--surface); }
@@ -164,18 +202,11 @@
 
   /* ---- usage ---- */
   .section-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 32px; margin-top: clamp(56px, 8vw, 96px); }
-  h2 { margin: 10px 0 6px; font-size: clamp(22px, 2.7vw, 32px); line-height: 1.1; letter-spacing: -0.022em; font-weight: 650; }
+  h2 { margin: 10px 0 6px; font-size: clamp(23px, 2.8vw, 32px); line-height: 1.1; letter-spacing: -0.035em; font-weight: 600; }
   .lede { color: var(--ink-2); max-width: 58ch; text-wrap: pretty; }
   .filters { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; }
   .filters fieldset { border: 0; padding: 0; margin: 0; display: flex; align-items: center; gap: 8px; }
-  .filters legend { float: left; padding: 0; margin-right: 8px; font: 11px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
-  .seg { display: inline-flex; }
-  .seg input { position: absolute; opacity: 0; pointer-events: none; }
-  .seg label { border-radius: 0; margin-left: -1px; white-space: nowrap; }
-  .seg label:first-of-type { border-radius: 8px 0 0 8px; margin-left: 0; }
-  .seg label:last-of-type { border-radius: 0 8px 8px 0; }
-  .seg input:checked + label { background: var(--ink); color: var(--surface); border-color: var(--ink); }
-  @media (max-width: 420px) { .seg label { padding: 6px 8px; } }
+  .filters legend { float: left; padding: 0; margin-right: 8px; font: 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
   .stale { opacity: 0.55; transition: opacity 0.2s ease-out; }
   .status { font: 12px var(--mono); color: var(--muted); min-height: 18px; margin-top: 14px; }
   .status.bad { color: var(--ink); }
@@ -197,10 +228,10 @@
   .scroll { overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
   th, td { padding: 8px 10px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--grid); }
-  th { font: 500 10.5px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+  th { font: 500 10.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
   th:first-child, td:first-child, td.text, th.text { text-align: left; }
   tbody tr:hover { background: var(--wash); }
-  tfoot td { font-weight: 650; border-bottom: 0; }
+  tfoot td { font-weight: 600; border-bottom: 0; }
   td .dot { margin-right: 9px; vertical-align: baseline; }
 
   .bars { display: grid; gap: 8px; }
@@ -208,7 +239,7 @@
   .bar-row:hover, .bar-row:focus-visible { background: var(--wash); }
   .bar-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); font-size: 13px; }
   .bar-row .track { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .bar-row .bar { height: 10px; border-radius: 0 4px 4px 0; background: var(--series-1); min-width: 2px; flex: none; }
+  .bar-row .rod { height: 10px; border-radius: 0 4px 4px 0; background: var(--series-1); min-width: 2px; flex: none; }
   .bar-row .val { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
   #tip {
@@ -216,14 +247,15 @@
     background: var(--surface); color: var(--ink); border: 1px solid var(--edge); border-radius: 10px;
     box-shadow: inset 0 1px 0 var(--edge-hi), 0 10px 30px rgba(0, 0, 0, 0.28); padding: 9px 11px; font-size: 12.5px; max-width: 320px;
   }
-  #tip .t { font: 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; overflow-wrap: anywhere; }
+  #tip .t { font: 11px var(--mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; overflow-wrap: anywhere; }
   #tip .r { display: flex; align-items: center; gap: 8px; }
-  #tip .r b { font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
+  #tip .r b { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
   #tip .r span.n { color: var(--ink-2); }
   #tip .k { width: 10px; height: 2px; border-radius: 1px; flex: none; }
   footer { margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--edge); color: var(--ink-2); font-size: 13px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px 40px; }
   footer b { color: var(--ink); font-weight: 600; }
   code { font: 12.5px var(--mono); }
+  .problem code, footer code { background: var(--inset); border-radius: 5px; padding: 1px 5px; }
 
   /* ---- motion: the desk powers on ----
      Levels rise once when the page opens or is refreshed, never on the quiet minute-by-minute
@@ -251,73 +283,72 @@
     <span class="brand">aimux<span> / dashboard</span></span>
     <span class="grow"></span>
     <span class="stamp" id="stamp" aria-live="polite"></span>
-    <button id="refresh" type="button">Refresh</button>
+    <span class="seg" id="lang" role="radiogroup" aria-label="Language"></span>
+    <button class="icon" id="theme" type="button">
+      <svg class="sun" viewBox="0 0 16 16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></g></svg>
+      <svg class="moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+    </button>
+    <button id="refresh" type="button" data-t="refresh"></button>
   </header>
 
   <section class="hero" aria-labelledby="headline">
-    <div class="eyebrow">Limits right now</div>
-    <h1 id="headline">Reading the limits…</h1>
+    <div class="eyebrow" data-t="limitsNow"></div>
+    <h1 id="headline" data-t="reading"></h1>
     <p class="lead" id="lead"></p>
     <div class="readouts" id="limit-tiles" hidden></div>
     <div class="status" id="limits-status"></div>
     <div class="subs" id="subs"></div>
     <div class="legend-note" id="limits-key" hidden>
       <span class="tickkey"></span>
-      <span>The tick marks how much of the window's time has passed. A bar ahead of its tick is burning faster than the window allows.</span>
+      <span data-t="tickKey"></span>
     </div>
   </section>
 
   <section aria-labelledby="h-usage">
     <div class="section-head">
       <div>
-        <div class="eyebrow">Usage</div>
-        <h2 id="h-usage">Where the tokens went</h2>
-        <p class="lede">Read from the session transcripts on this machine. Dollar figures are list-price estimates, for comparing — a subscription is not billed by them.</p>
+        <div class="eyebrow" data-t="usage"></div>
+        <h2 id="h-usage" data-t="usageTitle"></h2>
+        <p class="lede" data-t="usageLede"></p>
       </div>
       <div class="filters">
         <fieldset>
-          <legend>Period</legend>
+          <legend data-t="period"></legend>
           <span class="seg" id="since"></span>
         </fieldset>
         <fieldset>
-          <legend>Measure</legend>
+          <legend data-t="measure"></legend>
           <span class="seg" id="measure"></span>
         </fieldset>
       </div>
     </div>
-    <div class="status" id="usage-status">Scanning the transcripts — the first scan on a machine can take a minute…</div>
+    <div class="status" id="usage-status" data-t="scanning"></div>
     <div class="stack" id="usage" hidden>
       <div class="readouts" id="usage-tiles"></div>
       <div class="card">
-        <h3 id="time-title">Over time</h3>
+        <h3 id="time-title"></h3>
         <div class="legend" id="time-legend"></div>
         <div class="chart" id="time-chart"></div>
-        <details><summary>Show as a table</summary><div class="scroll" id="time-table"></div></details>
+        <details><summary data-t="asTable"></summary><div class="scroll" id="time-table"></div></details>
       </div>
       <div class="card">
-        <h3>By subscription</h3>
+        <h3 data-t="bySubscription"></h3>
         <div class="scroll" id="profile-table"></div>
       </div>
       <div class="two">
-        <div class="card"><h3 id="models-title">By model</h3><div class="bars" id="models"></div></div>
-        <div class="card"><h3 id="projects-title">By project</h3><div class="bars" id="projects"></div></div>
+        <div class="card"><h3 id="models-title"></h3><div class="bars" id="models"></div></div>
+        <div class="card"><h3 id="projects-title"></h3><div class="bars" id="projects"></div></div>
       </div>
       <div class="card">
-        <h3>Heaviest sessions</h3>
+        <h3 data-t="heaviest"></h3>
         <div class="scroll" id="sessions"></div>
       </div>
     </div>
   </section>
 
-  <footer>
-    <p><b>Pace.</b> A window's use so far is carried to its reset at the same rate. <i>Tight</i> means on course for 85% or more, <i>over pace</i> means it runs out before the reset, <i>spent</i> means it is full now. For the weekly window the forecast counts twelve working hours to a day, not twenty-four. There is no forecast in the first minutes of a window.</p>
-    <p><b>unknown</b> and <b>unknown (codex)</b> are sessions aimux could not tie to a profile: started outside aimux, or before it was installed.</p>
-    <p><b>Not counted in usage:</b> sessions that hooks and plugins run on their own in the background. They do use the limits, so a limit can fill faster than the usage here suggests.</p>
-    <p>The figures are served to this machine only, to a page opened through the address <code>aimux dashboard</code> printed. Stop it with Ctrl-C in the terminal that runs it.</p>
-  </footer>
+  <footer id="notes"></footer>
 </main>
 <div id="tip" aria-hidden="true"></div>
-
 <script>
 'use strict';
 
@@ -327,7 +358,7 @@ const SVG = 'http://www.w3.org/2000/svg';
 
 /** An element with attributes and children. Strings become text nodes: names here come from disk. */
 function el(tag, attrs, ...children) {
-  const node = tag === 'svg' || attrs?.svg ? document.createElementNS(SVG, tag) : document.createElement(tag);
+  const node = attrs?.svg ? document.createElementNS(SVG, tag) : document.createElement(tag);
   for (const [key, value] of Object.entries(attrs ?? {})) {
     if (key === 'svg' || value === undefined || value === null || value === false) continue;
     if (key === 'class') node.setAttribute('class', value);
@@ -335,37 +366,13 @@ function el(tag, attrs, ...children) {
     else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
     else node.setAttribute(key, value === true ? '' : value);
   }
-  for (const child of children.flat()) {
+  for (const child of children.flat(Infinity)) {
     if (child === null || child === undefined || child === false) continue;
     node.append(child instanceof Node ? child : document.createTextNode(String(child)));
   }
   return node;
 }
 const s = (tag, attrs, ...children) => el(tag, { ...attrs, svg: true }, ...children);
-
-function compact(n) {
-  const abs = Math.abs(n);
-  if (abs >= 1e9) return `${(n / 1e9).toFixed(abs >= 1e10 ? 0 : 1)}B`;
-  if (abs >= 1e6) return `${(n / 1e6).toFixed(abs >= 1e7 ? 0 : 1)}M`;
-  if (abs >= 1e3) return `${(n / 1e3).toFixed(abs >= 1e4 ? 0 : 1)}K`;
-  return String(Math.round(n));
-}
-const whole = (n) => Math.round(n).toLocaleString('en-US');
-const usd = (n) => (n >= 100 ? `$${whole(n)}` : `$${n.toFixed(2)}`);
-const tokensOf = (x) => x.inputTokens + x.cacheCreationInputTokens + x.cacheReadInputTokens + x.outputTokens;
-
-/** An axis value in full — 12.5K, 0.25 — never rounded into its neighbour. */
-function tickText(n) {
-  const [unit, suffix] = n >= 1e9 ? [1e9, 'B'] : n >= 1e6 ? [1e6, 'M'] : n >= 1e3 ? [1e3, 'K'] : [1, ''];
-  return `${parseFloat((n / unit).toFixed(2))}${suffix}`;
-}
-
-const MEASURES = {
-  cost: { label: 'Est. cost', of: (x) => x.estimatedCostUsd, show: usd, tick: (n) => `$${tickText(n)}`, whole: false },
-  tokens: { label: 'Tokens', of: tokensOf, show: compact, tick: tickText, whole: true },
-  requests: { label: 'Requests', of: (x) => x.requests, show: compact, tick: tickText, whole: true },
-};
-const PERIODS = [['24h', '24 hours'], ['7d', '7 days'], ['30d', '30 days'], ['all', 'All time']];
 
 const remembered = (key, fallback, allowed) => {
   try {
@@ -383,17 +390,279 @@ const remember = (key, value) => {
   }
 };
 
+// ---------- language ----------
+/** Russian has three forms of a counted noun: 1 подписка, 3 подписки, 5 подписок. */
+const plural = (n, one, few, many) => {
+  const [tens, units] = [n % 100, n % 10];
+  if (tens >= 11 && tens <= 14) return many;
+  return units === 1 ? one : units >= 2 && units <= 4 ? few : many;
+};
+
+// Sentences are functions where they hold a name: a name is a node with its colour beside
+// it, and the two languages do not put it in the same place.
+const LANGS = {
+  en: {
+    locale: 'en-GB',
+    units: ['K', 'M', 'B'],
+    span: { m: 'm', h: 'h', d: 'd' },
+    inSpan: (span) => `in ${span}`,
+    and: ' and ',
+    refresh: 'Refresh',
+    reading: 'Reading the limits…',
+    themeToLight: 'Switch to the light theme',
+    themeToDark: 'Switch to the dark theme',
+    limitsNow: 'Limits right now',
+    stamp: (time) => `Limits read ${time}`,
+    ago: (minutes) => (minutes < 1 ? 'just now' : `${minutes} min ago`),
+    windows: { fiveHour: '5-hour', weekly: 'weekly' },
+    winShort: { fiveHour: '5-hour', weekly: 'Weekly' },
+    verdicts: { ok: 'On pace', tight: 'Tight', over: 'Over pace', spent: 'Spent', unknown: 'No figures' },
+    headline: {
+      none: 'No limits to show.',
+      failed: 'The limits could not be read.',
+      allOk: (n) => (n === 1 ? 'The subscription is on pace.' : `All ${n} subscriptions are on pace.`),
+      spent: (who, n) => [who, n > 1 ? ' are spent' : ' is spent'],
+      over: (who, n) => [who, n > 1 ? ' are burning too fast' : ' is burning too fast'],
+      tight: (who, n) => [who, n > 1 ? ' are running tight' : ' is running tight'],
+    },
+    lead: {
+      none: 'No subscription reported its limits just now. ',
+      allOk: 'Nothing is on course to run out before its reset. ',
+      full: (who, win, reset) => [who, `'s ${win} window is full${reset ? ` until it resets ${reset}` : ''}. `],
+      runsOut: (who, win, at, before) => ['At this pace ', who, ` runs out ${at}, ${before} before its ${win} window resets. `],
+      course: (who, win, pct) => [who, ` is on course for about ${pct}% of its ${win} window by the reset. `],
+      level: (who, win, pct) => [who, `'s ${win} window is at ${pct}%. `],
+      login: (who, n) => [who, n > 1 ? ' need a new login. ' : ' needs a new login. '],
+    },
+    mostRoom: 'Most room',
+    closest: 'Closest to a limit',
+    resetsNext: 'Resets next',
+    levels: (five, week) => [five !== null && `5-hour ${five}%`, week !== null && `weekly ${week}%`].filter(Boolean).join(' · '),
+    noneReported: 'No subscription reported its limits',
+    closestSub: (win, reset) => `${win} window${reset ? `, resets ${reset}` : ''}`,
+    nextSub: (win, pct) => `${win} window, now at ${pct}%`,
+    noReset: 'No window in use reports a reset time',
+    note: {
+      full: (reset) => `Full${reset ? ` until it resets ${reset}` : ''}`,
+      runsOut: (at, before, reset) => `Runs out ${at}, ${before} before it resets ${reset}`,
+      course: (reset, pct) => `Resets ${reset} · on course for about ${pct}%`,
+      resets: (reset) => `Resets ${reset}`,
+      unknown: 'No reset time reported',
+    },
+    tickTitle: (pct) => `${pct}% of the window's time has passed`,
+    meterLabel: (win) => `${win} window used`,
+    problem: {
+      login: 'Login expired. Sign in again with:',
+      unavailable: 'The limits could not be read just now.',
+      noLimits: 'This plan reports no limits.',
+    },
+    copy: 'Copy',
+    copied: 'Copied',
+    sparkCap: (key, span) => `${key === 'weekly' ? 'Weekly' : '5-hour'} window, last ${span}`,
+    sparkTip: { weekly: 'of the week', fiveHour: 'of the 5 hours' },
+    sparkLabel: (name, win, from, to, span) => `${name}: ${win} window from ${from}% to ${to}% over ${span}`,
+    tickKey: "The tick marks how much of the window's time has passed. A bar ahead of its tick is burning faster than the window allows.",
+    usage: 'Usage',
+    usageTitle: 'Where the tokens went',
+    usageLede: 'Read from the session transcripts on this machine. Dollar figures are list-price estimates, for comparing — a subscription is not billed by them.',
+    period: 'Period',
+    periods: { '24h': '24 hours', '7d': '7 days', '30d': '30 days', all: 'All time' },
+    measure: 'Measure',
+    measures: { cost: 'Est. cost', tokens: 'Tokens', requests: 'Requests' },
+    scanning: 'Scanning the transcripts — the first scan on a machine can take a minute…',
+    readingUsage: 'Reading…',
+    usageRead: (time) => `Transcripts read at ${time}`,
+    usageFailed: (why) => `Could not read the usage: ${why}`,
+    limitsFailed: (why) => `Could not read the limits: ${why}`,
+    noKey: 'this tab has no key to the figures. Open the address that `aimux dashboard` printed',
+    costTile: 'Estimated cost',
+    costSub: 'at list prices, not what a subscription bills',
+    requestsSub: (n) => `${n} calls to a model`,
+    tokensSub: (read, write, input, output) => `cache read ${read} · cache write ${write} · input ${input} · output ${output}`,
+    chartTitle: (measure, unit) => `${measure} by ${unit}`,
+    unit: { hour: 'hour', day: 'day', week: 'week', month: 'month' },
+    unitHead: { hour: 'Hour', day: 'Day', week: 'Week', month: 'Month' },
+    weekOf: (day) => `Week of ${day}`,
+    chartLabel: (title) => `${title}, stacked by subscription. Arrow keys step through; the table below has every value.`,
+    total: 'total',
+    Total: 'Total',
+    others: 'Other profiles',
+    untied: 'Not tied to a profile',
+    asTable: 'Show as a table',
+    bySubscription: 'By subscription',
+    profileHeads: ['Subscription', 'Sessions', 'Requests', 'Input', 'Cache write', 'Cache read', 'Output', 'Est. cost'],
+    byModel: (measure) => `By model · ${measure.toLowerCase()}`,
+    byProject: (measure) => `By project · ${measure.toLowerCase()}`,
+    tipRows: ['est. cost', 'tokens', 'requests'],
+    nothing: 'Nothing in this period.',
+    heaviest: 'Heaviest sessions',
+    sessionHeads: ['Session', 'Subscription', 'Project', 'Requests', 'Tokens', 'Est. cost'],
+    notes: [
+      "**Pace.** A window's use so far is carried to its reset at the same rate. _Tight_ means on course for 85% or more, _over pace_ means it runs out before the reset, _spent_ means it is full now. For the weekly window the forecast counts twelve working hours to a day, not twenty-four. There is no forecast in the first minutes of a window.",
+      '**unknown** and **unknown (codex)** are sessions aimux could not tie to a profile: started outside aimux, or before it was installed.',
+      '**Not counted in usage:** sessions that hooks and plugins run on their own in the background. They do use the limits, so a limit can fill faster than the usage here suggests.',
+      'The figures are served to this machine only, to a page opened through the address `aimux dashboard` printed. Stop it with Ctrl-C in the terminal that runs it.',
+    ],
+  },
+
+  ru: {
+    locale: 'ru-RU',
+    units: [' тыс.', ' млн', ' млрд'],
+    span: { m: ' мин', h: ' ч', d: ' д' },
+    inSpan: (span) => `через ${span}`,
+    and: ' и ',
+    refresh: 'Обновить',
+    reading: 'Читаю лимиты…',
+    themeToLight: 'Включить светлую тему',
+    themeToDark: 'Включить тёмную тему',
+    limitsNow: 'Лимиты сейчас',
+    stamp: (time) => `Лимиты прочитаны в ${time}`,
+    ago: (minutes) => (minutes < 1 ? 'только что' : `${minutes} мин назад`),
+    // "окно" is neuter, so its adjectives are; the second pair is the genitive.
+    windows: { fiveHour: '5-часовое', weekly: 'недельное' },
+    windowsOf: { fiveHour: '5-часового', weekly: 'недельного' },
+    winShort: { fiveHour: '5 часов', weekly: 'Неделя' },
+    verdicts: { ok: 'В норме', tight: 'Впритык', over: 'Перерасход', spent: 'Исчерпан', unknown: 'Нет данных' },
+    headline: {
+      none: 'Нет данных о лимитах.',
+      failed: 'Лимиты прочитать не удалось.',
+      allOk: (n) => (n === 1 ? 'Подписка в норме.' : n === 2 ? 'Обе подписки в норме.' : `Все ${n} ${plural(n, 'подписка', 'подписки', 'подписок')} в норме.`),
+      spent: (who) => ['У ', who, ' лимит исчерпан'],
+      over: (who, n) => [who, n > 1 ? ' тратят слишком быстро' : ' тратит слишком быстро'],
+      tight: (who, n) => [who, n > 1 ? ' идут впритык' : ' идёт впритык'],
+    },
+    lead: {
+      none: 'Сейчас ни одна подписка не сообщила свои лимиты. ',
+      allOk: 'Ни одна не закончится раньше своего сброса. ',
+      full: (who, win, reset) => [who, `: ${win} окно заполнено${reset ? `, сброс ${reset}` : ''}. `],
+      runsOut: (who, win, at, before) => ['В таком темпе ', `${win} окно `, who, ` кончится ${at} — за ${before} до сброса. `],
+      course: (who, win, pct, key) => [who, ` идёт примерно к ${pct}% ${LANGS.ru.windowsOf[key]} окна к моменту сброса. `],
+      level: (who, win, pct) => [who, `: ${win} окно заполнено на ${pct}%. `],
+      login: (who) => ['Нужен повторный вход: ', who, '. '],
+    },
+    mostRoom: 'Больше всего места',
+    closest: 'Ближе всех к лимиту',
+    resetsNext: 'Сбросится первым',
+    levels: (five, week) => [five !== null && `5 часов — ${five}%`, week !== null && `неделя — ${week}%`].filter(Boolean).join(' · '),
+    noneReported: 'Ни одна подписка не сообщила лимиты',
+    closestSub: (win, reset) => `${win} окно${reset ? `, сброс ${reset}` : ''}`,
+    nextSub: (win, pct) => `${win} окно, сейчас ${pct}%`,
+    noReset: 'Нет окон с известным временем сброса',
+    note: {
+      full: (reset) => `Заполнено${reset ? `, сброс ${reset}` : ''}`,
+      runsOut: (at, before, reset) => `Кончится ${at} — за ${before} до сброса (${reset})`,
+      course: (reset, pct) => `Сброс ${reset} · прогноз около ${pct}%`,
+      resets: (reset) => `Сброс ${reset}`,
+      unknown: 'Время сброса неизвестно',
+    },
+    tickTitle: (pct) => `Прошло ${pct}% времени окна`,
+    meterLabel: (win) => `${win}: занято`,
+    problem: {
+      login: 'Вход истёк. Войди заново командой:',
+      unavailable: 'Сейчас не удалось прочитать лимиты.',
+      noLimits: 'Этот тариф не сообщает лимиты.',
+    },
+    copy: 'Скопировать',
+    copied: 'Скопировано',
+    sparkCap: (key, span) => `${key === 'weekly' ? 'Недельное' : '5-часовое'} окно, последние ${span}`,
+    sparkTip: { weekly: 'от недели', fiveHour: 'от 5 часов' },
+    sparkLabel: (name, win, from, to, span) => `${name}: ${win} окно, с ${from}% до ${to}% за ${span}`,
+    tickKey: 'Отметка показывает, сколько времени окна уже прошло. Если полоса впереди отметки, расход идёт быстрее, чем позволяет окно.',
+    usage: 'Расход',
+    usageTitle: 'Куда ушли токены',
+    usageLede: 'Прочитано из транскриптов сессий на этой машине. Суммы в долларах — оценка по прайсу API, для сравнения: подписка так не тарифицируется.',
+    period: 'Период',
+    periods: { '24h': '24 часа', '7d': '7 дней', '30d': '30 дней', all: 'Всё время' },
+    measure: 'Показатель',
+    measures: { cost: 'Стоимость', tokens: 'Токены', requests: 'Запросы' },
+    scanning: 'Читаю транскрипты — в первый раз на машине это может занять минуту…',
+    readingUsage: 'Читаю…',
+    usageRead: (time) => `Транскрипты прочитаны в ${time}`,
+    usageFailed: (why) => `Не удалось прочитать расход: ${why}`,
+    limitsFailed: (why) => `Не удалось прочитать лимиты: ${why}`,
+    noKey: 'у этой вкладки нет ключа к данным. Открой адрес, который напечатал `aimux dashboard`',
+    costTile: 'Оценка стоимости',
+    costSub: 'по прайсу API, а не по счёту подписки',
+    requestsSub: (n) => `${n} ${plural(Number(String(n).replace(/\D/g, '')), 'обращение', 'обращения', 'обращений')} к модели`,
+    tokensSub: (read, write, input, output) => `чтение кэша ${read} · запись в кэш ${write} · ввод ${input} · вывод ${output}`,
+    chartTitle: (measure, unit) => `${measure} ${unit}`,
+    unit: { hour: 'по часам', day: 'по дням', week: 'по неделям', month: 'по месяцам' },
+    unitHead: { hour: 'Час', day: 'День', week: 'Неделя', month: 'Месяц' },
+    weekOf: (day) => `Неделя с ${day}`,
+    chartLabel: (title) => `${title}, с разбивкой по подпискам. Стрелки влево и вправо переключают столбцы; все значения есть в таблице ниже.`,
+    total: 'всего',
+    Total: 'Итого',
+    others: 'Другие профили',
+    untied: 'Без профиля',
+    asTable: 'Показать таблицей',
+    bySubscription: 'По подпискам',
+    profileHeads: ['Подписка', 'Сессии', 'Запросы', 'Ввод', 'Запись в кэш', 'Чтение кэша', 'Вывод', 'Стоимость'],
+    byModel: (measure) => `По моделям · ${measure.toLowerCase()}`,
+    byProject: (measure) => `По проектам · ${measure.toLowerCase()}`,
+    tipRows: ['стоимость', 'токены', 'запросы'],
+    nothing: 'За этот период ничего нет.',
+    heaviest: 'Самые тяжёлые сессии',
+    sessionHeads: ['Сессия', 'Подписка', 'Проект', 'Запросы', 'Токены', 'Стоимость'],
+    notes: [
+      '**Темп.** Расход окна к этому моменту переносится до сброса с той же скоростью. _Впритык_ — идёт к 85% и выше, _перерасход_ — кончится раньше сброса, _исчерпан_ — заполнено уже сейчас. Для недельного окна в сутках считается двенадцать рабочих часов, а не двадцать четыре. В первые минуты окна прогноза нет.',
+      '**unknown** и **unknown (codex)** — сессии, которые aimux не смог привязать к профилю: они запущены без aimux или до его установки.',
+      '**Не входит в расход:** сессии, которые хуки и плагины запускают сами в фоне. Лимит они тратят, поэтому он может заполняться быстрее, чем видно по расходу здесь.',
+      'Данные отдаются только этой машине и только странице, открытой по адресу, который напечатал `aimux dashboard`. Остановить — Ctrl-C в терминале, где он запущен.',
+    ],
+  },
+};
+
+let lang = remembered('lang', (navigator.language || 'en').toLowerCase().startsWith('ru') ? 'ru' : 'en', Object.keys(LANGS));
+let L = LANGS[lang];
+
+/** `**bold**`, `_italic_` and `` `code` `` in the page's own notes, as nodes. */
+function rich(text) {
+  return text.split(/(\*\*[^*]+\*\*|_[^_]+_|`[^`]+`)/).map((part) => {
+    if (part.startsWith('**')) return el('b', { text: part.slice(2, -2) });
+    if (part.startsWith('_') && part.endsWith('_') && part.length > 2) return el('i', { text: part.slice(1, -1) });
+    if (part.startsWith('`')) return el('code', { text: part.slice(1, -1) });
+    return part;
+  });
+}
+
+// ---------- numbers ----------
+const num = (n, digits = 0) => n.toLocaleString(L.locale, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+function compact(n) {
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return `${num(n / 1e9, abs >= 1e10 ? 0 : 1)}${L.units[2]}`;
+  if (abs >= 1e6) return `${num(n / 1e6, abs >= 1e7 ? 0 : 1)}${L.units[1]}`;
+  if (abs >= 1e3) return `${num(n / 1e3, abs >= 1e4 ? 0 : 1)}${L.units[0]}`;
+  return num(Math.round(n));
+}
+const whole = (n) => num(Math.round(n));
+const usd = (n) => `$${n >= 100 ? num(n) : num(n, 2)}`;
+const tokensOf = (x) => x.inputTokens + x.cacheCreationInputTokens + x.cacheReadInputTokens + x.outputTokens;
+
+/** An axis value in full — 12.5K, 0.25 — never rounded into its neighbour. */
+function tickText(n) {
+  const [unit, suffix] = n >= 1e9 ? [1e9, L.units[2]] : n >= 1e6 ? [1e6, L.units[1]] : n >= 1e3 ? [1e3, L.units[0]] : [1, ''];
+  return `${(n / unit).toLocaleString(L.locale, { maximumFractionDigits: 2 })}${suffix}`;
+}
+
+const MEASURES = {
+  cost: { of: (x) => x.estimatedCostUsd, show: usd, tick: (n) => `$${tickText(n)}`, whole: false },
+  tokens: { of: tokensOf, show: compact, tick: tickText, whole: true },
+  requests: { of: (x) => x.requests, show: compact, tick: tickText, whole: true },
+};
+const PERIODS = ['24h', '7d', '30d', 'all'];
+
 const state = {
-  since: remembered('since', '7d', PERIODS.map(([id]) => id)),
+  since: remembered('since', '7d', PERIODS),
   measure: remembered('measure', 'cost', Object.keys(MEASURES)),
   limits: null,
   history: [],
   usage: null,
+  limitsFailed: null,
 };
 
 // ---------- identity: a profile keeps its colour whatever is on screen ----------
-const UNTIED = 'Not tied to a profile';
-const OTHERS = 'Other profiles';
+const UNTIED = '\u0000untied';
+const OTHERS = '\u0000others';
 const isUnknown = (name) => name.startsWith('unknown');
 let order = [];
 
@@ -402,12 +671,14 @@ function seriesOf(name) {
   if (isUnknown(name)) return UNTIED;
   return order.indexOf(name) < 8 && order.includes(name) ? name : OTHERS;
 }
+const seriesName = (series) => (series === UNTIED ? L.untied : series === OTHERS ? L.others : series);
 /** One colour per series, the same in the chart, the cards and the tables. */
 function colorOf(name) {
   const series = seriesOf(name);
   if (series === UNTIED) return 'var(--series-rest)';
   return series === OTHERS ? 'var(--series-other)' : `var(--series-${order.indexOf(series) + 1})`;
 }
+const paint = (series) => (series === OTHERS ? 'var(--series-other)' : series === UNTIED ? 'var(--series-rest)' : colorOf(series));
 
 // ---------- tooltip ----------
 const tip = $('tip');
@@ -440,63 +711,66 @@ function withTip(node, read) {
 }
 
 // ---------- time ----------
-const clock = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' });
-const dayClock = new Intl.DateTimeFormat('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
-const dayMonth = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
-const monthYear = new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric' });
+const formats = {};
+/** A date format in the page's language, made once per language. */
+const fmt = (name, options) => (formats[`${lang}:${name}`] ??= new Intl.DateTimeFormat(L.locale, options));
+const clock = (at) => fmt('clock', { hour: '2-digit', minute: '2-digit' }).format(at);
+const dayClock = (at) => fmt('dayClock', { weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(at);
+const dayMonth = (at) => fmt('dayMonth', { day: 'numeric', month: 'short' }).format(at);
+const monthYear = (at) => fmt('monthYear', { month: 'short', year: 'numeric' }).format(at).replace(' г.', '');
 
 function span(ms) {
   const minutes = Math.max(0, Math.round(ms / 60000));
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60) return `${minutes}${L.span.m}`;
 
   // The smaller unit only when there is some of it: "7d", not "7d 0h".
-  const [big, small] = minutes < 48 * 60
-    ? [`${Math.floor(minutes / 60)}h`, `${minutes % 60}m`]
-    : [`${Math.floor(minutes / 1440)}d`, `${Math.floor((minutes % 1440) / 60)}h`];
-  return small.startsWith('0') ? big : `${big} ${small}`;
+  const [big, small, rest] = minutes < 48 * 60
+    ? [`${Math.floor(minutes / 60)}${L.span.h}`, `${minutes % 60}${L.span.m}`, minutes % 60]
+    : [`${Math.floor(minutes / 1440)}${L.span.d}`, `${Math.floor((minutes % 1440) / 60)}${L.span.h}`, Math.floor((minutes % 1440) / 60)];
+  return rest === 0 ? big : `${big} ${small}`;
 }
-const when = (at, now) => (at - now < 24 * 3600e3 ? `in ${span(at - now)}` : dayClock.format(at));
+const when = (at, now) => (at - now < 24 * 3600e3 ? L.inSpan(span(at - now)) : dayClock(at));
 
 // ---------- limits ----------
-const VERDICTS = {
-  ok: ['On pace', 'M3 8.5l3.2 3.2L13 5'],
-  tight: ['Tight', 'M8 2.5l6 11H2zM8 7v3M8 12v.5'],
-  over: ['Over pace', 'M3 13l10-10M6 3h7v7'],
-  spent: ['Spent', 'M4 4l8 8M12 4l-8 8'],
-  unknown: ['No figures', 'M5 8h6'],
+const VERDICT_ICONS = {
+  ok: 'M3 8.5l3.2 3.2L13 5',
+  tight: 'M8 2.5l6 11H2zM8 7v3M8 12v.5',
+  over: 'M3 13l10-10M6 3h7v7',
+  spent: 'M4 4l8 8M12 4l-8 8',
+  unknown: 'M5 8h6',
 };
 const WINDOW_MS = { fiveHour: 5 * 3600e3, weekly: 7 * 24 * 3600e3 };
 
 function badge(verdict) {
-  const [label, path] = VERDICTS[verdict];
   return el('span', { class: `badge tone-${verdict}` },
-    s('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, s('path', { d: path, fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })),
-    label);
+    s('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, s('path', { d: VERDICT_ICONS[verdict], fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })),
+    L.verdicts[verdict]);
 }
 
 function windowNote(w, now) {
-  const reset = w.resetsAt ? `resets ${when(w.resetsAt, now)}` : '';
-  if (w.verdict === 'spent') return `Full${w.resetsAt ? ` until it ${reset}` : ''}`;
-  if (w.runsOutAt) return `Runs out ${when(w.runsOutAt, now)}, ${span(w.resetsAt - w.runsOutAt)} before it ${reset}`;
-  if (w.projectedPct !== null) return `${reset[0].toUpperCase()}${reset.slice(1)} · on course for about ${w.projectedPct}%`;
-  return reset ? `${reset[0].toUpperCase()}${reset.slice(1)}` : 'No reset time reported';
+  const reset = w.resetsAt ? when(w.resetsAt, now) : '';
+  if (w.verdict === 'spent') return L.note.full(reset);
+  if (w.runsOutAt) return L.note.runsOut(when(w.runsOutAt, now), span(w.resetsAt - w.runsOutAt), reset);
+  if (w.projectedPct !== null) return L.note.course(reset, w.projectedPct);
+  return reset ? L.note.resets(reset) : L.note.unknown;
 }
 
-function windowRow(label, key, w, now) {
+function windowRow(key, w, now) {
   if (!w) return null;
 
   const passed = w.resetsAt ? 1 - (w.resetsAt - now) / WINDOW_MS[key] : null;
   return el('div', { class: `win tone-${w.verdict}` },
-    el('span', { class: 'wlabel', text: label }),
-    el('div', { class: 'meter', role: 'meter', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': w.pct, 'aria-label': `${label} window used` },
+    el('span', { class: 'wlabel', text: L.winShort[key] }),
+    el('div', { class: 'meter', role: 'meter', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': w.pct, 'aria-label': L.meterLabel(L.winShort[key]) },
       el('div', { class: 'fill', style: `width:${Math.min(100, w.pct)}%` }),
-      passed !== null && passed > 0 && passed < 1 && el('span', { class: 'tick', style: `left:${passed * 100}%`, title: `${Math.round(passed * 100)}% of the window's time has passed` })),
+      passed !== null && passed > 0 && passed < 1 && el('span', { class: 'tick', style: `left:${passed * 100}%`, title: L.tickTitle(Math.round(passed * 100)) })),
     el('span', { class: 'pct' }, String(w.pct), el('small', { text: '%' })),
     el('span', { class: 'note', text: windowNote(w, now) }));
 }
 
 /** A profile's weekly level over the recorded history: the trend behind today's figure. */
 function sparkline(name, hasWeekly) {
+  const key = hasWeekly ? 'weekly' : 'fiveHour';
   const points = state.history
     .map((reading) => [reading.at, reading.profiles[name]?.[hasWeekly ? 1 : 0]])
     .filter(([, pct]) => typeof pct === 'number');
@@ -510,7 +784,7 @@ function sparkline(name, hasWeekly) {
   const [lastT, lastPct] = points.at(-1);
 
   const hair = s('line', { y1: 0, y2: H, stroke: 'var(--axis)', 'stroke-width': 1, visibility: 'hidden', 'vector-effect': 'non-scaling-stroke' });
-  const chart = s('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', role: 'img', 'aria-label': `${name}: ${hasWeekly ? 'weekly' : '5-hour'} window from ${points[0][1]}% to ${lastPct}% over ${span(t1 - t0)}` },
+  const chart = s('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', role: 'img', 'aria-label': L.sparkLabel(name, L.windows[key], points[0][1], lastPct, span(t1 - t0)) },
     s('line', { x1: 0, x2: W, y1: H - pad, y2: H - pad, stroke: 'var(--grid)', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }),
     hair,
     s('path', { d: line, fill: 'none', stroke: 'var(--muted)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
@@ -524,21 +798,37 @@ function sparkline(name, hasWeekly) {
     hair.setAttribute('x1', x(at));
     hair.setAttribute('x2', x(at));
     hair.setAttribute('visibility', 'visible');
-    showTip(e.clientX, e.clientY, dayClock.format(at), [[`${pct}%`, hasWeekly ? 'of the week' : 'of the 5 hours']]);
+    showTip(e.clientX, e.clientY, dayClock(at), [[`${pct}%`, L.sparkTip[key]]]);
   });
   chart.addEventListener('pointerleave', () => { hair.setAttribute('visibility', 'hidden'); hideTip(); });
 
   return el('div', { class: 'spark' },
-    el('div', { class: 'cap', text: `${hasWeekly ? 'Weekly' : '5-hour'} window, last ${span(t1 - t0)}` }),
+    el('div', { class: 'cap', text: L.sparkCap(key, span(t1 - t0)) }),
     el('div', { class: 'plot' }, chart, end));
+}
+
+/** A command to run, on a line of its own with a button that puts it on the clipboard. */
+function command(text) {
+  const button = el('button', { class: 'mini', type: 'button', text: L.copy });
+  button.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      button.textContent = L.copied;
+      setTimeout(() => { button.textContent = L.copy; }, 1600);
+    } catch {
+      // no clipboard here: the command is on the page to select
+    }
+  });
+
+  return el('div', { class: 'cmd' }, el('code', { text }), button);
 }
 
 /** One channel strip: the subscription, its verdict, a level meter per window. `n` staggers its arrival. */
 function subscriptionCard(p, now, n) {
   const problem =
-    p.error === 'auth' ? `Login expired. Run "aimux run ${p.name}" and sign in again.`
-    : p.error === 'unavailable' ? 'The limits could not be read just now.'
-    : !p.fiveHour && !p.weekly ? 'This plan reports no limits.'
+    p.error === 'auth' ? L.problem.login
+    : p.error === 'unavailable' ? L.problem.unavailable
+    : !p.fiveHour && !p.weekly ? L.problem.noLimits
     : null;
 
   return el('div', { class: 'card strip', style: `--id:${colorOf(p.name)};--n:${n}` },
@@ -548,8 +838,9 @@ function subscriptionCard(p, now, n) {
       el('span', { class: 'grow' }),
       badge(p.verdict)),
     problem && el('p', { class: 'problem', text: problem }),
-    windowRow('5-hour', 'fiveHour', p.fiveHour, now),
-    windowRow('Weekly', 'weekly', p.weekly, now),
+    p.error === 'auth' && command(`aimux run ${p.name}`),
+    windowRow('fiveHour', p.fiveHour, now),
+    windowRow('weekly', p.weekly, now),
     sparkline(p.name, Boolean(p.weekly)));
 }
 
@@ -559,71 +850,83 @@ function readout(label, value, sub) {
 
 /** A subscription named in running text, with its colour beside it: the text itself stays ink. */
 const who = (name) => el('span', { class: 'who' }, el('span', { class: 'dot', style: `background:${colorOf(name)}` }), name);
-const listed = (profiles) => profiles.flatMap((p, i) => [i === 0 ? '' : i === profiles.length - 1 ? ' and ' : ', ', who(p.name)]);
-const be = (profiles) => (profiles.length > 1 ? 'are' : 'is');
+const listed = (profiles) => profiles.flatMap((p, i) => [i === 0 ? '' : i === profiles.length - 1 ? L.and : ', ', who(p.name)]);
 
 /**
- * The sentence the page leads with, and the one under it: who is in trouble and how soon,
- * or that nobody is. `windows` is every window of every subscription.
+ * The sentence the page leads with, and what goes under it: who is in trouble and how
+ * soon, or that nobody is. `windows` is every window of every subscription.
  */
 function leadOf(profiles, windows, now) {
   const judged = profiles.filter((p) => p.verdict !== 'unknown');
   const having = (verdict) => judged.filter((p) => p.verdict === verdict);
   const [spent, over, tight] = [having('spent'), having('over'), having('tight')];
+  const locked = profiles.filter((p) => p.error === 'auth');
+  const login = locked.length ? L.lead.login(listed(locked), locked.length) : [];
 
-  if (!judged.length) return [['No limits to show.'], ['No subscription reported its limits just now.']];
-  if (!spent.length && !over.length && !tight.length) {
-    return [[judged.length === 1 ? 'The subscription is on pace.' : `All ${judged.length} subscriptions are on pace.`], ['Nothing is on course to run out before its reset.']];
-  }
+  if (!judged.length) return [[L.headline.none], [L.lead.none, login]];
+  if (!spent.length && !over.length && !tight.length) return [[L.headline.allOk(judged.length)], [L.lead.allOk, login]];
 
   const said = [];
-  if (spent.length) said.push([...listed(spent), ` ${be(spent)} spent`]);
-  if (over.length) said.push([...listed(over), ` ${be(over)} burning too fast`]);
-  if (!said.length) said.push([...listed(tight), ` ${be(tight)} running tight`]);
+  if (spent.length) said.push(L.headline.spent(listed(spent), spent.length));
+  if (over.length) said.push(L.headline.over(listed(over), over.length));
+  if (!said.length) said.push(L.headline.tight(listed(tight), tight.length));
 
   // The window behind each claim: the full one, the one that runs out first, the fullest forecast.
   const detail = [];
   const full = windows.find(({ w }) => w.verdict === 'spent');
   const first = windows.filter(({ w }) => w.runsOutAt).sort((a, b) => a.w.runsOutAt - b.w.runsOutAt)[0];
   const nearest = windows.filter(({ w }) => w.verdict === 'tight').sort((a, b) => (b.w.projectedPct ?? b.w.pct) - (a.w.projectedPct ?? a.w.pct))[0];
-  if (full) detail.push(who(full.p.name), `'s ${full.label} window is full${full.w.resetsAt ? ` until it resets ${when(full.w.resetsAt, now)}` : ''}. `);
-  if (first) detail.push('At this pace ', who(first.p.name), ` runs out ${when(first.w.runsOutAt, now)}, ${span(first.w.resetsAt - first.w.runsOutAt)} before its ${first.label} window resets. `);
+  if (full) detail.push(L.lead.full(who(full.p.name), L.windows[full.key], full.w.resetsAt ? when(full.w.resetsAt, now) : ''));
+  if (first) detail.push(L.lead.runsOut(who(first.p.name), L.windows[first.key], when(first.w.runsOutAt, now), span(first.w.resetsAt - first.w.runsOutAt)));
   if (!full && !first && nearest) {
-    detail.push(who(nearest.p.name), nearest.w.projectedPct !== null
-      ? ` is on course for about ${nearest.w.projectedPct}% of its ${nearest.label} window by the reset.`
-      : `'s ${nearest.label} window is at ${nearest.w.pct}%.`);
+    detail.push(nearest.w.projectedPct !== null
+      ? L.lead.course(who(nearest.p.name), L.windows[nearest.key], nearest.w.projectedPct, nearest.key)
+      : L.lead.level(who(nearest.p.name), L.windows[nearest.key], nearest.w.pct));
   }
 
-  return [[...said[0], ...(said[1] ? [', ', ...said[1]] : []), '.'], detail];
+  return [[said[0], said[1] ? [', ', said[1]] : [], '.'], [detail, login]];
+}
+
+function renderStamp() {
+  if (!state.limits) return;
+
+  const minutes = Math.floor((Date.now() - state.limits.fetchedAt) / 60000);
+  $('stamp').textContent = `${L.stamp(clock(state.limits.fetchedAt))} · ${L.ago(Math.max(0, minutes))}`;
 }
 
 function renderLimits(animate) {
-  const { profiles, freest, now, fetchedAt } = state.limits;
-  const levels = (p) => [p.fiveHour && `5-hour ${p.fiveHour.pct}%`, p.weekly && `weekly ${p.weekly.pct}%`].filter(Boolean).join(' · ');
+  if (!state.limits) {
+    $('headline').textContent = state.limitsFailed ? L.headline.failed : L.reading;
+    $('limits-status').textContent = state.limitsFailed ? L.limitsFailed(state.limitsFailed) : '';
+    return;
+  }
 
-  const windows = profiles.flatMap((p) => [['5-hour', p.fiveHour], ['weekly', p.weekly]].filter(([, w]) => w).map(([label, w]) => ({ p, label, w })));
+  const { profiles, freest, now } = state.limits;
+  const windows = profiles.flatMap((p) => ['fiveHour', 'weekly'].filter((key) => p[key]).map((key) => ({ p, key, w: p[key] })));
   const fullest = windows.reduce((top, each) => (!top || each.w.pct > top.w.pct ? each : top), null);
   const next = windows.filter(({ w }) => w.resetsAt > now && w.pct > 0).sort((a, b) => a.w.resetsAt - b.w.resetsAt)[0];
   const roomy = profiles.find((p) => p.name === freest);
 
   const [title, lead] = leadOf(profiles, windows, now);
-  $('headline').replaceChildren(...title);
-  $('lead').replaceChildren(...lead);
+  $('headline').replaceChildren(...[title].flat(Infinity));
+  $('lead').replaceChildren(...[lead].flat(Infinity));
+  // The tab says how things stand, for when the page is not the one in front.
+  document.title = `${$('headline').textContent} — aimux`;
 
   $('limit-tiles').hidden = false;
   $('limit-tiles').replaceChildren(
-    readout('Most room', roomy ? who(roomy.name) : '—', roomy ? levels(roomy) : 'No subscription reported its limits'),
-    readout('Closest to a limit', fullest ? [who(fullest.p.name), ` · ${fullest.w.pct}%`] : '—',
-      fullest ? `${fullest.label} window${fullest.w.resetsAt ? `, resets ${when(fullest.w.resetsAt, now)}` : ''}` : ''),
-    readout('Resets next', next ? [who(next.p.name), ` · ${when(next.w.resetsAt, now)}`] : '—',
-      next ? `${next.label} window, now at ${next.w.pct}%` : 'No window in use reports a reset time'));
+    readout(L.mostRoom, roomy ? who(roomy.name) : '—', roomy ? L.levels(roomy.fiveHour?.pct ?? null, roomy.weekly?.pct ?? null) : L.noneReported),
+    readout(L.closest, fullest ? [who(fullest.p.name), ` · ${fullest.w.pct}%`] : '—',
+      fullest ? L.closestSub(L.windows[fullest.key], fullest.w.resetsAt ? when(fullest.w.resetsAt, now) : '') : ''),
+    readout(L.resetsNext, next ? [who(next.p.name), ` · ${when(next.w.resetsAt, now)}`] : '—',
+      next ? L.nextSub(L.windows[next.key], next.w.pct) : L.noReset));
 
   // The levels rise when the page opens or is refreshed, not on every quiet re-read.
   $('subs').classList.toggle('power-on', animate);
   $('subs').replaceChildren(...profiles.map((p, n) => subscriptionCard(p, now, n)));
   $('limits-key').hidden = windows.length === 0;
   $('limits-status').textContent = '';
-  $('stamp').textContent = `Limits read at ${clock.format(fetchedAt)}`;
+  renderStamp();
 }
 
 // ---------- usage: over time ----------
@@ -639,12 +942,12 @@ const keyDate = (key) => new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7
 function buckets(usage) {
   const list = usage.buckets;
   if (usage.hourly) {
-    return { list, of: (key) => key, name: (key) => `${dayMonth.format(keyDate(key))}, ${key.slice(11)}:00`, short: (key) => `${key.slice(11)}:00`, unit: 'hour' };
+    return { list, of: (key) => key, name: (key) => `${dayMonth(keyDate(key))}, ${key.slice(11)}:00`, short: (key) => `${key.slice(11)}:00`, unit: 'hour' };
   }
 
   if (list.length > 370) {
     const of = (key) => key.slice(0, 7);
-    return { list: [...new Set(list.map(of))], of, name: (key) => monthYear.format(keyDate(key)), short: (key) => monthYear.format(keyDate(key)), unit: 'month' };
+    return { list: [...new Set(list.map(of))], of, name: (key) => monthYear(keyDate(key)), short: (key) => monthYear(keyDate(key)), unit: 'month' };
   }
   if (list.length > 62) {
     // A week is named by its Monday.
@@ -653,9 +956,9 @@ function buckets(usage) {
       d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
       return dayKey(d);
     };
-    return { list: [...new Set(list.map(of))], of, name: (key) => `Week of ${dayMonth.format(keyDate(key))}`, short: (key) => dayMonth.format(keyDate(key)), unit: 'week' };
+    return { list: [...new Set(list.map(of))], of, name: (key) => L.weekOf(dayMonth(keyDate(key))), short: (key) => dayMonth(keyDate(key)), unit: 'week' };
   }
-  return { list, of: (key) => key, name: (key) => dayMonth.format(keyDate(key)), short: (key) => dayMonth.format(keyDate(key)), unit: 'day' };
+  return { list, of: (key) => key, name: (key) => dayMonth(keyDate(key)), short: (key) => dayMonth(keyDate(key)), unit: 'day' };
 }
 
 /** The top of an axis of four even, round steps at or above `max`; whole steps for counts. */
@@ -679,38 +982,40 @@ function renderTime(animate) {
   const b = buckets(usage);
 
   // series -> bucket -> value. Series order is fixed: the config's, then the grey ones.
-  const names = [...order.slice(0, 8), OTHERS, UNTIED];
-  const values = new Map(names.map((n) => [n, new Map()]));
+  const all = [...order.slice(0, 8), OTHERS, UNTIED];
+  const values = new Map(all.map((n) => [n, new Map()]));
   for (const d of usage.days) {
     const series = values.get(seriesOf(d.profile));
     const key = b.of(d.day);
     series.set(key, (series.get(key) ?? 0) + measure.of(d));
   }
-  const shown = names.filter((n) => [...values.get(n).values()].some((v) => v > 0));
-  const paint = (n) => (n === OTHERS ? 'var(--series-other)' : colorOf(n === UNTIED ? 'unknown' : n));
+  const shown = all.filter((n) => [...values.get(n).values()].some((v) => v > 0));
   const totals = b.list.map((key) => shown.reduce((sum, n) => sum + (values.get(n).get(key) ?? 0), 0));
 
-  $('time-title').textContent = `${measure.label} by ${b.unit}`;
-  $('time-legend').replaceChildren(...(shown.length > 1 ? shown : []).map((n) => el('span', { class: 'item' }, el('span', { class: 'swatch', style: `background:${paint(n)}` }), n)));
+  const title = L.chartTitle(L.measures[state.measure], L.unit[b.unit]);
+  $('time-title').textContent = title;
+  $('time-legend').replaceChildren(...(shown.length > 1 ? shown : []).map((n) => el('span', { class: 'item' }, el('span', { class: 'swatch', style: `background:${paint(n)}` }), seriesName(n))));
 
   const host = $('time-chart');
-  const W = Math.max(320, host.clientWidth);
-  const H = 240, left = 48, right = 8, top = 8, bottom = 24;
-  const plotW = W - left - right, plotH = H - top - bottom;
   const max = axisTop(Math.max(...totals, 0), measure.whole);
+  const ticks = [0, 1, 2, 3, 4].map((i) => (max / 4) * i);
+  // Room on the left for the longest axis label: "$1,5 тыс." is wider than "$1.5K".
+  const left = Math.max(44, Math.max(...ticks.map((v) => measure.tick(v).length)) * 6.6 + 14);
+  const W = Math.max(320, host.clientWidth);
+  const H = 240, right = 8, top = 8, bottom = 24;
+  const plotW = W - left - right, plotH = H - top - bottom;
   const band = plotW / b.list.length;
   const colW = Math.max(1, Math.min(24, band - 2));
   const y = (v) => top + plotH - (v / max) * plotH;
 
-  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', tabindex: 0, 'aria-label': `${measure.label} by ${b.unit}, stacked by subscription. Arrow keys step through; the table below has every value.` });
-  for (let i = 0; i <= 4; i++) {
-    const v = (max / 4) * i;
+  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', tabindex: 0, 'aria-label': L.chartLabel(title) });
+  ticks.forEach((v, i) => {
     svg.append(
       s('line', { x1: left, x2: W - right, y1: y(v), y2: y(v), stroke: i ? 'var(--grid)' : 'var(--axis)', 'stroke-width': 1 }),
       s('text', { x: left - 8, y: y(v) + 4, 'text-anchor': 'end', text: measure.tick(v) }));
-  }
+  });
 
-  const every = Math.ceil(b.list.length / Math.max(2, Math.floor(plotW / 72)));
+  const every = Math.ceil(b.list.length / Math.max(2, Math.floor(plotW / 76)));
   const wash = s('rect', { y: top, width: band, height: plotH, fill: 'var(--wash)', visibility: 'hidden' });
   const cols = s('g', { class: animate ? 'cols grow' : 'cols' });
   svg.append(wash, cols);
@@ -732,9 +1037,9 @@ function renderTime(animate) {
 
   const readout = (i) => {
     const key = b.list[i];
-    const rows = shown.map((n) => [n, values.get(n).get(key) ?? 0]).filter(([, v]) => v > 0).map(([n, v]) => [measure.show(v), n, paint(n)]);
+    const rows = shown.map((n) => [n, values.get(n).get(key) ?? 0]).filter(([, v]) => v > 0).map(([n, v]) => [measure.show(v), seriesName(n), paint(n)]);
 
-    return [b.name(key), rows.length === 1 ? rows : [...rows, [measure.show(totals[i]), 'total']]];
+    return [b.name(key), rows.length === 1 ? rows : [...rows, [measure.show(totals[i]), L.total]]];
   };
   let active = -1;
   const point = (i, x, yPos) => {
@@ -765,7 +1070,7 @@ function renderTime(animate) {
   host.replaceChildren(svg);
 
   $('time-table').replaceChildren(el('table', {},
-    el('thead', {}, el('tr', {}, el('th', { text: b.unit[0].toUpperCase() + b.unit.slice(1) }), ...shown.map((n) => el('th', { text: n })), el('th', { text: 'Total' }))),
+    el('thead', {}, el('tr', {}, el('th', { text: L.unitHead[b.unit] }), ...shown.map((n) => el('th', { text: seriesName(n) })), el('th', { text: L.Total }))),
     el('tbody', {}, ...b.list.map((key, i) => [key, i]).reverse().map(([key, i]) => el('tr', {},
       el('td', { text: b.name(key) }),
       ...shown.map((n) => el('td', { text: measure.show(values.get(n).get(key) ?? 0) })),
@@ -790,19 +1095,19 @@ function renderProfiles() {
   const total = sum(rows);
 
   $('profile-table').replaceChildren(el('table', {},
-    el('thead', {}, el('tr', {}, ...['Subscription', 'Sessions', 'Requests', 'Input', 'Cache write', 'Cache read', 'Output', 'Est. cost'].map((h) => el('th', { text: h })))),
+    el('thead', {}, el('tr', {}, ...L.profileHeads.map((h) => el('th', { text: h })))),
     el('tbody', {}, ...rows.map((r) => el('tr', {},
       el('td', {}, el('span', { class: 'dot', style: `background:${colorOf(r.profile)}` }), r.profile),
       el('td', { text: whole(r.sessions) }),
       ...numberCells(r)))),
-    el('tfoot', {}, el('tr', {}, el('td', { text: 'Total' }), el('td', { text: whole(rows.reduce((n, r) => n + r.sessions, 0)) }), ...numberCells(total)))));
+    el('tfoot', {}, el('tr', {}, el('td', { text: L.Total }), el('td', { text: whole(rows.reduce((n, r) => n + r.sessions, 0)) }), ...numberCells(total)))));
 
   const all = tokensOf(total);
   const share = (n) => (all ? `${Math.round((n / all) * 100)}%` : '0%');
   $('usage-tiles').replaceChildren(
-    readout('Estimated cost', usd(total.estimatedCostUsd), 'at list prices, not what a subscription bills'),
-    readout('Requests', compact(total.requests), `${whole(total.requests)} calls to a model`),
-    readout('Tokens', compact(all), `cache read ${share(total.cacheReadInputTokens)} · cache write ${share(total.cacheCreationInputTokens)} · input ${share(total.inputTokens)} · output ${share(total.outputTokens)}`));
+    readout(L.costTile, usd(total.estimatedCostUsd), L.costSub),
+    readout(L.measures.requests, compact(total.requests), L.requestsSub(whole(total.requests))),
+    readout(L.measures.tokens, compact(all), L.tokensSub(share(total.cacheReadInputTokens), share(total.cacheCreationInputTokens), share(total.inputTokens), share(total.outputTokens))));
 }
 
 function barList(host, rows, nameOf, fullName) {
@@ -811,12 +1116,12 @@ function barList(host, rows, nameOf, fullName) {
   const max = Math.max(...sorted.map(measure.of), 0);
 
   host.replaceChildren(...(sorted.length ? sorted : [null]).map((r) => {
-    if (!r) return el('p', { class: 'status', text: 'Nothing in this period.' });
+    if (!r) return el('p', { class: 'status', text: L.nothing });
 
     return withTip(el('div', { class: 'bar-row', tabindex: 0 },
       el('span', { class: 'name', text: nameOf(r) }),
-      el('span', { class: 'track' }, el('span', { class: 'bar', style: `width:calc((100% - 64px) * ${measure.of(r) / max})` }), el('span', { class: 'val', text: measure.show(measure.of(r)) }))),
-    () => [fullName(r), [[usd(r.estimatedCostUsd), 'est. cost'], [compact(tokensOf(r)), 'tokens'], [whole(r.requests), 'requests']]]);
+      el('span', { class: 'track' }, el('span', { class: 'rod', style: `width:calc((100% - 84px) * ${measure.of(r) / max})` }), el('span', { class: 'val', text: measure.show(measure.of(r)) }))),
+    () => [fullName(r), [[usd(r.estimatedCostUsd), L.tipRows[0]], [compact(tokensOf(r)), L.tipRows[1]], [whole(r.requests), L.tipRows[2]]]]);
   }));
 }
 
@@ -826,14 +1131,14 @@ const shortPath = (path) => mid(path.split('/').filter(Boolean).slice(-2).join('
 
 function renderLists() {
   const measure = MEASURES[state.measure];
-  $('models-title').textContent = `By model · ${measure.label.toLowerCase()}`;
-  $('projects-title').textContent = `By project · ${measure.label.toLowerCase()}`;
+  $('models-title').textContent = L.byModel(L.measures[state.measure]);
+  $('projects-title').textContent = L.byProject(L.measures[state.measure]);
   barList($('models'), state.usage.models, (r) => mid(r.model), (r) => r.model);
   barList($('projects'), state.usage.projects, (r) => shortPath(r.project), (r) => r.project);
 
   const rows = [...state.usage.sessions].sort((a, b) => measure.of(b) - measure.of(a)).slice(0, 12);
   $('sessions').replaceChildren(el('table', {},
-    el('thead', {}, el('tr', {}, ...[['Session', 1], ['Subscription', 1], ['Project', 1], ['Requests'], ['Tokens'], ['Est. cost']].map(([h, text]) => el('th', { text: h, class: text && 'text' })))),
+    el('thead', {}, el('tr', {}, ...L.sessionHeads.map((h, i) => el('th', { text: h, class: i < 3 && 'text' })))),
     el('tbody', {}, ...rows.map((r) => el('tr', {},
       el('td', { title: r.sessionId }, el('code', { text: r.sessionId.slice(0, 8) })),
       el('td', { class: 'text' }, el('span', { class: 'dot', style: `background:${colorOf(r.profile)}` }), r.profile),
@@ -849,6 +1154,7 @@ function renderUsage(animate = false) {
   renderProfiles();
   renderTime(animate);
   renderLists();
+  $('usage-status').textContent = L.usageRead(clock(state.usage.computedAt));
 }
 
 // ---------- loading ----------
@@ -876,12 +1182,13 @@ const KEY = (() => {
 async function getJson(path) {
   const response = await fetch(path, { headers: { 'x-aimux-key': KEY } });
   const body = await response.json();
-  if (response.status === 403) throw new Error('this tab has no key to the figures. Open the address that `aimux dashboard` printed');
+  if (response.status === 403) throw new Error(L.noKey);
   if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
   return body;
 }
 
 let limitsAsked = 0;
+let limitsLoadedAt = 0;
 /** `animate`: the reader asked for this reading (the page opening, Refresh), so the levels rise. */
 async function loadLimits(fresh, animate) {
   const mine = ++limitsAsked;
@@ -892,6 +1199,8 @@ async function loadLimits(fresh, animate) {
 
     state.limits = limits;
     state.history = history;
+    state.limitsFailed = null;
+    limitsLoadedAt = Date.now();
     // Colours follow the config's order of profiles, so a profile keeps its colour.
     if (order.join() !== limits.order.join()) {
       order = limits.order;
@@ -901,39 +1210,47 @@ async function loadLimits(fresh, animate) {
     $('limits-status').classList.remove('bad');
   } catch (err) {
     if (mine !== limitsAsked) return;
-    if (!state.limits) $('headline').textContent = 'The limits could not be read.';
-    $('limits-status').textContent = `Could not read the limits: ${err.message}`;
+
+    state.limitsFailed = err.message;
+    if (!state.limits) $('headline').textContent = L.headline.failed;
+    $('limits-status').textContent = L.limitsFailed(err.message);
     $('limits-status').classList.add('bad');
   }
 }
 
 let asked = 0;
+let usageLoadedAt = 0;
+let usageFailed = null;
 async function loadUsage(animate) {
   const mine = ++asked;
   const status = $('usage-status');
   $('usage').classList.add('stale');
-  if (state.usage) status.textContent = 'Reading…';
+  if (state.usage) status.textContent = L.readingUsage;
 
   try {
     const usage = await getJson(`/api/usage?since=${state.since}`);
     if (mine !== asked) return; // a newer period was picked meanwhile
 
     state.usage = usage;
+    usageFailed = null;
+    usageLoadedAt = Date.now();
     // Before the limits answer there is no config order yet: by name, never by rank.
     if (!order.length) order = usage.profiles.map((p) => p.profile).filter((n) => !isUnknown(n)).sort();
     $('usage').hidden = false;
     renderUsage(animate);
-    status.textContent = `Transcripts read at ${clock.format(usage.computedAt)}`;
     status.classList.remove('bad');
   } catch (err) {
     if (mine !== asked) return;
-    status.textContent = `Could not read the usage: ${err.message}`;
+
+    usageFailed = err.message;
+    status.textContent = L.usageFailed(err.message);
     status.classList.add('bad');
   } finally {
     if (mine === asked) $('usage').classList.remove('stale');
   }
 }
 
+// ---------- controls ----------
 function segmented(host, name, options, current, onPick) {
   host.replaceChildren(...options.flatMap(([id, label]) => [
     el('input', { type: 'radio', name, id: `${name}-${id}`, value: id, checked: id === current, onchange: () => onPick(id) }),
@@ -941,17 +1258,54 @@ function segmented(host, name, options, current, onPick) {
   ]));
 }
 
-segmented($('since'), 'since', PERIODS, state.since, (id) => { state.since = id; remember('since', id); loadUsage(true); });
-segmented($('measure'), 'measure', Object.entries(MEASURES).map(([id, m]) => [id, m.label]), state.measure, (id) => { state.measure = id; remember('measure', id); renderUsage(true); });
-$('refresh').addEventListener('click', () => { loadLimits(true, true); loadUsage(true); });
+/** Everything on the page that is words: said again in the language just chosen. */
+function applyLanguage() {
+  L = LANGS[lang];
+  document.documentElement.lang = lang;
+  for (const node of document.querySelectorAll('[data-t]')) node.textContent = L[node.dataset.t];
+  $('notes').replaceChildren(...L.notes.map((note) => el('p', {}, rich(note))));
+  $('theme').setAttribute('aria-label', document.documentElement.dataset.theme === 'dark' ? L.themeToLight : L.themeToDark);
+  $('theme').title = $('theme').getAttribute('aria-label');
+
+  segmented($('since'), 'since', PERIODS.map((id) => [id, L.periods[id]]), state.since, (id) => { state.since = id; remember('since', id); loadUsage(true); });
+  segmented($('measure'), 'measure', Object.keys(MEASURES).map((id) => [id, L.measures[id]]), state.measure, (id) => { state.measure = id; remember('measure', id); renderUsage(true); });
+
+  renderLimits(false);
+  if (state.usage) renderUsage(false);
+  else $('usage-status').textContent = usageFailed ? L.usageFailed(usageFailed) : L.scanning;
+}
+
+segmented($('lang'), 'lang', [['en', 'EN'], ['ru', 'RU']], lang, (id) => { lang = id; remember('lang', id); applyLanguage(); });
+$('theme').addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  remember('theme', next);
+  applyLanguage();
+});
+$('refresh').addEventListener('click', async () => {
+  $('refresh').disabled = true;
+  await Promise.allSettled([loadLimits(true, true), loadUsage(true)]);
+  $('refresh').disabled = false;
+});
 
 let resizing;
 addEventListener('resize', () => { clearTimeout(resizing); resizing = setTimeout(() => state.usage && renderTime(false), 120); });
 
+// A tab nobody is looking at asks for nothing; on coming back it catches up at once.
+const LIMITS_EVERY = 60_000;
+const USAGE_EVERY = 5 * 60_000;
+function catchUp() {
+  if (document.hidden) return;
+  if (Date.now() - limitsLoadedAt >= LIMITS_EVERY) loadLimits(false, false);
+  if (Date.now() - usageLoadedAt >= USAGE_EVERY) loadUsage(false);
+  renderStamp();
+}
+document.addEventListener('visibilitychange', catchUp);
+setInterval(catchUp, 20_000);
+
+applyLanguage();
 loadLimits(false, true);
 loadUsage(true);
-setInterval(() => loadLimits(false, false), 60_000);
-setInterval(() => loadUsage(false), 5 * 60_000);
 </script>
 </body>
 </html>

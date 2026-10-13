@@ -169,6 +169,17 @@ describe('startDashboard', () => {
     });
   });
 
+  it('serves the page its typefaces, and nothing else from beside them', async () => {
+    dashboard = await start();
+    const font = await get(dashboard.port, '/fonts/geist-cyrillic-wght-normal.woff2', undefined, 'GET', {});
+
+    expect(font.status).toBe(200);
+    expect(font.type).toBe('font/woff2');
+    expect((await get(dashboard.port, '/fonts/LICENSE-Geist.txt', undefined, 'GET', {})).status).toBe(404);
+    expect((await get(dashboard.port, '/fonts/..%2Findex.html', undefined, 'GET', {})).status).toBe(404);
+    expect((await get(dashboard.port, '/fonts/../index.html', undefined, 'GET', {})).status).not.toBe(200);
+  });
+
   it('survives an address that is not one', async () => {
     dashboard = await start();
 

@@ -203,6 +203,9 @@ opens a page with every subscription in one place:
 - **How the week has been filling.** The readings of the limits are kept
   (`~/.aimux/limits-history.jsonl`, a megabyte at most), and each card draws them.
 
+The page speaks English and Russian — it follows the browser, with a switch in the
+corner — and has a light and a dark theme.
+
 aimux serves the page itself, on `http://localhost:4747` and to this machine only. The
 address it prints works until you stop it, and the figures answer only to a page opened
 through it: not to another program, another user of the machine, or another web page
@@ -455,4 +458,5 @@ on one, add it here and run `aimux rebuild`.
 
 ## License
 
-MIT
+MIT. The dashboard page ships the Geist and Geist Mono typefaces, © The Geist Project
+Authors, under the SIL Open Font License 1.1 (`dashboard/fonts/`).

@@ -16,7 +16,10 @@ All notable changes to this project are documented here. The format is based on
   or all time: by day and subscription, per subscription with cache reads in a column
   of their own, by model, by project, and the heaviest sessions. aimux serves the page
   itself on `http://localhost:4747`, to this machine only, and the figures only to a page
-  opened through the address it prints; `--port`, `--no-open`.
+  opened through the address it prints; `--port`, `--no-open`. The page is in English
+  and Russian, light and dark, and carries its own typefaces (Geist and Geist Mono, under
+  the SIL Open Font License), so it looks the same everywhere and asks the network for
+  nothing.
 - **`aimux mcp`**, a read-only MCP server over stdio with the same figures for an AI
   client: `aimux_limits`, `aimux_usage`, `aimux_limits_history`. Add it with
   `claude mcp add aimux -- aimux mcp`.

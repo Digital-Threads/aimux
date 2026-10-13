@@ -106,9 +106,13 @@ export function liveData(scan: (args: string[]) => Promise<string> = scanInChild
 }
 
 const DEFAULT_PORT = 4747;
-const PAGE_PATH = fileURLToPath(new URL('../../dashboard/index.html', import.meta.url));
+const PAGE_DIR = fileURLToPath(new URL('../../dashboard/', import.meta.url));
+const PAGE_PATH = join(PAGE_DIR, 'index.html');
+// The page's typefaces, shipped with it so it looks the same on every machine and never
+// asks the network for one. Only these names are served, whatever the address says.
+const FONTS = new Set(['geist-latin-wght-normal.woff2', 'geist-cyrillic-wght-normal.woff2', 'geist-mono-latin-wght-normal.woff2', 'geist-mono-cyrillic-wght-normal.woff2']);
 // The page is one file with its style and script inside, and talks only to this server.
-const PAGE_POLICY = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const PAGE_POLICY = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; font-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 // Where the served page receives its key: an empty tag in the file, filled in for a
 // request that shows a ticket.
@@ -181,6 +185,14 @@ async function answer(req: IncomingMessage, res: ServerResponse, data: AimuxData
       const page = readFileSync(PAGE_PATH, 'utf-8');
       const filled = admits(door, url.searchParams.get('t'), Date.now()) ? page.replace(KEY_SLOT, KEY_SLOT.replace('""', `"${door.key}"`)) : page;
       return send(200, 'text/html; charset=utf-8', filled, { 'content-security-policy': PAGE_POLICY });
+    }
+
+    // The typefaces are no secret either, and the same for everyone: the browser may keep them.
+    if (url.pathname.startsWith('/fonts/')) {
+      const name = url.pathname.slice('/fonts/'.length);
+      if (!FONTS.has(name)) return json(404, { error: 'not found' });
+
+      return send(200, 'font/woff2', readFileSync(join(PAGE_DIR, 'fonts', name)), { 'cache-control': 'public, max-age=86400' });
     }
 
     // Nothing is read, scanned or probed for a request without the key. It comes in a
