@@ -180,6 +180,46 @@ It is a Claude Code mod (Claude Code 2.1.287 or newer), loaded only into the ses
 aimux starts; `AIMUX_NO_MOD=1` turns it off. The same figures are available to scripts
 as `aimux status --json`.
 
+### The whole picture in the browser (`aimux dashboard`)
+
+```bash
+aimux dashboard
+```
+
+opens a page with every subscription in one place:
+
+![aimux dashboard: every subscription's limits with a verdict on the pace, and where the tokens went](docs/aimux-dashboard.png)
+
+- **Limits right now.** Each subscription's 5-hour and weekly window, when it resets,
+  and a verdict on the pace: *on pace*, *tight* (on course for 85% or more), *over pace*
+  (it runs out before the reset, and the page says when) or *spent*. A tick on each bar
+  marks how much of the window's time has passed, so a bar ahead of its tick is burning
+  too fast. Three figures on top answer the usual questions: who has the most room, who
+  is closest to a limit, who is burning too fast.
+- **Where the tokens went.** For the last 24 hours, 7 days, 30 days or all time: cost,
+  tokens or requests over time by subscription, a table per subscription (input, cache
+  write, cache read, output), the models and projects that took the most, and the
+  heaviest sessions.
+- **How the week has been filling.** The readings of the limits are kept
+  (`~/.aimux/limits-history.jsonl`, a megabyte at most), and each card draws them.
+
+aimux serves the page itself, on `http://localhost:4747` and to this machine only. It
+reads the transcripts on this machine — the ones `aimux usage` reads — and asks each
+provider for the limits the way `aimux status` does. `--port <n>` picks another port,
+`--no-open` prints the address without opening a browser. Dollar figures are list-price
+estimates, what the same tokens would cost through the API: good for comparing
+subscriptions, not what a subscription bills.
+
+### The same figures for an AI client (`aimux mcp`)
+
+`aimux mcp` is a read-only MCP server over stdio. It has three tools: `aimux_limits`
+(the limits with the verdicts on the pace), `aimux_usage` (where the tokens went in a
+window) and `aimux_limits_history`. To add it to Claude Code:
+
+```bash
+claude mcp add aimux -- aimux mcp
+```
+
 ## Commands
 
 | Command | Description |
@@ -189,7 +229,9 @@ as `aimux status --json`.
 | `aimux status` | TUI dashboard — profiles, auth, live 5h/7d limit usage and reset times (claude + codex), auto-mode rules when any are set, symlink health. `--watch [s]` keeps it on screen and re-reads the limits; `--json` prints them for scripts; `--max-age <s>` reuses a reading that recent |
 | `aimux status --no-limits` | Same dashboard without the rate-limit probe (offline / faster) |
 | `aimux usage` | Show token usage by profile (Claude transcripts + codex rollouts), including sessions started outside aimux |
-| `aimux usage --profile work --since 24h` | Show usage for one profile over a recent window |
+| `aimux usage --profile work --since 24h` | Show usage for one profile over a recent window. `--json` prints the full report: per profile, day, model, project and the heaviest sessions |
+| `aimux dashboard` | Open a page in the browser: every subscription's limits and pace, and where the tokens went. `--port <n>`, `--no-open` |
+| `aimux mcp` | Serve the same figures to an AI client over MCP (stdio): `claude mcp add aimux -- aimux mcp` |
 | `aimux run [profile]` | Launch AI CLI with correct env and model |
 | `aimux run` | Interactive picker — history pre-selects last used profile |
 | `aimux run w` | Prefix matching — launches `work` if unambiguous |

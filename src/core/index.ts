@@ -75,12 +75,17 @@ export {
 } from './apiProfile.js';
 export type { ProviderPreset } from './apiProfile.js';
 
-export { summarizeUsage, usageBySession, parseSinceDuration, totalTokens } from './usage.js';
+export { summarizeUsage, usageBySession, usageReport, parseSinceDuration, totalTokens } from './usage.js';
+export type { UsageReport, UsageSlice } from './usage.js';
 export type { ProfileUsageSummary, SessionUsageSummary, UsageOptions, UsageTotals } from './usage.js';
 
 export { readProfileAutoMode } from './autoMode.js';
 export type { AutoModeStatus } from './autoMode.js';
 
+export { limitsInsight, windowPace } from './insights.js';
+export type { LimitsInsight, ProfileInsight, Verdict, WindowPace } from './insights.js';
+export { limitsHistory, recordLimits } from './limitsHistory.js';
+export type { LimitsReading } from './limitsHistory.js';
 export { fetchRateLimits, limitsSnapshot, fmtPct, parseRateLimitHeaders, parseCodexUsage, classifyProfile, rateLimitProfiles, pctColor, formatResetAt, probeError, pickFreestProfile } from './limits.js';
 export type { RateLimitStatus, RateLimitProbe, ProfileKind } from './limits.js';
 
@@ -104,4 +109,6 @@ export type { LaunchResult, RunDeps } from './continuation.js';
 export type { ContinuationPlan } from './continuation.js';
 export { openSplit, keepOpenOnFailure } from './split.js';
 export type { SplitOptions, SplitDeps } from './split.js';
-
+export { startDashboard, liveData, openBrowser, browserCommand } from './dashboard.js';
+export type { AimuxData, Dashboard, UsageWindow } from './dashboard.js';
+export { mcpReply, serveMcp } from './mcp.js';

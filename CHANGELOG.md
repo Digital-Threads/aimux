@@ -4,6 +4,53 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.34.0] - 2026-10-13
+
+### Added
+- **`aimux dashboard`** opens a page in the browser with every subscription in one
+  place. On top, the limits right now: each 5-hour and weekly window, when it resets,
+  and a verdict on the pace — on pace, tight (on course for 85% or more), over pace
+  (runs out before the reset, with the time) or spent — plus who has the most room and
+  who is closest to a limit. Below, where the tokens went over 24 hours, 7 days, 30 days
+  or all time: by day and subscription, per subscription with cache reads in a column
+  of their own, by model, by project, and the heaviest sessions. aimux serves the page
+  itself on `http://localhost:4747`, to this machine only; `--port`, `--no-open`.
+- **`aimux mcp`**, a read-only MCP server over stdio with the same figures for an AI
+  client: `aimux_limits`, `aimux_usage`, `aimux_limits_history`. Add it with
+  `claude mcp add aimux -- aimux mcp`.
+- **`aimux usage --json`** prints the full report: per profile, day, model, project and
+  the heaviest sessions.
+- The readings of the limits taken by the dashboard, by the band in Claude Code and by
+  `aimux status --json` are kept in `~/.aimux/limits-history.jsonl` (a megabyte at most),
+  so the dashboard can draw how a window has been filling.
+
+### Fixed
+- **`aimux usage` left out the heaviest sessions.** A claude transcript over about
+  512 MB is more than Node loads as one string, and the read failed without a word: the
+  sessions that cost the most were missing from every total. Transcripts are now read
+  in pieces.
+- **codex usage was counted wrong in three ways.** Rollouts over 256 MB were skipped. A
+  session's last running total was taken as what it spent, but codex starts that total
+  over each time the session is resumed, so a resumed session was undercounted — up to
+  twelve times on real data. And the whole of a session landed on the day it was last
+  written, so one that ran for months showed up as a day's spend. Each model call is now
+  counted on its own, at its own time. A forked session's rollout opens with a copy of
+  its parent's calls; those are counted once, with the parent.
+- **codex usage is credited to a profile.** It all went to `unknown`. A turn is now
+  credited to the profile it was typed under, read from codex's own prompt history,
+  which each profile keeps to itself; a subagent's calls go with the thread that started
+  it. Turns typed into plain `codex` and `codex exec` runs have no profile and stay
+  `unknown`.
+
+### Changed
+- **`aimux usage` is fast after the first run.** What it finds is kept under
+  `~/.aimux/usage-index`, and a later run reads only what was added since: about a
+  second instead of the better part of a minute on a machine with tens of thousands of
+  transcripts. The first run after this update reads everything once. The index takes
+  roughly 250 bytes per request counted and is readable by you alone; it is a cache, can
+  be deleted, and `aimux usage --all` clears what belongs to transcripts that are gone.
+- For codex the REQ column counts model calls, as it does for claude, not sessions.
+
 ## [0.33.0] - 2026-10-04
 
 ### Added

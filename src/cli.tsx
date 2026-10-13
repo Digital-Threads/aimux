@@ -13,12 +13,13 @@ import {
   syncProfile, syncAllProfiles, checkAllProfiles,
   launchProfile, getLastProfile, resolveProfileForDir, recordHistory, getProfile, loadActiveProfile,
   looksLikeSubcommand, adapterFor,
-  summarizeUsage, parseSinceDuration, totalTokens,
+  summarizeUsage, usageReport, parseSinceDuration, totalTokens,
   loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedClaudeOnboarding, confirm,
   parseShell, buildSwitchEnv, renderShellExports, renderShellInit,
   fetchRateLimits, rateLimitProfiles, pickFreestProfile, limitsSnapshot,
   planContinuation, runWithContinuation, fmtPct, openSplit, posixQuote, baseEnvFor,
   sessionIdFromArgs, followProcessSession, keepOpenOnFailure,
+  startDashboard, openBrowser, liveData, serveMcp,
 } from './core/index.js';
 
 function collectRepeatable(value: string, previous: string[]): string[] {
@@ -231,11 +232,18 @@ program
   .option('-p, --profile <profile>', 'Only show one profile (supports prefix matching)')
   .option('--since <duration>', 'Only include usage since duration: 24h, 7d, 4w', '7d')
   .option('--all', 'Include all known transcript usage')
-  .action(async (options: { profile?: string; since: string; all?: boolean }) => {
+  .option('--json', 'Print the full report as JSON instead: per profile, day, model, project and the heaviest sessions')
+  .option('--hourly', 'With --json: split the days by the hour')
+  .action(async (options: { profile?: string; since: string; all?: boolean; json?: boolean; hourly?: boolean }) => {
     try {
       const config = requireConfig();
       const profile = options.profile ? resolveProfile(config, options.profile) : undefined;
       const sinceMs = options.all ? undefined : parseSinceDuration(options.since);
+      if (options.json) {
+        console.log(JSON.stringify({ since: options.all ? 'all' : options.since, ...usageReport(config, { profile, sinceMs, byHour: options.hourly }) }));
+        return;
+      }
+
       const summaries = summarizeUsage(config, { profile, sinceMs });
       printUsageTable(summaries);
       if (!options.all) {
@@ -250,6 +258,38 @@ program
       process.exit(1);
     }
   });
+
+program
+  .command('dashboard')
+  .helpGroup('Everyday:')
+  .description('Open a page in the browser: every subscription\'s limits and pace, and where the tokens went')
+  .option('--port <port>', 'Serve on this port (default 4747, or any free one when that is taken)')
+  .option('--no-open', 'Print the address without opening the browser')
+  .action(async (options: { port?: string; open: boolean }) => {
+    requireConfig();
+
+    const port = options.port === undefined ? undefined : Number(options.port);
+    if (port !== undefined && !(Number.isInteger(port) && port >= 1 && port <= 65535)) {
+      console.error(`--port takes a port number from 1 to 65535, not '${options.port}'`);
+      process.exit(1);
+    }
+
+    try {
+      const dashboard = await startDashboard({ port });
+      console.log(`aimux dashboard: ${dashboard.url}`);
+      console.log('Served to this machine only. Ctrl-C to stop.');
+      if (options.open) openBrowser(dashboard.url);
+    } catch (err) {
+      console.error(`Could not start the dashboard: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('mcp')
+  .helpGroup('Everyday:')
+  .description('Serve limits and usage to an AI client over MCP (stdio). Add it with: claude mcp add aimux -- aimux mcp')
+  .action(() => serveMcp(liveData(), getCliVersion()));
 
 program
   .command('init')

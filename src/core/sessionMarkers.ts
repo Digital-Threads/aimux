@@ -107,12 +107,18 @@ export function sessionOwners(config: AimuxConfig): Map<string, SessionOwner[]> 
 export function ownerAt(owners: SessionOwner[] | undefined, t: number): string | undefined {
   // ponytail: one marker per profile cannot date a second visit, so a session that goes
   // back to an earlier profile (A → B → A) stays credited to B after the return.
-  let owner: string | undefined;
-  for (const o of owners ?? []) {
-    if (o.since > t) break;
-    owner = o.profile;
+  if (!owners) return undefined;
+
+  // The first one after `t`, by halving: a codex session lists every prompt typed into it.
+  let lo = 0;
+  let hi = owners.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (owners[mid].since > t) hi = mid;
+    else lo = mid + 1;
   }
-  return owner;
+
+  return owners[lo - 1]?.profile;
 }
 
 /** Where claude keeps interactive transcripts: `<source>/projects/<cwd-hash>/<id>.jsonl`. */

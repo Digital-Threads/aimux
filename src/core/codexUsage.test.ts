@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { AimuxConfig } from '../types/index.js';
@@ -63,21 +63,78 @@ describe('codex usage in summarizeUsage', () => {
     expect(u!.estimatedCostUsd).toBeGreaterThan(0); // gpt-5-codex is priced, not $0
   });
 
-  it('counts a session once (max cumulative) when it spans multiple rollout files', () => {
-    // codex resume can write a second rollout for the same session id; each carries
-    // its own cumulative total. Summing them would double-count — keep the largest.
-    const day = join(dir, 'codex', 'sessions', '2026', '06', '28');
-    writeFileSync(
-      join(day, `rollout-2026-06-28T12-00-00-${UUID}.jsonl`),
-      rolloutLines('gpt-5-codex', {
-        input_tokens: 25000, cached_input_tokens: 10000, output_tokens: 5000,
-        reasoning_output_tokens: 1000, total_tokens: 30000,
-      }),
-    );
+  // One model call: the running total after it, and what the call itself spent (all output).
+  const call = (at: string, total: number, output: number) => JSON.stringify({
+    timestamp: at,
+    type: 'event_msg',
+    payload: { type: 'token_count', info: { total_token_usage: { total_tokens: total }, last_token_usage: { input_tokens: 0, cached_input_tokens: 0, output_tokens: output } } },
+  });
+  const header = (payload: object) => JSON.stringify({ type: 'session_meta', payload });
+  const day = () => join(dir, 'codex', 'sessions', '2026', '06', '28');
+  const OTHER = '019c6198-5b6e-7671-b79c-aaaaaaaaaaaa';
+  const FORK = '019c6198-5b6e-7671-b79c-bbbbbbbbbbbb';
+
+  it('does not count the calls a forked session copied from its parent', () => {
+    // A fork's rollout: its own header, the parent's, the parent's calls under the moment
+    // of the fork, then what the fork itself did.
+    writeFileSync(join(day(), `rollout-2026-06-28T12-00-00-${OTHER}.jsonl`), [
+      header({ id: OTHER, cwd: '/srv/root' }),
+      call('2026-06-01T08:00:00.000Z', 7, 7),
+      call('2026-06-02T08:00:00.000Z', 37, 30),
+    ].join('\n'));
+    writeFileSync(join(day(), `rollout-2026-06-28T13-00-00-${FORK}.jsonl`), [
+      header({ id: FORK, forked_from_id: OTHER, cwd: '/srv/root' }),
+      header({ id: OTHER, cwd: '/srv/root' }),
+      call('2026-06-28T13:00:01.000Z', 7, 7),
+      call('2026-06-28T13:00:01.500Z', 37, 30),
+      call('2026-06-28T13:05:00.000Z', 537, 500),
+    ].join('\n'));
+
     const u = summarizeUsage(config()).find((s) => s.profile === 'unknown')!;
-    // Larger file wins; NOT the sum (2000 + 5000 = 7000) of both files.
-    expect(u.outputTokens).toBe(5000);
-    expect(u.inputTokens).toBe(15000); // 25000 - 10000, from the larger rollout
+    expect(u.outputTokens).toBe(2000 + 7 + 30 + 500);
+    expect(u.requests).toBe(1 + 2 + 1);
+  });
+
+  it('leaves the copied calls out even when the parent lies outside the window asked for', () => {
+    const old = join(day(), `rollout-2026-06-01T08-00-00-${OTHER}.jsonl`);
+    writeFileSync(old, [header({ id: OTHER }), call('2026-06-01T08:00:00.000Z', 7, 7)].join('\n'));
+    utimesSync(old, new Date('2026-06-01T08:00:00Z'), new Date('2026-06-01T08:00:00Z'));
+    writeFileSync(join(day(), `rollout-2026-06-28T13-00-00-${FORK}.jsonl`), [
+      header({ id: FORK, forked_from_id: OTHER }),
+      call('2026-06-28T13:00:01.000Z', 7, 7),
+      call('2026-06-28T13:05:00.000Z', 507, 500),
+    ].join('\n'));
+
+    // The parent was last written before the window opened; the copy is stamped inside it.
+    const u = summarizeUsage(config(), { sinceMs: Date.parse('2026-06-20T00:00:00Z') }).find((s) => s.profile === 'unknown')!;
+    expect(u.outputTokens).toBe(2000 + 500);
+  });
+
+  it('credits a subagent to whoever typed into the thread that started it', () => {
+    writeFileSync(join(day(), `rollout-2026-06-28T12-00-00-${OTHER}.jsonl`), [
+      header({ id: OTHER, parent_thread_id: UUID }),
+      call('2026-06-28T12:10:05.000Z', 30, 30),
+    ].join('\n'));
+    mkdirSync(join(dir, 'profiles', 'cx'), { recursive: true });
+    writeFileSync(join(dir, 'profiles', 'cx', 'history.jsonl'), `${JSON.stringify({ session_id: UUID, ts: Date.parse('2026-06-28T12:10:00.000Z') / 1000, text: 'go' })}\n`);
+
+    expect(summarizeUsage(config()).find((s) => s.profile === 'cx')!.outputTokens).toBe(30);
+  });
+
+  it('credits each turn to the profile that typed it, by codex\'s own prompt history', () => {
+    writeFileSync(
+      join(day(), `rollout-2026-06-28T12-00-00-${OTHER}.jsonl`),
+      [call('2026-06-28T12:00:05.000Z', 7, 7), call('2026-06-28T12:10:05.000Z', 37, 30), call('2026-06-28T12:20:05.000Z', 537, 500)].join('\n'),
+    );
+    // Typed in plain codex, then under the profile, then in plain codex again.
+    const prompt = (at: string) => JSON.stringify({ session_id: OTHER, ts: Date.parse(at) / 1000, text: 'go' });
+    writeFileSync(join(dir, 'codex', 'history.jsonl'), `${prompt('2026-06-28T12:00:00.000Z')}\n${prompt('2026-06-28T12:20:00.000Z')}\n`);
+    mkdirSync(join(dir, 'profiles', 'cx'), { recursive: true });
+    writeFileSync(join(dir, 'profiles', 'cx', 'history.jsonl'), `${prompt('2026-06-28T12:10:00.000Z')}\n`);
+
+    const summaries = summarizeUsage(config());
+    expect(summaries.find((s) => s.profile === 'cx')!.outputTokens).toBe(30);
+    expect(summaries.find((s) => s.profile === 'unknown')!.outputTokens).toBe(2000 + 7 + 500);
   });
 
   it('does not scan codex when no codex profile is configured', () => {

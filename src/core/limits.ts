@@ -6,6 +6,7 @@ import type { AimuxConfig, ProfileConfig } from '../types/index.js';
 import { loadProfileEnv } from './run.js';
 import { expandHome, getAimuxDir } from './paths.js';
 import { adapterFor } from './adapters/index.js';
+import { recordLimits } from './limitsHistory.js';
 
 /** Live subscription rate-limit windows, as whole-percent utilization.
  *  A window is `null` when the provider did not report it — a plan can genuinely
@@ -415,6 +416,7 @@ export async function limitsSnapshot(
     return [name, { cli: p.cli ?? 'claude', ...(await probe(p, expandHome(p.path))) }] as const;
   })));
   const snapshot: LimitsSnapshot = { fetchedAt: now, profiles };
+  recordLimits(snapshot);
 
   // Written aside and renamed, so a session reading it never sees half a file.
   try {
