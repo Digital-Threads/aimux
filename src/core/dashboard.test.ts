@@ -1,6 +1,10 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { request } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { browserCommand, liveData, startDashboard, type AimuxData, type Dashboard, type UsageWindow } from './dashboard.js';
+import { setAimuxDir } from './paths.js';
 
 const usageOf = (since: string) => ({ since, hourly: false, computedAt: 1, profiles: [], days: [], buckets: [], models: [], projects: [], sessions: [] }) as UsageWindow;
 
@@ -89,7 +93,6 @@ describe('startDashboard', () => {
 
     expect(KEY).toMatch(/^[\w-]{32}$/);
     expect(dashboard.url).not.toContain(KEY);
-    expect(dashboard.launchUrl()).not.toContain(KEY);
 
     // The page goes to anyone, and is worth nothing without the key.
     expect(await page('/')).toBe('');
@@ -99,26 +102,71 @@ describe('startDashboard', () => {
     expect(await page(pathOf(dashboard.url))).toBe(KEY);
   });
 
-  it('gives the browser\'s launcher an address that works once', async () => {
-    dashboard = await start();
+  describe('the launch file', () => {
+    let root: string;
+    beforeEach(() => {
+      root = mkdtempSync(join(tmpdir(), 'aimux-dashboard-'));
+      setAimuxDir(join(root, '.aimux'));
+    });
+    afterEach(() => {
+      setAimuxDir('');
+      rmSync(root, { recursive: true, force: true });
+    });
+
     const page = (path: string) => get(dashboard.port, path, undefined, 'GET', {}).then((r) => keyIn(r.body));
-    const launch = pathOf(dashboard.launchUrl());
+    const addressIn = (file: string) => pathOf(/url=([^"]+)"/.exec(readFileSync(file, 'utf-8'))![1]);
 
-    expect(await page(launch)).toBe(KEY);
-    expect(await page(launch)).toBe('');
-  });
+    it('is for its owner alone, and holds no key', async () => {
+      dashboard = await start();
+      const file = dashboard.launchFile();
 
-  it('lets a launch address lapse after a minute', async () => {
-    dashboard = await start();
-    const launch = pathOf(dashboard.launchUrl());
+      // What the launcher is given, and so what the process list shows: a path, no ticket.
+      expect(file).toBe(join(root, '.aimux', 'run', `dashboard-${dashboard.port}.html`));
+      expect(statSync(file).mode & 0o077).toBe(0);
+      expect(statSync(join(root, '.aimux', 'run')).mode & 0o077).toBe(0);
+      expect(readFileSync(file, 'utf-8')).not.toContain(KEY);
+      expect(addressIn(file)).toMatch(/^\/\?t=[\w-]{32}$/);
+    });
 
-    vi.useFakeTimers({ toFake: ['Date'] });
-    try {
-      vi.setSystemTime(Date.now() + 61_000);
-      expect(keyIn((await get(dashboard.port, launch, undefined, 'GET', {})).body)).toBe('');
-    } finally {
-      vi.useRealTimers();
-    }
+    it('sends the browser on with a ticket that works once, and is gone once it did', async () => {
+      dashboard = await start();
+      const file = dashboard.launchFile();
+      const address = addressIn(file);
+
+      expect(await page(address)).toBe(KEY);
+      expect(existsSync(file)).toBe(false);
+      expect(await page(address)).toBe('');
+    });
+
+    it('carries a ticket that lapses after two minutes', async () => {
+      dashboard = await start();
+      const address = addressIn(dashboard.launchFile());
+
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(Date.now() + 121_000);
+        expect(await page(address)).toBe('');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('is replaced, not written into, when one is already there', async () => {
+      dashboard = await start();
+      const first = addressIn(dashboard.launchFile());
+      const second = addressIn(dashboard.launchFile());
+
+      expect(second).not.toBe(first);
+      expect(statSync(dashboard.launchFile()).mode & 0o077).toBe(0);
+    });
+
+    it('does not outlive the dashboard', async () => {
+      dashboard = await start();
+      const file = dashboard.launchFile();
+
+      await dashboard.close();
+      expect(existsSync(file)).toBe(false);
+    });
   });
 
   it('survives an address that is not one', async () => {
@@ -271,6 +319,6 @@ describe('browserCommand', () => {
     expect(browserCommand('http://localhost:1', 'win32', {})).toEqual(['cmd', ['/c', 'start', '', 'http://localhost:1']]);
     expect(browserCommand('http://localhost:1', 'linux', {})).toEqual(['xdg-open', ['http://localhost:1']]);
     // WSL is linux with no browser of its own: Windows opens it.
-    expect(browserCommand('http://localhost:1', 'linux', { WSL_DISTRO_NAME: 'Ubuntu' })).toEqual(['explorer.exe', ['http://localhost:1']]);
+    expect(browserCommand('\\\\wsl.localhost\\Ubuntu\\home\\me\\open.html', 'linux', { WSL_DISTRO_NAME: 'Ubuntu' })).toEqual(['explorer.exe', ['\\\\wsl.localhost\\Ubuntu\\home\\me\\open.html']]);
   });
 });

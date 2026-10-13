@@ -1,13 +1,15 @@
-import { execFile, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { limitsInsight, type LimitsInsight } from './insights.js';
 import { limitsSnapshot } from './limits.js';
 import { limitsHistory, type LimitsReading } from './limitsHistory.js';
+import { getAimuxDir } from './paths.js';
 import { parseSinceDuration, type UsageReport } from './usage.js';
 
 /** A usage report for one window, as the scan printed it. */
@@ -111,7 +113,7 @@ const PAGE_POLICY = "default-src 'none'; style-src 'unsafe-inline'; script-src '
 // Where the served page receives its key: an empty tag in the file, filled in for a
 // request that shows a ticket.
 const KEY_SLOT = '<meta name="aimux-key" content="">';
-const ONCE_MS = 60_000;
+const ONCE_MS = 120_000;
 
 const secret = () => randomBytes(24).toString('base64url');
 
@@ -132,23 +134,29 @@ function same(shown: unknown, held: string): boolean {
  *
  * What does travel in an address is a ticket, which the page trades for the key once it
  * has loaded. The printed address carries one good while this server runs; it sits in
- * the owner's own terminal. The address handed to the browser's launcher shows up in
- * the process list, for all to see, so its ticket works once and for a minute.
+ * the owner's own terminal. The browser's launcher gets no address at all — a command
+ * line is in the process list for every user of the machine to read, and whoever read a
+ * ticket there could use it first. It gets a file only its owner can read, and the file
+ * sends the browser on with a ticket that works once, for two minutes.
  */
 interface Door {
   key: string;
   printed: string;
-  once: Map<string, number>;
+  /** One-time tickets: when each lapses, and the launch file that carries it. */
+  once: Map<string, { until: number; file: string }>;
 }
 
-/** Whether a request for the page shows a ticket; a one-time ticket is spent by this. */
+/** Whether a request for the page shows a ticket; a one-time ticket is spent by this, and its file removed. */
 function admits(door: Door, ticket: string | null, now: number): boolean {
   if (ticket === null) return false;
   if (same(ticket, door.printed)) return true;
 
-  const until = door.once.get(ticket);
+  const issued = door.once.get(ticket);
+  if (!issued) return false;
+
   door.once.delete(ticket);
-  return until !== undefined && now < until;
+  rmSync(issued.file, { force: true });
+  return now < issued.until;
 }
 
 async function answer(req: IncomingMessage, res: ServerResponse, data: AimuxData, port: number, door: Door): Promise<void> {
@@ -198,8 +206,11 @@ async function answer(req: IncomingMessage, res: ServerResponse, data: AimuxData
 export interface Dashboard {
   /** The address to print: its ticket is good while the server runs. */
   url: string;
-  /** An address for the browser's launcher: its ticket works once, within a minute. */
-  launchUrl(): string;
+  /**
+   * A file to hand to the browser's launcher, which sends the browser to the dashboard.
+   * Only its owner can read it, and what it carries works once, within two minutes.
+   */
+  launchFile(): string;
   port: number;
   close(): Promise<void>;
 }
@@ -233,35 +244,56 @@ export async function startDashboard(options: { port?: number; data?: AimuxData 
 
   return {
     url: `http://localhost:${port}/?t=${door.printed}`,
-    launchUrl() {
+    launchFile() {
+      const dir = join(getAimuxDir(), 'run');
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+
+      const file = join(dir, `dashboard-${port}.html`);
       const ticket = secret();
-      door.once.set(ticket, Date.now() + ONCE_MS);
-      return `http://localhost:${port}/?t=${ticket}`;
+      const to = `http://localhost:${port}/?t=${ticket}`;
+      // Made anew, never written into a file that is already there with other rights.
+      rmSync(file, { force: true });
+      writeFileSync(
+        file,
+        `<!doctype html>\n<meta charset="utf-8">\n<title>aimux dashboard</title>\n<meta http-equiv="refresh" content="0;url=${to}">\n<p><a href="${to}">Open the aimux dashboard</a></p>\n`,
+        { mode: 0o600, flag: 'wx' },
+      );
+
+      door.once.set(ticket, { until: Date.now() + ONCE_MS, file });
+      return file;
     },
     port,
     close: () =>
       new Promise((resolve) => {
+        for (const { file } of door.once.values()) rmSync(file, { force: true });
         server.close(() => resolve());
         server.closeAllConnections();
       }),
   };
 }
 
-/** The command that hands an address to the user's browser on this platform. */
-export function browserCommand(url: string, platform: string = process.platform, env: NodeJS.ProcessEnv = process.env): [string, string[]] {
-  if (platform === 'darwin') return ['open', [url]];
-  if (platform === 'win32') return ['cmd', ['/c', 'start', '', url]];
-  // WSL has no browser of its own: Windows opens the address.
-  if (env.WSL_DISTRO_NAME) return ['explorer.exe', [url]];
+/** The command that has the user's browser open a page — a file or an address — on this platform. */
+export function browserCommand(target: string, platform: string = process.platform, env: NodeJS.ProcessEnv = process.env): [string, string[]] {
+  if (platform === 'darwin') return ['open', [target]];
+  if (platform === 'win32') return ['cmd', ['/c', 'start', '', target]];
+  // WSL has no browser of its own: Windows opens it.
+  if (env.WSL_DISTRO_NAME) return ['explorer.exe', [target]];
 
-  return ['xdg-open', [url]];
+  return ['xdg-open', [target]];
 }
 
-/** Open the address in the browser, if the machine has a way to. The address is printed either way. */
-export function openBrowser(url: string): void {
-  const [command, args] = browserCommand(url);
-
+/**
+ * Have the browser open a launch file (see `Dashboard.launchFile`), if the machine has a
+ * way to. Nothing is lost when it has none: the address is printed either way.
+ */
+export function openBrowser(file: string): void {
   try {
+    // Windows knows a file inside WSL by another name.
+    const target = process.platform === 'linux' && process.env.WSL_DISTRO_NAME
+      ? execFileSync('wslpath', ['-w', file], { encoding: 'utf-8' }).trim()
+      : file;
+    const [command, args] = browserCommand(target);
+
     spawn(command, args, { detached: true, stdio: 'ignore' }).on('error', () => {}).unref();
   } catch {
     // no opener here: the printed address is enough
