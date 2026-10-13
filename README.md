@@ -203,9 +203,12 @@ opens a page with every subscription in one place:
 - **How the week has been filling.** The readings of the limits are kept
   (`~/.aimux/limits-history.jsonl`, a megabyte at most), and each card draws them.
 
-aimux serves the page itself, on `http://localhost:4747` and to this machine only. It
-reads the transcripts on this machine — the ones `aimux usage` reads — and asks each
-provider for the limits the way `aimux status` does. `--port <n>` picks another port,
+aimux serves the page itself, on `http://localhost:4747` and to this machine only. The
+address it prints carries a key (kept in `~/.aimux/dashboard-key`, so it is the same next
+time): without it neither the page nor its figures answer, to another program or to
+another web page open in the browser. It reads the transcripts on this machine — the
+ones `aimux usage` reads — and asks each provider for the limits the way `aimux status`
+does. `--port <n>` picks another port,
 `--no-open` prints the address without opening a browser. Dollar figures are list-price
 estimates, what the same tokens would cost through the API: good for comparing
 subscriptions, not what a subscription bills.

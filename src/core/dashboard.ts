@@ -1,12 +1,15 @@
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { limitsInsight, type LimitsInsight } from './insights.js';
 import { limitsSnapshot } from './limits.js';
 import { limitsHistory, type LimitsReading } from './limitsHistory.js';
+import { getAimuxDir } from './paths.js';
 import { parseSinceDuration, type UsageReport } from './usage.js';
 
 /** A usage report for one window, as the scan printed it. */
@@ -63,8 +66,14 @@ export function liveData(scan: (args: string[]) => Promise<string> = scanInChild
     async usage(since) {
       if (!SINCE.test(since)) throw new Error(`since takes 'all' or a duration like 24h, 7d, 4w, not '${since}'`);
 
+      // What has gone stale is forgotten first, so the windows something keeps asking
+      // for cannot pile up: the map holds the scans running and the last minute's answers.
+      for (const [window, each] of scans) {
+        if (each.at !== undefined && Date.now() - each.at >= USAGE_TTL_MS) scans.delete(window);
+      }
+
       const hit = scans.get(since);
-      if (hit && (hit.at === undefined || Date.now() - hit.at < USAGE_TTL_MS)) return hit.value;
+      if (hit) return hit.value;
 
       // Each window asked for is a process reading the transcripts: a few at once at most,
       // however many different windows something keeps asking for.
@@ -101,9 +110,44 @@ const PAGE_PATH = fileURLToPath(new URL('../../dashboard/index.html', import.met
 // The page is one file with its style and script inside, and talks only to this server.
 const PAGE_POLICY = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-async function answer(req: IncomingMessage, res: ServerResponse, data: AimuxData, port: number): Promise<void> {
+/**
+ * The key to the dashboard, kept in `~/.aimux/dashboard-key` for this user alone, so the
+ * address aimux prints stays the same from one run to the next.
+ *
+ * Listening on 127.0.0.1 keeps other machines out, not other programs on this one: any
+ * local user or process, and any web page open in the browser, can send a request here.
+ * None of them has the key.
+ */
+function dashboardKey(): string {
+  const path = join(getAimuxDir(), 'dashboard-key');
+  try {
+    const kept = readFileSync(path, 'utf-8').trim();
+    if (/^[\w-]{32}$/.test(kept)) return kept;
+  } catch {
+    // none yet
+  }
+
+  const key = randomBytes(24).toString('base64url');
+  try {
+    mkdirSync(getAimuxDir(), { recursive: true });
+    writeFileSync(path, key, { mode: 0o600 });
+  } catch {
+    // cannot be kept: a key for this run only
+  }
+
+  return key;
+}
+
+function isKey(shown: unknown, key: string): boolean {
+  if (typeof shown !== 'string') return false;
+
+  const [a, b] = [Buffer.from(shown), Buffer.from(key)];
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+async function answer(req: IncomingMessage, res: ServerResponse, data: AimuxData, port: number, key: string): Promise<void> {
   const send = (status: number, type: string, body: string | Buffer, extra: Record<string, string> = {}) => {
-    res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...extra });
+    res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', ...extra });
     res.end(body);
   };
   const json = (status: number, body: unknown) => send(status, 'application/json; charset=utf-8', JSON.stringify(body));
@@ -112,23 +156,23 @@ async function answer(req: IncomingMessage, res: ServerResponse, data: AimuxData
   // can point a host name of its own at 127.0.0.1, but it cannot fake this header.
   const hosts = ['localhost', '127.0.0.1'].flatMap((host) => (port === 80 ? [host, `${host}:80`] : [`${host}:${port}`]));
   if (!hosts.includes(req.headers.host ?? '')) return json(403, { error: 'forbidden host' });
-
   if (req.method !== 'GET') return json(405, { error: 'the dashboard is read-only' });
 
   try {
     const url = new URL(req.url ?? '/', 'http://localhost');
 
-    // The figures go to the page alone, not to a page elsewhere asking in passing: it
-    // could not read the answer, but every request is work — a scan of the transcripts,
-    // a probe of each subscription.
-    const site = req.headers['sec-fetch-site'];
-    const origin = req.headers.origin;
-    const isForeign = (site && site !== 'same-origin' && site !== 'none') || (origin && !hosts.includes(origin.replace(/^http:\/\//, '')));
-    if (url.pathname.startsWith('/api/') && isForeign) return json(403, { error: 'forbidden origin' });
+    // Nothing is read, scanned or probed for a request without the key. The page gets
+    // it in its address; the figures want it in a header, which a page elsewhere cannot
+    // attach without the browser asking this server first, and it does not say yes.
+    if (url.pathname === '/') {
+      if (!isKey(url.searchParams.get('key'), key)) {
+        return send(403, 'text/plain; charset=utf-8', 'Open the address that `aimux dashboard` printed: it carries the key to this page.\n');
+      }
+      return send(200, 'text/html; charset=utf-8', readFileSync(PAGE_PATH), { 'content-security-policy': PAGE_POLICY });
+    }
+    if (!isKey(req.headers['x-aimux-key'], key)) return json(403, { error: 'forbidden' });
 
     switch (url.pathname) {
-      case '/':
-        return send(200, 'text/html; charset=utf-8', readFileSync(PAGE_PATH), { 'content-security-policy': PAGE_POLICY });
       case '/api/limits':
         return json(200, await data.limits(url.searchParams.has('fresh')));
       case '/api/usage':
@@ -150,13 +194,15 @@ export interface Dashboard {
 }
 
 /**
- * Serve the dashboard page and its figures to this machine only. Without a `port` it
- * takes the usual one, or any free one when that is taken (a dashboard already open).
+ * Serve the dashboard page and its figures to whoever holds the key, on this machine
+ * only. Without a `port` it takes the usual one, or any free one when that is taken (a
+ * dashboard already open). `url` carries the key.
  */
-export async function startDashboard(options: { port?: number; data?: AimuxData } = {}): Promise<Dashboard> {
+export async function startDashboard(options: { port?: number; data?: AimuxData; key?: string } = {}): Promise<Dashboard> {
   const data = options.data ?? liveData();
+  const key = options.key ?? dashboardKey();
   let port = 0;
-  const server = createServer((req, res) => void answer(req, res, data, port).catch(() => res.destroy()));
+  const server = createServer((req, res) => void answer(req, res, data, port, key).catch(() => res.destroy()));
 
   const listen = (on: number) =>
     new Promise<number>((resolve, reject) => {
@@ -175,7 +221,7 @@ export async function startDashboard(options: { port?: number; data?: AimuxData 
   }
 
   return {
-    url: `http://localhost:${port}`,
+    url: `http://localhost:${port}/?key=${key}`,
     port,
     close: () =>
       new Promise((resolve) => {

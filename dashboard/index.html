@@ -236,7 +236,7 @@
     <p><b>Pace.</b> A window's use so far is carried to its reset at the same rate. <i>Tight</i> means on course for 85% or more, <i>over pace</i> means it runs out before the reset, <i>spent</i> means it is full now. There is no forecast in the first minutes of a window.</p>
     <p><b>unknown</b> and <b>unknown (codex)</b> are sessions aimux could not tie to a profile: started outside aimux, or before it was installed.</p>
     <p><b>Not counted in usage:</b> sessions that hooks and plugins run on their own in the background. They do use the limits, so a limit can fill faster than the usage here suggests.</p>
-    <p>This page is served to this machine only. Stop it with Ctrl-C in the terminal that runs <code>aimux dashboard</code>.</p>
+    <p>This page is served to this machine only, and only to the address with its key in it. Stop it with Ctrl-C in the terminal that runs <code>aimux dashboard</code>.</p>
   </footer>
 </main>
 <div id="tip" aria-hidden="true"></div>
@@ -726,8 +726,11 @@ function renderUsage() {
 }
 
 // ---------- loading ----------
+// The key this page was opened with: the server answers nobody without it.
+const KEY = new URLSearchParams(location.search).get('key') ?? '';
+
 async function getJson(path) {
-  const response = await fetch(path);
+  const response = await fetch(path, { headers: { 'x-aimux-key': KEY } });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
   return body;

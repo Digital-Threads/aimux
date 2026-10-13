@@ -14,7 +14,8 @@ All notable changes to this project are documented here. The format is based on
   who is closest to a limit. Below, where the tokens went over 24 hours, 7 days, 30 days
   or all time: by day and subscription, per subscription with cache reads in a column
   of their own, by model, by project, and the heaviest sessions. aimux serves the page
-  itself on `http://localhost:4747`, to this machine only; `--port`, `--no-open`.
+  itself on `http://localhost:4747`, to this machine only and only to the address it
+  prints, which carries a key; `--port`, `--no-open`.
 - **`aimux mcp`**, a read-only MCP server over stdio with the same figures for an AI
   client: `aimux_limits`, `aimux_usage`, `aimux_limits_history`. Add it with
   `claude mcp add aimux -- aimux mcp`.
