@@ -277,8 +277,8 @@ program
     try {
       const dashboard = await startDashboard({ port });
       console.log(`aimux dashboard: ${dashboard.url}`);
-      console.log('Served to this machine only, to whoever opens this address: it carries the key. Ctrl-C to stop.');
-      if (options.open) openBrowser(dashboard.url);
+      console.log('Served to this machine only, and only through this address: it is good until you stop it with Ctrl-C.');
+      if (options.open) openBrowser(dashboard.launchUrl());
     } catch (err) {
       console.error(`Could not start the dashboard: ${(err as Error).message}`);
       process.exit(1);

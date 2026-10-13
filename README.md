@@ -194,8 +194,8 @@ opens a page with every subscription in one place:
   and a verdict on the pace: *on pace*, *tight* (on course for 85% or more), *over pace*
   (it runs out before the reset, and the page says when) or *spent*. A tick on each bar
   marks how much of the window's time has passed, so a bar ahead of its tick is burning
-  too fast. Three figures on top answer the usual questions: who has the most room, who
-  is closest to a limit, who is burning too fast.
+  too fast. The page leads with one sentence — who is in trouble, or that nobody is —
+  and three figures: who has the most room, who is closest to a limit, what resets next.
 - **Where the tokens went.** For the last 24 hours, 7 days, 30 days or all time: cost,
   tokens or requests over time by subscription, a table per subscription (input, cache
   write, cache read, output), the models and projects that took the most, and the
@@ -204,11 +204,10 @@ opens a page with every subscription in one place:
   (`~/.aimux/limits-history.jsonl`, a megabyte at most), and each card draws them.
 
 aimux serves the page itself, on `http://localhost:4747` and to this machine only. The
-address it prints carries a key (kept in `~/.aimux/dashboard-key`, so it is the same next
-time): without it neither the page nor its figures answer, to another program or to
-another web page open in the browser. It reads the transcripts on this machine — the
-ones `aimux usage` reads — and asks each provider for the limits the way `aimux status`
-does. `--port <n>` picks another port,
+address it prints works until you stop it, and the figures answer only to a page opened
+through it: not to another program, another user of the machine, or another web page
+open in the browser. It reads the transcripts on this machine — the ones `aimux usage`
+reads — and asks each provider for the limits the way `aimux status` does. `--port <n>` picks another port,
 `--no-open` prints the address without opening a browser. Dollar figures are list-price
 estimates, what the same tokens would cost through the API: good for comparing
 subscriptions, not what a subscription bills.

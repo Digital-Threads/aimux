@@ -3,18 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="aimux-key" content="">
 <title>aimux dashboard</title>
 <style>
+  /* A mixing desk at night: every subscription is a channel strip with its level meters.
+     Colour belongs to the data alone; the chrome is ink, hairlines and one soft light. */
   :root {
     color-scheme: light;
-    --page: #f9f9f7;
+    --plane: #f5f4f0;
+    --glow: rgba(255, 255, 255, 0.95);
+    --dots: rgba(11, 11, 11, 0.05);
     --surface: #fcfcfb;
+    --inset: #efeee9;
     --ink: #0b0b0b;
     --ink-2: #52514e;
     --muted: #898781;
     --grid: #e1e0d9;
     --axis: #c3c2b7;
-    --border: rgba(11, 11, 11, 0.10);
+    --edge: rgba(11, 11, 11, 0.10);
+    --edge-hi: rgba(255, 255, 255, 0.9);
+    --shadow: 0 1px 2px rgba(11, 11, 11, 0.05), 0 16px 36px -20px rgba(11, 11, 11, 0.25);
     --wash: rgba(11, 11, 11, 0.05);
     --series-1: #2a78d6;
     --series-2: #eb6834;
@@ -25,22 +33,30 @@
     --series-7: #6250d6;
     --series-8: #e34948;
     --series-rest: #898781;
+    --series-other: #c3c2b7;
     --good: #0ca30c;
     --warning: #fab219;
     --serious: #ec835a;
     --critical: #d03b3b;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, "Liberation Mono", monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       color-scheme: dark;
-      --page: #0d0d0d;
+      --plane: #0b0b0a;
+      --glow: rgba(255, 255, 255, 0.06);
+      --dots: rgba(255, 255, 255, 0.045);
       --surface: #1a1a19;
+      --inset: #111110;
       --ink: #f0efec;
       --ink-2: #c3c2b7;
       --muted: #898781;
       --grid: #2c2c2a;
       --axis: #383835;
-      --border: rgba(255, 255, 255, 0.10);
+      --edge: rgba(255, 255, 255, 0.09);
+      --edge-hi: rgba(255, 255, 255, 0.06);
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 20px 44px -22px rgba(0, 0, 0, 0.85);
       --wash: rgba(255, 255, 255, 0.06);
       --series-1: #3987e5;
       --series-2: #d95926;
@@ -50,110 +66,145 @@
       --series-6: #008300;
       --series-7: #9085e9;
       --series-8: #e66767;
+      --series-other: #5f5e58;
     }
   }
 
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  body {
-    margin: 0;
-    background: var(--page);
-    color: var(--ink);
-    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  body { margin: 0; background: var(--plane); color: var(--ink); font: 14px/1.45 var(--sans); }
+  /* The room: one light from the upper left over a faint grid. Behind everything, never in the way. */
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(1100px 560px at 10% -10%, var(--glow), transparent 62%),
+      radial-gradient(circle at 1px 1px, var(--dots) 1px, transparent 0) 0 0 / 22px 22px;
   }
-  main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 20px; font-weight: 600; margin: 0; }
-  h2 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
-  h3 { font-size: 14px; font-weight: 600; margin: 0 0 12px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 18px 20px 64px; }
   p { margin: 0; }
-  .lede { color: var(--ink-2); margin-bottom: 16px; max-width: 76ch; }
-  section { margin-top: 36px; }
-  header.top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
-  header.top .grow { flex: 1; }
-  .stamp { color: var(--ink-2); font-size: 13px; }
-  button, .seg label {
-    font: inherit; color: var(--ink); background: var(--surface);
-    border: 1px solid var(--border); border-radius: 6px; padding: 5px 12px; cursor: pointer;
-  }
-  button:hover, .seg label:hover { background: var(--wash); }
-  button:focus-visible, .seg input:focus-visible + label, [tabindex]:focus-visible {
-    outline: 2px solid var(--series-1); outline-offset: 2px;
-  }
-
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-  .tile .label { color: var(--ink-2); font-size: 13px; }
-  .tile .value { font-size: 26px; font-weight: 600; line-height: 1.2; margin-top: 2px; overflow-wrap: anywhere; }
-  .tile .sub { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
-
-  .subs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 12px; margin-top: 12px; }
-  .sub-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-  .sub-head .name { font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
-  .sub-head .cli { color: var(--muted); font-size: 12px; }
-  .sub-head .grow { flex: 1; }
+  .grow { flex: 1; }
+  .eyebrow { font: 600 11.5px/1.2 var(--mono); letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
   .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block; }
-  .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; white-space: nowrap; }
-  .badge svg { width: 14px; height: 14px; flex: none; }
-  .win { display: grid; grid-template-columns: 58px 1fr 44px; align-items: center; column-gap: 10px; margin-top: 10px; }
-  .win .wlabel { color: var(--ink-2); font-size: 13px; }
-  .win .pct { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .win .note { grid-column: 2 / 4; color: var(--ink-2); font-size: 12.5px; margin-top: 3px; }
-  .meter { position: relative; height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--tone) 20%, var(--surface)); }
-  .meter .fill { height: 100%; border-radius: 5px; background: var(--tone); min-width: 2px; }
-  .meter .tick { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink); border-radius: 1px; }
+
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font: 13px var(--mono); }
+  .brand { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+  .brand span { color: var(--muted); font-weight: 400; }
+  .stamp { color: var(--muted); }
+  @media (max-width: 520px) { .stamp { order: 3; flex-basis: 100%; } }
+  button, .seg label {
+    font: 12.5px var(--mono); color: var(--ink); background: var(--surface);
+    border: 1px solid var(--edge); border-radius: 8px; padding: 6px 12px; cursor: pointer;
+    transition: background-color 0.15s ease-out;
+  }
+  button:hover, .seg label:hover { background: var(--inset); }
+  button:active { transform: translateY(1px); }
+  button:focus-visible, .seg input:focus-visible + label, [tabindex]:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+
+  /* ---- the lead: one sentence, then three readouts ---- */
+  .hero { padding: clamp(28px, 6vw, 60px) 0 0; }
+  .hero h1 {
+    margin: 14px 0 12px; max-width: 22ch;
+    font-size: clamp(30px, 4.8vw, 58px); line-height: 1.04; letter-spacing: -0.028em; font-weight: 650;
+    text-wrap: balance; overflow-wrap: anywhere;
+  }
+  .lead { font-size: clamp(15px, 1.45vw, 18px); line-height: 1.45; color: var(--ink-2); max-width: 64ch; text-wrap: pretty; min-height: 1.45em; }
+  .who { white-space: nowrap; }
+  .who .dot { width: 0.3em; height: 0.3em; min-width: 7px; min-height: 7px; margin-right: 0.18em; vertical-align: 0.16em; }
+
+  .readouts {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 1px;
+    margin-top: clamp(22px, 3.4vw, 36px); border-radius: 14px; overflow: hidden;
+    background: var(--edge); border: 1px solid var(--edge); box-shadow: var(--shadow);
+  }
+  .readout { background: var(--surface); padding: 16px 18px 17px; box-shadow: inset 0 1px 0 var(--edge-hi); }
+  .readout .value { font-size: 24px; font-weight: 650; letter-spacing: -0.015em; line-height: 1.2; margin-top: 8px; overflow-wrap: anywhere; }
+  .readout .sub { color: var(--ink-2); font-size: 13px; margin-top: 3px; }
+
+  /* ---- channel strips ---- */
+  .card {
+    position: relative; background: var(--surface); border: 1px solid var(--edge); border-radius: 14px; padding: 18px;
+    box-shadow: inset 0 1px 0 var(--edge-hi), var(--shadow);
+  }
+  .card h3 { margin: 0 0 14px; font: 600 11.5px/1.2 var(--mono); letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+  .subs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr)); gap: 14px; margin-top: 14px; }
+  .strip { padding-left: 24px; }
+  /* The strip's colour: the subscription's own, the same in every chart and table below. */
+  .strip::before { content: ''; position: absolute; left: -1px; top: 18px; bottom: 18px; width: 4px; border-radius: 0 4px 4px 0; background: var(--id); }
+  .sub-head { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
+  .sub-head .name { font-weight: 650; font-size: 17px; letter-spacing: -0.012em; overflow-wrap: anywhere; }
+  .cli { font: 11px var(--mono); color: var(--muted); border: 1px solid var(--edge); border-radius: 999px; padding: 2px 7px; white-space: nowrap; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+    font: 600 11px/1 var(--mono); letter-spacing: 0.05em; text-transform: uppercase;
+    padding: 5px 9px 5px 7px; border-radius: 999px; background: color-mix(in srgb, var(--tone) 15%, transparent);
+  }
+  .badge svg { width: 13px; height: 13px; flex: none; color: var(--tone); }
+  .win { display: grid; grid-template-columns: 62px 1fr auto; align-items: center; column-gap: 12px; margin-top: 16px; }
+  .wlabel { font: 11px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+  .pct { min-width: 3.4ch; text-align: right; font-size: 20px; font-weight: 650; letter-spacing: -0.015em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .pct small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 1px; }
+  .note { grid-column: 2 / 4; color: var(--ink-2); font-size: 12.5px; margin-top: 6px; }
+  .meter { position: relative; height: 12px; border-radius: 6px; background: color-mix(in srgb, var(--tone) 18%, var(--inset)); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.16); }
+  .meter .fill { height: 100%; border-radius: 6px; background: var(--tone); min-width: 3px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28); }
+  /* The clock: how much of the window's time has gone. Ringed in the surface so it reads over the level. */
+  .meter .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--ink); border-radius: 1px; box-shadow: 0 0 0 1.5px var(--surface); }
   .tone-ok { --tone: var(--good); }
   .tone-tight { --tone: var(--warning); }
   .tone-over { --tone: var(--serious); }
   .tone-spent { --tone: var(--critical); }
   .tone-unknown { --tone: var(--muted); }
-  .badge svg { color: var(--tone); }
-  .problem { color: var(--ink-2); font-size: 13px; }
-  .spark { margin-top: 14px; }
-  .spark .cap { color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+  .problem { color: var(--ink-2); font-size: 13px; margin-top: 12px; }
+  .spark { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--grid); }
+  .spark .cap { font: 11px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
   .spark .plot { position: relative; }
   .spark svg { display: block; width: 100%; height: 40px; }
   .spark .end { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; border: 2px solid var(--surface); }
-  .legend-note { color: var(--ink-2); font-size: 13px; margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; }
-  .legend-note .key { display: inline-flex; align-items: flex-start; gap: 6px; }
+  .legend-note { color: var(--ink-2); font-size: 13px; margin-top: 14px; display: flex; gap: 8px; align-items: flex-start; }
   .tickkey { width: 2px; height: 14px; margin-top: 3px; background: var(--ink); border-radius: 1px; display: inline-block; flex: none; }
 
-  .filters { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; margin: 12px 0 16px; }
+  /* ---- usage ---- */
+  .section-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 32px; margin-top: clamp(56px, 8vw, 96px); }
+  h2 { margin: 10px 0 6px; font-size: clamp(22px, 2.7vw, 32px); line-height: 1.1; letter-spacing: -0.022em; font-weight: 650; }
+  .lede { color: var(--ink-2); max-width: 58ch; text-wrap: pretty; }
+  .filters { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; }
   .filters fieldset { border: 0; padding: 0; margin: 0; display: flex; align-items: center; gap: 8px; }
-  .filters legend { float: left; padding: 0; margin-right: 8px; color: var(--ink-2); font-size: 13px; }
+  .filters legend { float: left; padding: 0; margin-right: 8px; font: 11px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
   .seg { display: inline-flex; }
   .seg input { position: absolute; opacity: 0; pointer-events: none; }
   .seg label { border-radius: 0; margin-left: -1px; white-space: nowrap; }
-  .seg label:first-of-type { border-radius: 6px 0 0 6px; margin-left: 0; }
-  .seg label:last-of-type { border-radius: 0 6px 6px 0; }
+  .seg label:first-of-type { border-radius: 8px 0 0 8px; margin-left: 0; }
+  .seg label:last-of-type { border-radius: 0 8px 8px 0; }
   .seg input:checked + label { background: var(--ink); color: var(--surface); border-color: var(--ink); }
-  @media (max-width: 420px) { .seg label { padding: 5px 8px; } }
-  .stale { opacity: 0.55; }
-  .status { color: var(--ink-2); font-size: 13px; min-height: 20px; }
+  @media (max-width: 420px) { .seg label { padding: 6px 8px; } }
+  .stale { opacity: 0.55; transition: opacity 0.2s ease-out; }
+  .status { font: 12px var(--mono); color: var(--muted); min-height: 18px; margin-top: 14px; }
   .status.bad { color: var(--ink); }
   /* minmax(0, …): a wide table scrolls inside its card instead of widening the page. */
-  .stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 12px; }
+  .stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 6px; }
+  .stack .readouts { margin-top: 0; }
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 14px; }
   .two > .card { min-width: 0; }
 
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 8px; color: var(--ink-2); font-size: 13px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 10px; color: var(--ink-2); font-size: 13px; }
   .legend .item { display: inline-flex; align-items: center; gap: 6px; }
   .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
   .chart { position: relative; }
   .chart svg { display: block; width: 100%; overflow: visible; }
-  .chart text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .chart text { fill: var(--muted); font: 10.5px var(--mono); }
   details { margin-top: 10px; }
   summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
 
   .scroll { overflow-x: auto; }
-  table { border-collapse: collapse; width: 100%; font-size: 13px; }
-  th, td { padding: 6px 10px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--grid); }
-  th { color: var(--ink-2); font-weight: 500; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { padding: 8px 10px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--grid); }
+  th { font: 500 10.5px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
   th:first-child, td:first-child, td.text, th.text { text-align: left; }
-  tfoot td { font-weight: 600; border-bottom: 0; }
-  td .dot { margin-right: 8px; vertical-align: baseline; }
+  tbody tr:hover { background: var(--wash); }
+  tfoot td { font-weight: 650; border-bottom: 0; }
+  td .dot { margin-right: 9px; vertical-align: baseline; }
 
-  .bars { display: grid; gap: 7px; }
-  .bar-row { display: grid; grid-template-columns: minmax(110px, 38%) 1fr; gap: 10px; align-items: center; border-radius: 4px; }
+  .bars { display: grid; gap: 8px; }
+  .bar-row { display: grid; grid-template-columns: minmax(110px, 38%) 1fr; gap: 10px; align-items: center; border-radius: 6px; padding: 2px 4px; margin: 0 -4px; }
   .bar-row:hover, .bar-row:focus-visible { background: var(--wash); }
   .bar-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); font-size: 13px; }
   .bar-row .track { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -162,55 +213,81 @@
 
   #tip {
     position: fixed; z-index: 10; pointer-events: none; display: none;
-    background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 8px;
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); padding: 8px 10px; font-size: 12.5px; max-width: 320px;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--edge); border-radius: 10px;
+    box-shadow: inset 0 1px 0 var(--edge-hi), 0 10px 30px rgba(0, 0, 0, 0.28); padding: 9px 11px; font-size: 12.5px; max-width: 320px;
   }
-  #tip .t { color: var(--ink-2); margin-bottom: 4px; overflow-wrap: anywhere; }
+  #tip .t { font: 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; overflow-wrap: anywhere; }
   #tip .r { display: flex; align-items: center; gap: 8px; }
   #tip .r b { font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
   #tip .r span.n { color: var(--ink-2); }
   #tip .k { width: 10px; height: 2px; border-radius: 1px; flex: none; }
-  footer { margin-top: 40px; color: var(--ink-2); font-size: 13px; max-width: 84ch; }
-  footer p { margin-top: 8px; }
-  code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  footer { margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--edge); color: var(--ink-2); font-size: 13px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px 40px; }
+  footer b { color: var(--ink); font-weight: 600; }
+  code { font: 12.5px var(--mono); }
+
+  /* ---- motion: the desk powers on ----
+     Levels rise once when the page opens or is refreshed, never on the quiet minute-by-minute
+     re-read. Each keyframe names only where a thing comes from, so without motion it is
+     simply where it belongs. */
+  @keyframes arrive { from { opacity: 0; transform: translateY(10px); } }
+  @keyframes rise { from { width: 0; } }
+  @keyframes sweep { from { left: 0; opacity: 0; } }
+  @keyframes grow { from { transform: scaleY(0); } }
+  @keyframes attention { 50% { opacity: 0.35; } }
+  .power-on .strip { animation: arrive 0.5s cubic-bezier(0.2, 0.75, 0.2, 1) both; animation-delay: calc(var(--n, 0) * 55ms); }
+  .power-on .fill { animation: rise 0.9s cubic-bezier(0.2, 0.75, 0.2, 1) both; animation-delay: calc(var(--n, 0) * 55ms + 120ms); }
+  .power-on .tick { animation: sweep 0.9s cubic-bezier(0.2, 0.75, 0.2, 1) both; animation-delay: calc(var(--n, 0) * 55ms + 220ms); }
+  .cols.grow { transform-box: fill-box; transform-origin: 50% 100%; animation: grow 0.55s cubic-bezier(0.2, 0.75, 0.2, 1) both; }
+  /* Only what needs attention moves on its own, and slower than reading. */
+  .badge.tone-over svg, .badge.tone-spent svg { animation: attention 2.6s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
 <main>
-  <header class="top">
-    <h1>aimux dashboard</h1>
+  <header class="bar">
+    <span class="brand">aimux<span> / dashboard</span></span>
     <span class="grow"></span>
     <span class="stamp" id="stamp" aria-live="polite"></span>
     <button id="refresh" type="button">Refresh</button>
   </header>
 
-  <section aria-labelledby="h-limits">
-    <h2 id="h-limits">Limits right now</h2>
-    <p class="lede">How full each subscription's windows are, and whether the current pace fits inside them.</p>
-    <div class="tiles" id="limit-tiles"></div>
-    <div class="status" id="limits-status">Reading the limits…</div>
+  <section class="hero" aria-labelledby="headline">
+    <div class="eyebrow">Limits right now</div>
+    <h1 id="headline">Reading the limits…</h1>
+    <p class="lead" id="lead"></p>
+    <div class="readouts" id="limit-tiles" hidden></div>
+    <div class="status" id="limits-status"></div>
     <div class="subs" id="subs"></div>
     <div class="legend-note" id="limits-key" hidden>
-      <span class="key"><span class="tickkey"></span> how much of the window's time has passed — a bar ahead of the tick is burning faster than the window allows</span>
+      <span class="tickkey"></span>
+      <span>The tick marks how much of the window's time has passed. A bar ahead of its tick is burning faster than the window allows.</span>
     </div>
   </section>
 
   <section aria-labelledby="h-usage">
-    <h2 id="h-usage">Where the tokens went</h2>
-    <p class="lede">Read from the session transcripts on this machine. Dollar figures are list-price estimates, for comparing — a subscription is not billed by them.</p>
-    <div class="filters">
-      <fieldset>
-        <legend>Period</legend>
-        <span class="seg" id="since"></span>
-      </fieldset>
-      <fieldset>
-        <legend>Measure</legend>
-        <span class="seg" id="measure"></span>
-      </fieldset>
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Usage</div>
+        <h2 id="h-usage">Where the tokens went</h2>
+        <p class="lede">Read from the session transcripts on this machine. Dollar figures are list-price estimates, for comparing — a subscription is not billed by them.</p>
+      </div>
+      <div class="filters">
+        <fieldset>
+          <legend>Period</legend>
+          <span class="seg" id="since"></span>
+        </fieldset>
+        <fieldset>
+          <legend>Measure</legend>
+          <span class="seg" id="measure"></span>
+        </fieldset>
+      </div>
     </div>
     <div class="status" id="usage-status">Scanning the transcripts — the first scan on a machine can take a minute…</div>
     <div class="stack" id="usage" hidden>
-      <div class="tiles" id="usage-tiles"></div>
+      <div class="readouts" id="usage-tiles"></div>
       <div class="card">
         <h3 id="time-title">Over time</h3>
         <div class="legend" id="time-legend"></div>
@@ -233,10 +310,10 @@
   </section>
 
   <footer>
-    <p><b>Pace.</b> A window's use so far is carried to its reset at the same rate. <i>Tight</i> means on course for 85% or more, <i>over pace</i> means it runs out before the reset, <i>spent</i> means it is full now. There is no forecast in the first minutes of a window.</p>
+    <p><b>Pace.</b> A window's use so far is carried to its reset at the same rate. <i>Tight</i> means on course for 85% or more, <i>over pace</i> means it runs out before the reset, <i>spent</i> means it is full now. For the weekly window the forecast counts twelve working hours to a day, not twenty-four. There is no forecast in the first minutes of a window.</p>
     <p><b>unknown</b> and <b>unknown (codex)</b> are sessions aimux could not tie to a profile: started outside aimux, or before it was installed.</p>
     <p><b>Not counted in usage:</b> sessions that hooks and plugins run on their own in the background. They do use the limits, so a limit can fill faster than the usage here suggests.</p>
-    <p>This page is served to this machine only, and only to the address with its key in it. Stop it with Ctrl-C in the terminal that runs <code>aimux dashboard</code>.</p>
+    <p>The figures are served to this machine only, to a page opened through the address <code>aimux dashboard</code> printed. Stop it with Ctrl-C in the terminal that runs it.</p>
   </footer>
 </main>
 <div id="tip" aria-hidden="true"></div>
@@ -329,7 +406,7 @@ function seriesOf(name) {
 function colorOf(name) {
   const series = seriesOf(name);
   if (series === UNTIED) return 'var(--series-rest)';
-  return series === OTHERS ? 'var(--axis)' : `var(--series-${order.indexOf(series) + 1})`;
+  return series === OTHERS ? 'var(--series-other)' : `var(--series-${order.indexOf(series) + 1})`;
 }
 
 // ---------- tooltip ----------
@@ -414,7 +491,7 @@ function windowRow(label, key, w, now) {
     el('div', { class: 'meter', role: 'meter', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': w.pct, 'aria-label': `${label} window used` },
       el('div', { class: 'fill', style: `width:${Math.min(100, w.pct)}%` }),
       passed !== null && passed > 0 && passed < 1 && el('span', { class: 'tick', style: `left:${passed * 100}%`, title: `${Math.round(passed * 100)}% of the window's time has passed` })),
-    el('span', { class: 'pct', text: `${w.pct}%` }),
+    el('span', { class: 'pct' }, String(w.pct), el('small', { text: '%' })),
     el('span', { class: 'note', text: windowNote(w, now) }));
 }
 
@@ -456,16 +533,16 @@ function sparkline(name, hasWeekly) {
     el('div', { class: 'plot' }, chart, end));
 }
 
-function subscriptionCard(p, now) {
+/** One channel strip: the subscription, its verdict, a level meter per window. `n` staggers its arrival. */
+function subscriptionCard(p, now, n) {
   const problem =
     p.error === 'auth' ? `Login expired. Run "aimux run ${p.name}" and sign in again.`
     : p.error === 'unavailable' ? 'The limits could not be read just now.'
     : !p.fiveHour && !p.weekly ? 'This plan reports no limits.'
     : null;
 
-  return el('div', { class: 'card' },
+  return el('div', { class: 'card strip', style: `--id:${colorOf(p.name)};--n:${n}` },
     el('div', { class: 'sub-head' },
-      el('span', { class: 'dot', style: `background:${colorOf(p.name)}` }),
       el('span', { class: 'name', text: p.name }),
       el('span', { class: 'cli', text: p.cli }),
       el('span', { class: 'grow' }),
@@ -476,29 +553,76 @@ function subscriptionCard(p, now) {
     sparkline(p.name, Boolean(p.weekly)));
 }
 
-function tile(label, value, sub) {
-  return el('div', { class: 'card tile' }, el('div', { class: 'label', text: label }), el('div', { class: 'value', text: value }), el('div', { class: 'sub', text: sub }));
+function readout(label, value, sub) {
+  return el('div', { class: 'readout' }, el('div', { class: 'eyebrow', text: label }), el('div', { class: 'value' }, value), el('div', { class: 'sub', text: sub }));
 }
 
-function renderLimits() {
+/** A subscription named in running text, with its colour beside it: the text itself stays ink. */
+const who = (name) => el('span', { class: 'who' }, el('span', { class: 'dot', style: `background:${colorOf(name)}` }), name);
+const listed = (profiles) => profiles.flatMap((p, i) => [i === 0 ? '' : i === profiles.length - 1 ? ' and ' : ', ', who(p.name)]);
+const be = (profiles) => (profiles.length > 1 ? 'are' : 'is');
+
+/**
+ * The sentence the page leads with, and the one under it: who is in trouble and how soon,
+ * or that nobody is. `windows` is every window of every subscription.
+ */
+function leadOf(profiles, windows, now) {
+  const judged = profiles.filter((p) => p.verdict !== 'unknown');
+  const having = (verdict) => judged.filter((p) => p.verdict === verdict);
+  const [spent, over, tight] = [having('spent'), having('over'), having('tight')];
+
+  if (!judged.length) return [['No limits to show.'], ['No subscription reported its limits just now.']];
+  if (!spent.length && !over.length && !tight.length) {
+    return [[judged.length === 1 ? 'The subscription is on pace.' : `All ${judged.length} subscriptions are on pace.`], ['Nothing is on course to run out before its reset.']];
+  }
+
+  const said = [];
+  if (spent.length) said.push([...listed(spent), ` ${be(spent)} spent`]);
+  if (over.length) said.push([...listed(over), ` ${be(over)} burning too fast`]);
+  if (!said.length) said.push([...listed(tight), ` ${be(tight)} running tight`]);
+
+  // The window behind each claim: the full one, the one that runs out first, the fullest forecast.
+  const detail = [];
+  const full = windows.find(({ w }) => w.verdict === 'spent');
+  const first = windows.filter(({ w }) => w.runsOutAt).sort((a, b) => a.w.runsOutAt - b.w.runsOutAt)[0];
+  const nearest = windows.filter(({ w }) => w.verdict === 'tight').sort((a, b) => (b.w.projectedPct ?? b.w.pct) - (a.w.projectedPct ?? a.w.pct))[0];
+  if (full) detail.push(who(full.p.name), `'s ${full.label} window is full${full.w.resetsAt ? ` until it resets ${when(full.w.resetsAt, now)}` : ''}. `);
+  if (first) detail.push('At this pace ', who(first.p.name), ` runs out ${when(first.w.runsOutAt, now)}, ${span(first.w.resetsAt - first.w.runsOutAt)} before its ${first.label} window resets. `);
+  if (!full && !first && nearest) {
+    detail.push(who(nearest.p.name), nearest.w.projectedPct !== null
+      ? ` is on course for about ${nearest.w.projectedPct}% of its ${nearest.label} window by the reset.`
+      : `'s ${nearest.label} window is at ${nearest.w.pct}%.`);
+  }
+
+  return [[...said[0], ...(said[1] ? [', ', ...said[1]] : []), '.'], detail];
+}
+
+function renderLimits(animate) {
   const { profiles, freest, now, fetchedAt } = state.limits;
   const levels = (p) => [p.fiveHour && `5-hour ${p.fiveHour.pct}%`, p.weekly && `weekly ${p.weekly.pct}%`].filter(Boolean).join(' · ');
 
   const windows = profiles.flatMap((p) => [['5-hour', p.fiveHour], ['weekly', p.weekly]].filter(([, w]) => w).map(([label, w]) => ({ p, label, w })));
   const fullest = windows.reduce((top, each) => (!top || each.w.pct > top.w.pct ? each : top), null);
-  const fast = profiles.filter((p) => p.verdict === 'over' || p.verdict === 'spent');
+  const next = windows.filter(({ w }) => w.resetsAt > now && w.pct > 0).sort((a, b) => a.w.resetsAt - b.w.resetsAt)[0];
   const roomy = profiles.find((p) => p.name === freest);
 
-  $('limit-tiles').replaceChildren(
-    tile('Most room', roomy ? roomy.name : '—', roomy ? levels(roomy) : 'No subscription reported its limits'),
-    tile('Closest to a limit', fullest ? `${fullest.p.name} · ${fullest.w.pct}%` : '—',
-      fullest ? `${fullest.label} window${fullest.w.resetsAt ? `, resets ${when(fullest.w.resetsAt, now)}` : ''}` : ''),
-    tile('Burning too fast', fast.length ? fast.map((p) => p.name).join(', ') : 'None',
-      fast.length ? 'Will run out before the reset at this pace, or already has' : 'No subscription is on course to run out'));
+  const [title, lead] = leadOf(profiles, windows, now);
+  $('headline').replaceChildren(...title);
+  $('lead').replaceChildren(...lead);
 
-  $('subs').replaceChildren(...profiles.map((p) => subscriptionCard(p, now)));
+  $('limit-tiles').hidden = false;
+  $('limit-tiles').replaceChildren(
+    readout('Most room', roomy ? who(roomy.name) : '—', roomy ? levels(roomy) : 'No subscription reported its limits'),
+    readout('Closest to a limit', fullest ? [who(fullest.p.name), ` · ${fullest.w.pct}%`] : '—',
+      fullest ? `${fullest.label} window${fullest.w.resetsAt ? `, resets ${when(fullest.w.resetsAt, now)}` : ''}` : ''),
+    readout('Resets next', next ? [who(next.p.name), ` · ${when(next.w.resetsAt, now)}`] : '—',
+      next ? `${next.label} window, now at ${next.w.pct}%` : 'No window in use reports a reset time'));
+
+  // The levels rise when the page opens or is refreshed, not on every quiet re-read.
+  $('subs').classList.toggle('power-on', animate);
+  $('subs').replaceChildren(...profiles.map((p, n) => subscriptionCard(p, now, n)));
   $('limits-key').hidden = windows.length === 0;
-  $('limits-status').textContent = profiles.length ? '' : 'No subscription with limits to read.';
+  $('limits-status').textContent = '';
   $('stamp').textContent = `Limits read at ${clock.format(fetchedAt)}`;
 }
 
@@ -549,7 +673,7 @@ function segment(x, y, w, h, rounded) {
   return `M${x} ${y + h}V${y + r}a${r} ${r} 0 0 1 ${r} ${-r}h${w - 2 * r}a${r} ${r} 0 0 1 ${r} ${r}V${y + h}z`;
 }
 
-function renderTime() {
+function renderTime(animate) {
   const usage = state.usage;
   const measure = MEASURES[state.measure];
   const b = buckets(usage);
@@ -563,7 +687,7 @@ function renderTime() {
     series.set(key, (series.get(key) ?? 0) + measure.of(d));
   }
   const shown = names.filter((n) => [...values.get(n).values()].some((v) => v > 0));
-  const paint = (n) => (n === OTHERS ? 'var(--axis)' : colorOf(n === UNTIED ? 'unknown' : n));
+  const paint = (n) => (n === OTHERS ? 'var(--series-other)' : colorOf(n === UNTIED ? 'unknown' : n));
   const totals = b.list.map((key) => shown.reduce((sum, n) => sum + (values.get(n).get(key) ?? 0), 0));
 
   $('time-title').textContent = `${measure.label} by ${b.unit}`;
@@ -588,7 +712,8 @@ function renderTime() {
 
   const every = Math.ceil(b.list.length / Math.max(2, Math.floor(plotW / 72)));
   const wash = s('rect', { y: top, width: band, height: plotH, fill: 'var(--wash)', visibility: 'hidden' });
-  svg.append(wash);
+  const cols = s('g', { class: animate ? 'cols grow' : 'cols' });
+  svg.append(wash, cols);
 
   b.list.forEach((key, i) => {
     const cx = left + band * i + band / 2;
@@ -600,7 +725,7 @@ function renderTime() {
       const y0 = y(base + v);
       const h = y(base) - y0;
       const gap = at > 0 && h > 3 ? 2 : 0; // surface showing between touching segments
-      svg.append(s('path', { d: segment(cx - colW / 2, y0, colW, Math.max(0.5, h - gap), at === parts.length - 1), fill: paint(n) }));
+      cols.append(s('path', { d: segment(cx - colW / 2, y0, colW, Math.max(0.5, h - gap), at === parts.length - 1), fill: paint(n) }));
       base += v;
     });
   });
@@ -675,9 +800,9 @@ function renderProfiles() {
   const all = tokensOf(total);
   const share = (n) => (all ? `${Math.round((n / all) * 100)}%` : '0%');
   $('usage-tiles').replaceChildren(
-    tile('Estimated cost', usd(total.estimatedCostUsd), 'at list prices, not what a subscription bills'),
-    tile('Requests', compact(total.requests), `${whole(total.requests)} calls to a model`),
-    tile('Tokens', compact(all), `cache read ${share(total.cacheReadInputTokens)} · cache write ${share(total.cacheCreationInputTokens)} · input ${share(total.inputTokens)} · output ${share(total.outputTokens)}`));
+    readout('Estimated cost', usd(total.estimatedCostUsd), 'at list prices, not what a subscription bills'),
+    readout('Requests', compact(total.requests), `${whole(total.requests)} calls to a model`),
+    readout('Tokens', compact(all), `cache read ${share(total.cacheReadInputTokens)} · cache write ${share(total.cacheCreationInputTokens)} · input ${share(total.inputTokens)} · output ${share(total.outputTokens)}`));
 }
 
 function barList(host, rows, nameOf, fullName) {
@@ -718,26 +843,47 @@ function renderLists() {
       el('td', { text: usd(r.estimatedCostUsd) }))))));
 }
 
-function renderUsage() {
+/** `animate`: the columns grow in — when the reader changed what is shown, not on a quiet re-read. */
+function renderUsage(animate = false) {
   if (!state.usage) return;
   renderProfiles();
-  renderTime();
+  renderTime(animate);
   renderLists();
 }
 
 // ---------- loading ----------
-// The key this page was opened with: the server answers nobody without it.
-const KEY = new URLSearchParams(location.search).get('key') ?? '';
+// The key to the figures. The server puts it in the page it serves to an address with a
+// ticket; it is kept for this tab (a reload has no ticket), and the ticket leaves the address.
+const KEY = (() => {
+  const slot = document.querySelector('meta[name="aimux-key"]');
+  const given = slot.content;
+  slot.remove();
+
+  try {
+    if (given) sessionStorage.setItem('aimux.key', given);
+
+    const address = new URL(location.href);
+    if (address.searchParams.has('t')) {
+      address.searchParams.delete('t');
+      history.replaceState(null, '', address);
+    }
+    return given || sessionStorage.getItem('aimux.key') || '';
+  } catch {
+    return given; // no storage in this window: the key lasts until a reload
+  }
+})();
 
 async function getJson(path) {
   const response = await fetch(path, { headers: { 'x-aimux-key': KEY } });
   const body = await response.json();
+  if (response.status === 403) throw new Error('this tab has no key to the figures. Open the address that `aimux dashboard` printed');
   if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
   return body;
 }
 
 let limitsAsked = 0;
-async function loadLimits(fresh) {
+/** `animate`: the reader asked for this reading (the page opening, Refresh), so the levels rise. */
+async function loadLimits(fresh, animate) {
   const mine = ++limitsAsked;
 
   try {
@@ -751,17 +897,18 @@ async function loadLimits(fresh) {
       order = limits.order;
       renderUsage();
     }
-    renderLimits();
+    renderLimits(animate);
     $('limits-status').classList.remove('bad');
   } catch (err) {
     if (mine !== limitsAsked) return;
+    if (!state.limits) $('headline').textContent = 'The limits could not be read.';
     $('limits-status').textContent = `Could not read the limits: ${err.message}`;
     $('limits-status').classList.add('bad');
   }
 }
 
 let asked = 0;
-async function loadUsage() {
+async function loadUsage(animate) {
   const mine = ++asked;
   const status = $('usage-status');
   $('usage').classList.add('stale');
@@ -775,7 +922,7 @@ async function loadUsage() {
     // Before the limits answer there is no config order yet: by name, never by rank.
     if (!order.length) order = usage.profiles.map((p) => p.profile).filter((n) => !isUnknown(n)).sort();
     $('usage').hidden = false;
-    renderUsage();
+    renderUsage(animate);
     status.textContent = `Transcripts read at ${clock.format(usage.computedAt)}`;
     status.classList.remove('bad');
   } catch (err) {
@@ -794,17 +941,17 @@ function segmented(host, name, options, current, onPick) {
   ]));
 }
 
-segmented($('since'), 'since', PERIODS, state.since, (id) => { state.since = id; remember('since', id); loadUsage(); });
-segmented($('measure'), 'measure', Object.entries(MEASURES).map(([id, m]) => [id, m.label]), state.measure, (id) => { state.measure = id; remember('measure', id); renderUsage(); });
-$('refresh').addEventListener('click', () => { loadLimits(true); loadUsage(); });
+segmented($('since'), 'since', PERIODS, state.since, (id) => { state.since = id; remember('since', id); loadUsage(true); });
+segmented($('measure'), 'measure', Object.entries(MEASURES).map(([id, m]) => [id, m.label]), state.measure, (id) => { state.measure = id; remember('measure', id); renderUsage(true); });
+$('refresh').addEventListener('click', () => { loadLimits(true, true); loadUsage(true); });
 
 let resizing;
-addEventListener('resize', () => { clearTimeout(resizing); resizing = setTimeout(() => state.usage && renderTime(), 120); });
+addEventListener('resize', () => { clearTimeout(resizing); resizing = setTimeout(() => state.usage && renderTime(false), 120); });
 
-loadLimits(false);
-loadUsage();
-setInterval(() => loadLimits(false), 60_000);
-setInterval(loadUsage, 5 * 60_000);
+loadLimits(false, true);
+loadUsage(true);
+setInterval(() => loadLimits(false, false), 60_000);
+setInterval(() => loadUsage(false), 5 * 60_000);
 </script>
 </body>
 </html>

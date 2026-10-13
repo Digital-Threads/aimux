@@ -1,15 +1,13 @@
 import { execFile, spawn } from 'node:child_process';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { limitsInsight, type LimitsInsight } from './insights.js';
 import { limitsSnapshot } from './limits.js';
 import { limitsHistory, type LimitsReading } from './limitsHistory.js';
-import { getAimuxDir } from './paths.js';
 import { parseSinceDuration, type UsageReport } from './usage.js';
 
 /** A usage report for one window, as the scan printed it. */
@@ -110,42 +108,50 @@ const PAGE_PATH = fileURLToPath(new URL('../../dashboard/index.html', import.met
 // The page is one file with its style and script inside, and talks only to this server.
 const PAGE_POLICY = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-/**
- * The key to the dashboard, kept in `~/.aimux/dashboard-key` for this user alone, so the
- * address aimux prints stays the same from one run to the next.
- *
- * Listening on 127.0.0.1 keeps other machines out, not other programs on this one: any
- * local user or process, and any web page open in the browser, can send a request here.
- * None of them has the key.
- */
-function dashboardKey(): string {
-  const path = join(getAimuxDir(), 'dashboard-key');
-  try {
-    const kept = readFileSync(path, 'utf-8').trim();
-    if (/^[\w-]{32}$/.test(kept)) return kept;
-  } catch {
-    // none yet
-  }
+// Where the served page receives its key: an empty tag in the file, filled in for a
+// request that shows a ticket.
+const KEY_SLOT = '<meta name="aimux-key" content="">';
+const ONCE_MS = 60_000;
 
-  const key = randomBytes(24).toString('base64url');
-  try {
-    mkdirSync(getAimuxDir(), { recursive: true });
-    writeFileSync(path, key, { mode: 0o600 });
-  } catch {
-    // cannot be kept: a key for this run only
-  }
+const secret = () => randomBytes(24).toString('base64url');
 
-  return key;
-}
-
-function isKey(shown: unknown, key: string): boolean {
+function same(shown: unknown, held: string): boolean {
   if (typeof shown !== 'string') return false;
 
-  const [a, b] = [Buffer.from(shown), Buffer.from(key)];
+  const [a, b] = [Buffer.from(shown), Buffer.from(held)];
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-async function answer(req: IncomingMessage, res: ServerResponse, data: AimuxData, port: number, key: string): Promise<void> {
+/**
+ * Who may read the figures.
+ *
+ * Listening on 127.0.0.1 keeps other machines out, not other programs on this one: any
+ * local user or process, and any web page open in the browser, can send a request here.
+ * So the figures want a key — made for this run, held in memory, and never put where
+ * another can read it: not on disk, not in an address, not on a command line.
+ *
+ * What does travel in an address is a ticket, which the page trades for the key once it
+ * has loaded. The printed address carries one good while this server runs; it sits in
+ * the owner's own terminal. The address handed to the browser's launcher shows up in
+ * the process list, for all to see, so its ticket works once and for a minute.
+ */
+interface Door {
+  key: string;
+  printed: string;
+  once: Map<string, number>;
+}
+
+/** Whether a request for the page shows a ticket; a one-time ticket is spent by this. */
+function admits(door: Door, ticket: string | null, now: number): boolean {
+  if (ticket === null) return false;
+  if (same(ticket, door.printed)) return true;
+
+  const until = door.once.get(ticket);
+  door.once.delete(ticket);
+  return until !== undefined && now < until;
+}
+
+async function answer(req: IncomingMessage, res: ServerResponse, data: AimuxData, port: number, door: Door): Promise<void> {
   const send = (status: number, type: string, body: string | Buffer, extra: Record<string, string> = {}) => {
     res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', ...extra });
     res.end(body);
@@ -161,16 +167,18 @@ async function answer(req: IncomingMessage, res: ServerResponse, data: AimuxData
   try {
     const url = new URL(req.url ?? '/', 'http://localhost');
 
-    // Nothing is read, scanned or probed for a request without the key. The page gets
-    // it in its address; the figures want it in a header, which a page elsewhere cannot
-    // attach without the browser asking this server first, and it does not say yes.
+    // The page itself holds no figures and goes to anyone; with a ticket it comes with
+    // the key inside. It keeps the key for its tab and drops the ticket from its address.
     if (url.pathname === '/') {
-      if (!isKey(url.searchParams.get('key'), key)) {
-        return send(403, 'text/plain; charset=utf-8', 'Open the address that `aimux dashboard` printed: it carries the key to this page.\n');
-      }
-      return send(200, 'text/html; charset=utf-8', readFileSync(PAGE_PATH), { 'content-security-policy': PAGE_POLICY });
+      const page = readFileSync(PAGE_PATH, 'utf-8');
+      const filled = admits(door, url.searchParams.get('t'), Date.now()) ? page.replace(KEY_SLOT, KEY_SLOT.replace('""', `"${door.key}"`)) : page;
+      return send(200, 'text/html; charset=utf-8', filled, { 'content-security-policy': PAGE_POLICY });
     }
-    if (!isKey(req.headers['x-aimux-key'], key)) return json(403, { error: 'forbidden' });
+
+    // Nothing is read, scanned or probed for a request without the key. It comes in a
+    // header, which a page elsewhere cannot attach without the browser asking this
+    // server first — and it does not say yes.
+    if (!same(req.headers['x-aimux-key'], door.key)) return json(403, { error: 'forbidden' });
 
     switch (url.pathname) {
       case '/api/limits':
@@ -188,21 +196,24 @@ async function answer(req: IncomingMessage, res: ServerResponse, data: AimuxData
 }
 
 export interface Dashboard {
+  /** The address to print: its ticket is good while the server runs. */
   url: string;
+  /** An address for the browser's launcher: its ticket works once, within a minute. */
+  launchUrl(): string;
   port: number;
   close(): Promise<void>;
 }
 
 /**
- * Serve the dashboard page and its figures to whoever holds the key, on this machine
- * only. Without a `port` it takes the usual one, or any free one when that is taken (a
- * dashboard already open). `url` carries the key.
+ * Serve the dashboard page, and its figures to a page opened by one of the addresses
+ * this gives out, on this machine only. Without a `port` it takes the usual one, or any
+ * free one when that is taken (a dashboard already open).
  */
-export async function startDashboard(options: { port?: number; data?: AimuxData; key?: string } = {}): Promise<Dashboard> {
+export async function startDashboard(options: { port?: number; data?: AimuxData } = {}): Promise<Dashboard> {
   const data = options.data ?? liveData();
-  const key = options.key ?? dashboardKey();
+  const door: Door = { key: secret(), printed: secret(), once: new Map() };
   let port = 0;
-  const server = createServer((req, res) => void answer(req, res, data, port, key).catch(() => res.destroy()));
+  const server = createServer((req, res) => void answer(req, res, data, port, door).catch(() => res.destroy()));
 
   const listen = (on: number) =>
     new Promise<number>((resolve, reject) => {
@@ -221,7 +232,12 @@ export async function startDashboard(options: { port?: number; data?: AimuxData;
   }
 
   return {
-    url: `http://localhost:${port}/?key=${key}`,
+    url: `http://localhost:${port}/?t=${door.printed}`,
+    launchUrl() {
+      const ticket = secret();
+      door.once.set(ticket, Date.now() + ONCE_MS);
+      return `http://localhost:${port}/?t=${ticket}`;
+    },
     port,
     close: () =>
       new Promise((resolve) => {

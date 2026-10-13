@@ -1,10 +1,6 @@
-import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { request } from 'node:http';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { browserCommand, liveData, startDashboard, type AimuxData, type Dashboard, type UsageWindow } from './dashboard.js';
-import { setAimuxDir } from './paths.js';
 
 const usageOf = (since: string) => ({ since, hourly: false, computedAt: 1, profiles: [], days: [], buckets: [], models: [], projects: [], sessions: [] }) as UsageWindow;
 
@@ -17,8 +13,16 @@ function fakeData(over: Partial<AimuxData> = {}): AimuxData {
   };
 }
 
-const KEY = 'k'.repeat(32);
-const start = (data: AimuxData = fakeData()) => startDashboard({ port: 0, data, key: KEY });
+// The key the page was given, read the way the page reads it: out of the page itself.
+let KEY = '';
+const keyIn = (page: string) => /<meta name="aimux-key" content="([^"]*)">/.exec(page)?.[1] ?? '';
+const pathOf = (address: string) => address.replace(/^http:\/\/[^/]+/, '');
+
+async function start(data: AimuxData = fakeData()): Promise<Dashboard> {
+  const started = await startDashboard({ port: 0, data });
+  KEY = keyIn((await get(started.port, pathOf(started.url), undefined, 'GET', {})).body);
+  return started;
+}
 
 /** A GET with the Host header a caller chooses (`fetch` does not let one be set), holding the key unless told otherwise. */
 function get(port: number, path: string, host = `localhost:${port}`, method = 'GET', headers: Record<string, string> = { 'x-aimux-key': KEY }): Promise<{ status: number; type: string; body: string }> {
@@ -39,9 +43,9 @@ describe('startDashboard', () => {
 
   it('serves the page and the figures behind it', async () => {
     dashboard = await start();
-    expect(dashboard.url).toBe(`http://localhost:${dashboard.port}/?key=${KEY}`);
+    expect(dashboard.url).toMatch(new RegExp(`^http://localhost:${dashboard.port}/\\?t=[\\w-]{32}$`));
 
-    const page = await get(dashboard.port, `/?key=${KEY}`, undefined, 'GET', {});
+    const page = await get(dashboard.port, pathOf(dashboard.url), undefined, 'GET', {});
     expect(page.status).toBe(200);
     expect(page.type).toContain('text/html');
     expect(page.body).toContain('<title>aimux dashboard</title>');
@@ -71,17 +75,50 @@ describe('startDashboard', () => {
     // A page elsewhere, another program, another user: none can attach the key.
     expect(await status('/api/usage', {})).toBe(403);
     expect(await status('/api/usage', { 'x-aimux-key': 'x'.repeat(32) })).toBe(403);
-    expect(await status(`/api/usage?key=${KEY}`, {})).toBe(403); // in the address it opens the page only
+    expect(await status(`/api/usage${pathOf(dashboard.url).slice(1)}`, {})).toBe(403); // a ticket opens the page, not the figures
     expect(await status('/api/nope', {})).toBe(403);
     expect(asked).toBe(0);
 
-    const page = await get(dashboard.port, '/', undefined, 'GET', {});
-    expect(page.status).toBe(403);
-    expect(page.body).toContain('aimux dashboard');
-    expect(await status('/?key=wrong', {})).toBe(403);
-
     expect(await status('/api/usage', { 'x-aimux-key': KEY })).toBe(200);
     expect(asked).toBe(1);
+  });
+
+  it('puts the key in the page only for an address with a ticket, never in an address', async () => {
+    dashboard = await start();
+    const page = (path: string) => get(dashboard.port, path, undefined, 'GET', {}).then((r) => keyIn(r.body));
+
+    expect(KEY).toMatch(/^[\w-]{32}$/);
+    expect(dashboard.url).not.toContain(KEY);
+    expect(dashboard.launchUrl()).not.toContain(KEY);
+
+    // The page goes to anyone, and is worth nothing without the key.
+    expect(await page('/')).toBe('');
+    expect(await page('/?t=' + 'x'.repeat(32))).toBe('');
+    // The printed address works again and again while the server runs.
+    expect(await page(pathOf(dashboard.url))).toBe(KEY);
+    expect(await page(pathOf(dashboard.url))).toBe(KEY);
+  });
+
+  it('gives the browser\'s launcher an address that works once', async () => {
+    dashboard = await start();
+    const page = (path: string) => get(dashboard.port, path, undefined, 'GET', {}).then((r) => keyIn(r.body));
+    const launch = pathOf(dashboard.launchUrl());
+
+    expect(await page(launch)).toBe(KEY);
+    expect(await page(launch)).toBe('');
+  });
+
+  it('lets a launch address lapse after a minute', async () => {
+    dashboard = await start();
+    const launch = pathOf(dashboard.launchUrl());
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() + 61_000);
+      expect(keyIn((await get(dashboard.port, launch, undefined, 'GET', {})).body)).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('survives an address that is not one', async () => {
@@ -108,7 +145,7 @@ describe('startDashboard', () => {
   it('refuses a port that was asked for by number and is taken', async () => {
     dashboard = await start();
 
-    await expect(startDashboard({ port: dashboard.port, data: fakeData(), key: KEY })).rejects.toMatchObject({ code: 'EADDRINUSE' });
+    await expect(startDashboard({ port: dashboard.port, data: fakeData() })).rejects.toMatchObject({ code: 'EADDRINUSE' });
   });
 });
 
@@ -191,30 +228,20 @@ describe('liveData.usage', () => {
 });
 
 describe('the dashboard key', () => {
-  let root: string;
-  let dashboard: Dashboard;
-  beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'aimux-dashboard-'));
-    setAimuxDir(join(root, '.aimux'));
-  });
+  let first: Dashboard;
+  let second: Dashboard;
   afterEach(async () => {
-    await dashboard?.close();
-    setAimuxDir('');
-    rmSync(root, { recursive: true, force: true });
+    await first?.close();
+    await second?.close();
   });
 
-  it('is made once, kept for this user alone, and the same the next time', async () => {
-    dashboard = await startDashboard({ port: 0, data: fakeData() });
-    const key = new URL(dashboard.url).searchParams.get('key')!;
-    expect(key).toMatch(/^[\w-]{32}$/);
+  it('is made anew for every run', async () => {
+    first = await start();
+    const firstKey = KEY;
+    second = await start();
 
-    const kept = join(root, '.aimux', 'dashboard-key');
-    expect(readFileSync(kept, 'utf-8')).toBe(key);
-    expect(statSync(kept).mode & 0o077).toBe(0);
-
-    await dashboard.close();
-    dashboard = await startDashboard({ port: 0, data: fakeData() });
-    expect(new URL(dashboard.url).searchParams.get('key')).toBe(key);
+    expect(KEY).not.toBe(firstKey);
+    expect((await get(second.port, '/api/limits', undefined, 'GET', { 'x-aimux-key': firstKey })).status).toBe(403);
   });
 });
 

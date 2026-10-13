@@ -16,10 +16,22 @@ export interface WindowPace {
   verdict: Verdict;
 }
 
+const DAY = 24 * 3_600_000;
+// How much of a day goes to work, at most. A week is not burned around the clock: carried
+// through the nights as well, the first working day of a week would forecast three times
+// what the week will take, and every Monday would read as running out.
+const WORK_PER_DAY = DAY / 2;
+
+/** The working time in a stretch of `ms` that starts with work: whole days of it, and the rest up to a day's worth. */
+const workIn = (ms: number) => Math.floor(ms / DAY) * WORK_PER_DAY + Math.min(ms % DAY, WORK_PER_DAY);
+/** How long from now until `work` of working time has passed: the other way round. */
+const untilWorked = (work: number) => Math.floor(work / WORK_PER_DAY) * DAY + (work % WORK_PER_DAY);
+
 /**
  * Judge one window by its pace: `pct` used over the part of the window already gone,
  * carried to the reset. A window is `over` when that lands past 100% — it will run out
- * first — and `tight` from 85%.
+ * first — and `tight` from 85%. A window of more than a day is carried over its working
+ * hours (see WORK_PER_DAY); a shorter one over the clock.
  *
  * No forecast without a reset time, nor from the very start of a window: not in its first
  * hundredth at all (one large request would project to thousands of percent), and not in
@@ -36,10 +48,12 @@ export function windowPace(pct: number, resetsAt: number | undefined, lengthMs: 
     return { pct, resetsAt, projectedPct: null, runsOutAt: null, verdict: pct >= 90 && pct < 100 ? 'tight' : 'ok' };
   }
 
-  const perMs = pct / elapsed;
+  const isLong = lengthMs > DAY;
+  const perMs = pct / (isLong ? workIn(elapsed) : elapsed);
   // Judged before rounding: 99.6% is not running out.
-  const projected = pct + perMs * left;
-  const runsOutAt = projected >= 100 ? Math.round(now + (100 - pct) / perMs) : null;
+  const projected = pct + perMs * (isLong ? workIn(left) : left);
+  const toFull = (100 - pct) / perMs;
+  const runsOutAt = projected >= 100 ? Math.round(now + (isLong ? untilWorked(toFull) : toFull)) : null;
 
   return {
     pct,

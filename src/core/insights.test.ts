@@ -40,10 +40,20 @@ describe('windowPace', () => {
   });
 
   it('does forecast that early once a tenth of the window is gone', () => {
-    // 11% two hours into a week: at that pace the other 89% is gone in 16 hours.
+    // 11% two hours into a week, 5.5 points an hour: the other 89% takes 16 hours of work,
+    // twelve today and the rest tomorrow.
     const pace = windowPace(11, NOW + 7 * 24 * HOUR - 2 * HOUR, 7 * 24 * HOUR, NOW);
     expect(pace.verdict).toBe('over');
-    expect(Math.round((pace.runsOutAt! - NOW) / HOUR)).toBe(16);
+    expect(Math.round((pace.runsOutAt! - NOW) / HOUR)).toBe(28);
+  });
+
+  it('carries a week over its working hours, so one working day does not read as running out', () => {
+    // 7% nine hours into a week. Around the clock that is 130% by the reset; at twelve
+    // working hours a day there are 84 of them left, and 7% + 84 × (7% / 9) is 72%.
+    expect(windowPace(7, NOW + 7 * 24 * HOUR - 9 * HOUR, 7 * 24 * HOUR, NOW)).toMatchObject({ verdict: 'ok', projectedPct: 72, runsOutAt: null });
+
+    // Half the week gone and 60% with it is over pace on any count.
+    expect(windowPace(60, NOW + 3.5 * 24 * HOUR, 7 * 24 * HOUR, NOW).verdict).toBe('over');
   });
 
   it('does not forecast from the very start of a window, whatever was used', () => {

@@ -10,12 +10,13 @@ All notable changes to this project are documented here. The format is based on
 - **`aimux dashboard`** opens a page in the browser with every subscription in one
   place. On top, the limits right now: each 5-hour and weekly window, when it resets,
   and a verdict on the pace — on pace, tight (on course for 85% or more), over pace
-  (runs out before the reset, with the time) or spent — plus who has the most room and
-  who is closest to a limit. Below, where the tokens went over 24 hours, 7 days, 30 days
+  (runs out before the reset, with the time) or spent — plus who has the most room, who
+  is closest to a limit and what resets next. The weekly forecast counts twelve working
+  hours to a day, so one busy day does not read as running out. Below, where the tokens went over 24 hours, 7 days, 30 days
   or all time: by day and subscription, per subscription with cache reads in a column
   of their own, by model, by project, and the heaviest sessions. aimux serves the page
-  itself on `http://localhost:4747`, to this machine only and only to the address it
-  prints, which carries a key; `--port`, `--no-open`.
+  itself on `http://localhost:4747`, to this machine only, and the figures only to a page
+  opened through the address it prints; `--port`, `--no-open`.
 - **`aimux mcp`**, a read-only MCP server over stdio with the same figures for an AI
   client: `aimux_limits`, `aimux_usage`, `aimux_limits_history`. Add it with
   `claude mcp add aimux -- aimux mcp`.
