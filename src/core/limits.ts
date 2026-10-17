@@ -1,9 +1,9 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AimuxConfig, ProfileConfig } from '../types/index.js';
-import { loadProfileEnv } from './run.js';
+import { baseEnvFor, loadProfileEnv } from './run.js';
 import { expandHome, getAimuxDir } from './paths.js';
 import { adapterFor } from './adapters/index.js';
 import { recordLimits } from './limitsHistory.js';
@@ -155,6 +155,31 @@ export function rateLimitProfiles(profiles: Record<string, ProfileConfig>): stri
     .map(([name]) => name);
 }
 
+/**
+ * Parse `GET /api/oauth/usage`, the endpoint claude's own `/usage` reads, into the
+ * shape the headers produce. Utilization arrives there as a percent, not a fraction;
+ * a plan with no 5-hour window sends that window as null.
+ */
+export function parseOAuthUsage(payload: unknown): RateLimitStatus | null {
+  const windows = payload as { five_hour?: unknown; seven_day?: unknown } | null;
+  const read = (raw: unknown) => {
+    const w = raw as { utilization?: unknown; resets_at?: unknown } | null | undefined;
+    if (typeof w?.utilization !== 'number') return { pct: null, resetsAt: undefined };
+
+    const resetsAt = typeof w.resets_at === 'string' ? Date.parse(w.resets_at) : NaN;
+    return {
+      pct: Math.max(0, Math.min(100, Math.round(w.utilization))),
+      resetsAt: Number.isFinite(resetsAt) ? resetsAt : undefined,
+    };
+  };
+
+  const five = read(windows?.five_hour);
+  const week = read(windows?.seven_day);
+  if (five.pct === null && week.pct === null) return null;
+
+  return { fiveHourPct: five.pct, weeklyPct: week.pct, fiveHourResetsAt: five.resetsAt, weeklyResetsAt: week.resetsAt };
+}
+
 /** Window lengths as reported by the ChatGPT usage endpoint, in seconds. */
 const CODEX_FIVE_HOUR_SECONDS = 5 * 3600;
 const CODEX_WEEK_SECONDS = 7 * 24 * 3600;
@@ -269,7 +294,13 @@ export function probeError(httpStatus: number): 'auth' | 'unavailable' {
   return httpStatus === 401 ? 'auth' : 'unavailable';
 }
 
-/** Probe Anthropic: one tiny `max_tokens:1` request, only the headers are read. */
+/**
+ * Read a profile's windows from the endpoint claude's own `/usage` reads: a plain GET
+ * that runs no model and costs no quota. It is undocumented, has a rate limit of its
+ * own and answers a lapsed token with 429 rather than 401, so on anything but figures
+ * or a 401 this falls back to the old probe: one tiny `max_tokens:1` request whose
+ * headers carry the same windows, and which does answer a lapsed token with 401.
+ */
 async function fetchClaudeLimits(
   profilePath: string,
   isSource: boolean,
@@ -278,15 +309,29 @@ async function fetchClaudeLimits(
   const token = readOAuthToken(profilePath, isSource);
   if (!token) return { status: null, error: 'auth' };
 
+  const auth = {
+    authorization: `Bearer ${token}`,
+    'anthropic-version': '2023-06-01',
+    'anthropic-beta': 'oauth-2025-04-20',
+  };
+
+  const usage = await fetch('https://api.anthropic.com/api/oauth/usage', {
+    signal,
+    headers: { ...auth, 'user-agent': 'aimux' },
+  });
+  if (usage.ok) {
+    const status = parseOAuthUsage(await usage.json().catch(() => null));
+    if (status) return { status };
+  } else {
+    // Unread, the body would hold its connection until garbage collection.
+    await usage.body?.cancel().catch(() => {});
+    if (usage.status === 401) return { status: null, error: 'auth' };
+  }
+
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     signal,
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${token}`,
-      'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'oauth-2025-04-20',
-    },
+    headers: { 'content-type': 'application/json', ...auth },
     body: JSON.stringify({
       model: 'claude-haiku-4-5',
       max_tokens: 1,
@@ -334,6 +379,58 @@ async function fetchCodexLimits(profilePath: string, signal: AbortSignal): Promi
   return status ? { status } : { status: null, error: 'unavailable' };
 }
 
+const RENEW_TIMEOUT_MS = 15_000;
+
+// A login or endpoint claude takes from the environment ahead of its stored login:
+// inherited from the shell, it makes `claude auth status` report that and renew nothing.
+const ENV_LOGINS = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_BASE_URL'];
+
+/** The environment claude renews a profile's login in: the profile's own, no other login riding along. */
+export function renewEnv(
+  profile: ProfileConfig,
+  profilePath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const base = baseEnvFor(profile, profilePath, env);
+  for (const key of ENV_LOGINS) delete base[key];
+
+  return {
+    ...base,
+    ...loadProfileEnv(profile, profilePath),
+    ...adapterFor('claude').configDirEnv(profilePath, profile.is_source === true),
+  };
+}
+
+/**
+ * Have claude renew a profile's login the way it does on start. `claude auth status`
+ * swaps a lapsed access token for a fresh one without running a model, and the
+ * refresh token stays claude's alone: aimux never writes credentials.
+ */
+function renewClaudeLogin(profile: ProfileConfig, profilePath: string): Promise<void> {
+  return new Promise((done) => {
+    // Never killed, and detached so a Ctrl-C of aimux does not reach it: a refresh cut
+    // short can lose the new refresh token. Past the timeout aimux just stops waiting.
+    const child = spawn('claude', ['auth', 'status', '--json'], {
+      env: renewEnv(profile, profilePath),
+      stdio: 'ignore',
+      detached: true,
+    });
+    child.unref();
+
+    const timer = setTimeout(done, RENEW_TIMEOUT_MS);
+    const finish = () => {
+      clearTimeout(timer);
+      done();
+    };
+    child.on('error', finish);
+    child.on('close', finish);
+  });
+}
+
+// Tokens claude was asked to renew and left as they were: a login really gone. Asked
+// again only once the token changes, so `status --watch` does not ask on every pass.
+const unrenewable = new Set<string>();
+
 /**
  * Probe a profile's live 5h/7d subscription windows, using whichever endpoint
  * its CLI exposes. Never throws: a failure comes back as `{ status: null }`
@@ -342,7 +439,7 @@ async function fetchCodexLimits(profilePath: string, signal: AbortSignal): Promi
 export async function fetchRateLimits(
   profile: ProfileConfig,
   profilePath: string,
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; renew?: (profile: ProfileConfig, profilePath: string) => Promise<void> } = {},
 ): Promise<RateLimitProbe> {
   const cli = profile.cli ?? 'claude';
   if (classifyProfile(profile, profilePath) !== 'oauth' || !LIMIT_CAPABLE_CLIS.has(cli)) {
@@ -366,8 +463,23 @@ export async function fetchRateLimits(
   // A busy API or a dropped connection answers differently a moment later, and the
   // figures are shown for minutes: worth one more try. A stale login is not, and
   // neither is a request that already waited out its whole timeout.
+  const isSource = profile.is_source === true;
+  // Read before the probe, not after: a token claude renews meanwhile must not look unchanged.
+  const used = cli === 'claude' ? readOAuthToken(profilePath, isSource) : null;
   const startedAt = Date.now();
   const first = await attempt();
+
+  // claude's access token lapses after about eight hours and only claude renews it,
+  // on its next start: a profile left alone overnight read as logged out while claude
+  // itself signed in without a word. Have claude renew it and ask again; a login that
+  // is really gone leaves the token as it was and stays "auth".
+  if (first.error === 'auth' && used && !unrenewable.has(used)) {
+    await (options.renew ?? renewClaudeLogin)(profile, profilePath);
+    if (readOAuthToken(profilePath, isSource) !== used) return attempt();
+
+    unrenewable.add(used);
+  }
+
   const failedFast = first.error === 'unavailable' && Date.now() - startedAt < 2000;
 
   return failedFast ? attempt() : first;
@@ -403,7 +515,8 @@ export async function limitsSnapshot(
       const sameProfiles = Object.keys(cached.profiles).sort().join() === [...names].sort().join();
       const loggedInSince = names.some((name) => {
         const p = config.profiles[name];
-        return statSync(join(expandHome(p.path), adapterFor(p.cli).credentialsFile())).mtimeMs > cached.fetchedAt;
+        const credentials = join(expandHome(p.path), adapterFor(p.cli).credentialsFile());
+        return (statSync(credentials, { throwIfNoEntry: false })?.mtimeMs ?? 0) > cached.fetchedAt;
       });
       if (sameProfiles && !loggedInSince && cached.fetchedAt <= now && now - cached.fetchedAt < maxAgeMs) return cached;
     } catch {

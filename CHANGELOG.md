@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.34.1] - 2026-10-17
+
+### Changed
+- Claude limits are read the way claude's own `/usage` reads them: a plain request that
+  runs no model, so checking costs no quota. Until now every reading sent each
+  subscription a one-token request to Haiku. When that endpoint does not answer with
+  figures, aimux falls back to the old request.
+
+### Fixed
+- A subscription left unopened for more than about eight hours no longer reads as
+  "login expired" while claude itself signs in without a word. Claude's access token
+  lives about that long and only claude renews it, on its next start; aimux now asks
+  claude to renew it (`claude auth status`, no model run) and reads the limits again.
+  "Login expired" is left for a login claude itself cannot renew.
+
 ## [0.34.0] - 2026-10-13
 
 ### Added

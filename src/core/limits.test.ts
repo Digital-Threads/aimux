@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'node:os';
 import type { ProfileConfig } from '../types/index.js';
 import type { AimuxConfig } from '../types/index.js';
 import { getAimuxDir, setAimuxDir } from './paths.js';
-import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt, pickFreestProfile, keychainService, classifyProfile, limitsSnapshot, fetchRateLimits } from './limits.js';
+import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt, pickFreestProfile, keychainService, classifyProfile, limitsSnapshot, fetchRateLimits, parseOAuthUsage, renewEnv } from './limits.js';
 
 // Real header keys captured from a live HTTP 200 probe (see plan spike result).
 const REAL = {
@@ -403,6 +403,18 @@ describe('limitsSnapshot', () => {
     expect(probed).toHaveLength(4);
   });
 
+  it('shares the reading of a login kept in the Keychain too, with no credentials file', async () => {
+    // On macOS claude stores no .credentials.json; that must not cost a probe per caller.
+    const { probed, probe } = counting();
+    const cfg = config();
+    cfg.profiles.dt.is_source = true;
+    rmSync(join(root, 'dt', '.credentials.json'));
+
+    await limitsSnapshot(cfg, 240_000, T, probe);
+    await limitsSnapshot(cfg, 240_000, T + 1_000, probe);
+    expect(probed).toEqual(['dt', 'cx']);
+  });
+
   it('always probes when asked for no cache, and survives a broken one', async () => {
     const { probed, probe } = counting();
     const cfg = config();
@@ -454,14 +466,39 @@ describe('fetchRateLimits — codex', () => {
     expect(calls).toHaveLength(10);
   });
 
-  it('does not retry a stale login', async () => {
+  it('does not retry a stale login, nor ask claude to renew it', async () => {
     const calls = answers(401, 200);
-    expect(await fetchRateLimits({ cli: 'codex', path: dir }, dir)).toEqual({ status: null, error: 'auth' });
+    const renew = vi.fn(async () => {});
+    expect(await fetchRateLimits({ cli: 'codex', path: dir }, dir, { renew })).toEqual({ status: null, error: 'auth' });
     expect(calls).toEqual([401]);
+    expect(renew).not.toHaveBeenCalled();
   });
 });
 
-describe('fetchRateLimits — a passing failure', () => {
+describe('parseOAuthUsage', () => {
+  it('reads both windows, given in percent, with their resets', () => {
+    expect(parseOAuthUsage({
+      five_hour: { utilization: 9.6, resets_at: '2026-10-17T12:30:00.458583+00:00' },
+      seven_day: { utilization: 19, resets_at: '2026-10-23T02:00:00+00:00' },
+    })).toEqual({
+      fiveHourPct: 10,
+      weeklyPct: 19,
+      fiveHourResetsAt: Date.parse('2026-10-17T12:30:00.458Z'),
+      weeklyResetsAt: Date.parse('2026-10-23T02:00:00Z'),
+    });
+  });
+
+  it('keeps a window the plan does not have as unknown, not 0%', () => {
+    expect(parseOAuthUsage({ five_hour: null, seven_day: { utilization: 31 } })).toMatchObject({ fiveHourPct: null, weeklyPct: 31 });
+  });
+
+  it('returns null for an answer with neither window', () => {
+    expect(parseOAuthUsage({ error: 'nope' })).toBeNull();
+    expect(parseOAuthUsage(null)).toBeNull();
+  });
+});
+
+describe('fetchRateLimits — claude', () => {
   let dir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'aimux-claude-probe-'));
@@ -473,37 +510,127 @@ describe('fetchRateLimits — a passing failure', () => {
   });
 
   const windows = { 'anthropic-ratelimit-unified-5h-utilization': '0.09', 'anthropic-ratelimit-unified-7d-utilization': '0.08' };
+  const usage = { five_hour: { utilization: 9 }, seven_day: { utilization: 8 } };
   const profile = { cli: 'claude' as const, path: '' };
 
-  it('asks once more when the API was busy, instead of showing no figures for minutes', async () => {
-    let calls = 0;
-    vi.stubGlobal('fetch', async () => (++calls === 1
-      ? new Response('overloaded', { status: 529 })
-      : new Response('{}', { status: 200, headers: windows })));
+  // Answers each endpoint from its own script and records what was asked, in order.
+  type Answer = (token: string, nth: number) => Response;
+  const serve = (answers: { usage: Answer; messages?: Answer }) => {
+    const asked: string[] = [];
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      const token = (init.headers as Record<string, string>).authorization.replace('Bearer ', '');
+      const which = url.endsWith('/api/oauth/usage') ? 'usage' : 'messages';
+      const nth = asked.filter((a) => a.startsWith(which)).length;
+      asked.push(`${which}:${token}`);
+      const answer = answers[which] ?? (() => new Response('unexpected', { status: 500 }));
+      return answer(token, nth);
+    });
+    return asked;
+  };
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
-    const probe = await fetchRateLimits(profile, dir);
-    expect(probe.status).toMatchObject({ fiveHourPct: 9, weeklyPct: 8 });
-    expect(calls).toBe(2);
+  it('reads the windows from the usage endpoint, without running a model', async () => {
+    const asked = serve({ usage: () => json(usage) });
+
+    expect((await fetchRateLimits(profile, dir)).status).toMatchObject({ fiveHourPct: 9, weeklyPct: 8 });
+    expect(asked).toEqual(['usage:t']);
+  });
+
+  it('falls back to the old probe when the usage endpoint is throttled', async () => {
+    const asked = serve({
+      usage: () => new Response('{"type":"error"}', { status: 429 }),
+      messages: () => new Response('{}', { status: 200, headers: windows }),
+    });
+
+    expect((await fetchRateLimits(profile, dir)).status).toMatchObject({ fiveHourPct: 9, weeklyPct: 8 });
+    expect(asked).toEqual(['usage:t', 'messages:t']);
+  });
+
+  it('asks once more when the API was busy, instead of showing no figures for minutes', async () => {
+    const asked = serve({
+      usage: (_t, nth) => (nth === 0 ? new Response('overloaded', { status: 529 }) : json(usage)),
+      messages: () => new Response('overloaded', { status: 529 }),
+    });
+
+    expect((await fetchRateLimits(profile, dir)).status).toMatchObject({ fiveHourPct: 9, weeklyPct: 8 });
+    expect(asked).toEqual(['usage:t', 'messages:t', 'usage:t']);
   });
 
   it('asks once more after a dropped connection too', async () => {
     let calls = 0;
     vi.stubGlobal('fetch', async () => {
       if (++calls === 1) throw new TypeError('fetch failed');
-      return new Response('{}', { status: 200, headers: windows });
+      return json(usage);
     });
 
     expect((await fetchRateLimits(profile, dir)).status?.weeklyPct).toBe(8);
   });
 
-  it('does not ask again about a stale login', async () => {
-    let calls = 0;
-    vi.stubGlobal('fetch', async () => {
-      calls++;
-      return new Response('unauthorized', { status: 401 });
+  it('has claude renew a lapsed login, then asks again', async () => {
+    // The access token lives about eight hours; claude renews it, aimux only reads it.
+    // A lapsed token gets 429 from the usage endpoint and 401 from the old probe.
+    const asked = serve({
+      usage: (token) => (token === 'fresh' ? json(usage) : new Response('{"type":"error"}', { status: 429 })),
+      messages: () => new Response('unauthorized', { status: 401 }),
+    });
+    const renew = vi.fn(async () => {
+      writeFileSync(join(dir, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'fresh' } }));
     });
 
-    expect(await fetchRateLimits(profile, dir)).toEqual({ status: null, error: 'auth' });
-    expect(calls).toBe(1);
+    expect((await fetchRateLimits(profile, dir, { renew })).status?.weeklyPct).toBe(8);
+    expect(asked).toEqual(['usage:t', 'messages:t', 'usage:fresh']);
+    expect(renew).toHaveBeenCalledOnce();
+  });
+
+  it('reports a login claude could not renew, and asks claude about it only once', async () => {
+    // A token of its own: the ones claude could not renew are remembered for the process.
+    writeFileSync(join(dir, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'gone' } }));
+    const asked = serve({ usage: () => new Response('unauthorized', { status: 401 }) });
+    const renew = vi.fn(async () => {});
+
+    expect(await fetchRateLimits(profile, dir, { renew })).toEqual({ status: null, error: 'auth' });
+    expect(await fetchRateLimits(profile, dir, { renew })).toEqual({ status: null, error: 'auth' });
+    expect(asked).toEqual(['usage:gone', 'usage:gone']);
+    expect(renew).toHaveBeenCalledOnce();
+  });
+
+  it('does not ask claude to renew a login there is no token for', async () => {
+    writeFileSync(join(dir, '.credentials.json'), '{}');
+    const asked = serve({ usage: () => json(usage) });
+    const renew = vi.fn(async () => {});
+
+    expect(await fetchRateLimits(profile, dir, { renew })).toEqual({ status: null, error: 'auth' });
+    expect(asked).toEqual([]);
+    expect(renew).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the old probe when the usage endpoint refuses or answers without figures', async () => {
+    for (const refusal of [new Response('forbidden', { status: 403 }), json({ five_hour: null, seven_day: null })]) {
+      const asked = serve({ usage: () => refusal, messages: () => new Response('{}', { status: 200, headers: windows }) });
+      expect((await fetchRateLimits(profile, dir)).status?.weeklyPct).toBe(8);
+      expect(asked).toEqual(['usage:t', 'messages:t']);
+    }
+  });
+});
+
+describe('renewEnv', () => {
+  // Never created: the profile has no .env of its own to add.
+  const dir = join(tmpdir(), 'aimux-renew-env-none');
+  const inherited = {
+    PATH: '/usr/bin',
+    CLAUDE_CONFIG_DIR: '/elsewhere/.aimux/profiles/other',
+    ANTHROPIC_API_KEY: 'sk-shell',
+    CLAUDE_CODE_OAUTH_TOKEN: 'oat-shell',
+  };
+
+  it("renews in the profile's own dir, with no other login riding along", () => {
+    const env = renewEnv({ cli: 'claude', path: dir }, dir, inherited);
+    expect(env).toMatchObject({ PATH: '/usr/bin', CLAUDE_CONFIG_DIR: dir });
+    expect(env).not.toHaveProperty('ANTHROPIC_API_KEY');
+    expect(env).not.toHaveProperty('CLAUDE_CODE_OAUTH_TOKEN');
+  });
+
+  it('leaves the config dir unset for the source profile, as claude itself expects', () => {
+    expect(renewEnv({ cli: 'claude', path: dir, is_source: true }, dir, inherited)).not.toHaveProperty('CLAUDE_CONFIG_DIR');
   });
 });
