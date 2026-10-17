@@ -451,6 +451,12 @@ The defaults above are always applied — listing extra entries adds to them. Cl
 Code keeps growing new runtime directories, so if `aimux doctor` reports a conflict
 on one, add it here and run `aimux rebuild`.
 
+## Works with aimux
+
+Third-party tools that read aimux profiles:
+
+- [Claude Code Stats](https://github.com/dmelo/claude-code-stats): macOS menu bar app showing each Claude profile's 5h/7d limits.
+
 ## Requirements
 
 - Node.js 22+
