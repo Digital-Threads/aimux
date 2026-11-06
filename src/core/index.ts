@@ -27,6 +27,7 @@ export {
   getHistoryPath,
   getProfilesDir,
   setAimuxDir,
+  standInHome,
 } from './paths.js';
 
 export {

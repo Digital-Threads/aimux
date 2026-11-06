@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Antigravity CLI support (`--cli agy`).** Google replaced Gemini CLI with `agy` for
+  personal accounts, so `aimux profile add ag --cli agy` now makes an Antigravity
+  profile: its own login, settings and conversations, with `aimux auth login`,
+  `aimux run` and the model flag working as for the other CLIs (#27).
+  - `agy` reads its config only from `~/.gemini/antigravity-cli` and has no variable to
+    move it, so an agy profile runs with a stand-in home (`HOME`, or `USERPROFILE` on
+    Windows): the profile's own dir. Every sync links the rest of the real home into it,
+    so the tools the agent runs keep `.gitconfig`, `.ssh` and the gh login, and skills,
+    plugins and MCP servers in `~/.gemini/config` are shared by every profile.
+  - `~/.gemini/config` is made in the real home if it isn't there yet, so agy can't
+    keep a private copy per profile. Your own links in the stand-in stay; a real file
+    where a link belongs (`sed -i` swaps a link for one) is reported as a conflict.
+  - aimux started by the agent works from the real home, which it gets in
+    `AIMUX_REAL_HOME`, so other profiles' links never go through the stand-in.
+  - `aimux use` refuses an agy profile: exported into a shell, the stand-in would move
+    the shell's own home, and the next switch would unset `HOME`.
+  - `aimux profile remove` deletes the whole stand-in, so a profile made later under
+    that name doesn't inherit its links.
+  - Windows is not verified yet: there agy should read its home from `USERPROFILE`.
+
 ## [0.34.1] - 2026-10-17
 
 ### Changed

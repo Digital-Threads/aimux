@@ -143,4 +143,9 @@ describe('buildSwitchEnv carries the profile model', () => {
   it('does not export ANTHROPIC_MODEL for a codex profile, which claude settings do not steer', () => {
     expect(buildSwitchEnv(config({ cli: 'codex', model: 'gpt-6.1-sol' }), 'p')).not.toHaveProperty('ANTHROPIC_MODEL');
   });
+
+  it("refuses an agy profile: switching would replace the shell's own HOME, and the next switch unset it", () => {
+    const agy = config({ cli: 'agy', path: join(dir, 'p', '.gemini', 'antigravity-cli') });
+    expect(() => buildSwitchEnv(agy, 'p')).toThrow(/aimux run p/);
+  });
 });

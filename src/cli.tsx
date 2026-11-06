@@ -5,10 +5,10 @@ import type { ProfileUsageSummary, RateLimitProbe } from './core/index.js';
 import { rmSync, existsSync, cpSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { isatty } from 'node:tty';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  loadConfig, saveConfig, addProfile, removeProfile, profileNotFound, expandHome, getAimuxDir,
+  loadConfig, saveConfig, addProfile, removeProfile, profileNotFound, expandHome, getAimuxDir, getProfilesDir, standInHome,
   ensureProfileDir, initAutoDetect, initFromSource, detectClaudeDirs, detectCodex, detectGemini,
   syncProfile, syncAllProfiles, checkAllProfiles,
   launchProfile, getLastProfile, resolveProfileForDir, recordHistory, getProfile, loadActiveProfile,
@@ -598,6 +598,8 @@ program
 
       profileName = resolveProfile(config, profileName);
       const profile_ = config.profiles[profileName];
+      // Before anything is recorded: an agy profile can't be switched into a shell.
+      const env = buildSwitchEnv(config, profileName);
 
       // Keep the runtime dir fresh, same as `run`. Source profiles need no sync.
       if (!profile_.is_source) {
@@ -612,7 +614,6 @@ program
       if (permWarning) console.error(`\x1b[33m⚠ ${permWarning}\x1b[0m`);
 
       recordHistory(process.cwd(), profileName);
-      const env = buildSwitchEnv(config, profileName);
 
       if (options.export) {
         // stdout: ONLY shell code (it gets eval'd). Confirmation goes to stderr.
@@ -1011,7 +1012,12 @@ program
         try {
           let config = requireConfig();
           const resolved = resolveProfile(config, name);
-          const fullPath = expandHome(config.profiles[resolved].path);
+          const profilePath = expandHome(config.profiles[resolved].path);
+          // An agy profile's dir sits inside its stand-in home, full of links to the real
+          // one; left behind, a profile made later under this name would inherit them.
+          const homeDir = adapterFor(config.profiles[resolved].cli).homeDir;
+          const standIn = homeDir ? standInHome(profilePath, homeDir) : '';
+          const fullPath = standIn.startsWith(getProfilesDir() + sep) ? standIn : profilePath;
 
           // Deleting the directory wipes that profile's credentials and is
           // irreversible; with prefix-matched names a typo could target the wrong

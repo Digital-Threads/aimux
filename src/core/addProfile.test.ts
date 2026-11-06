@@ -38,6 +38,12 @@ describe('addProfile cli + shared_sources', () => {
     expect(updated.shared_sources?.gemini).toBe('~/.gemini');
   });
 
+  it('puts an agy profile under a stand-in home and registers ~/.gemini/antigravity-cli as its source', () => {
+    const updated = addProfile(base(), 'ag', { cli: 'agy' });
+    expect(updated.profiles.ag.path).toBe('~/.aimux/profiles/ag/.gemini/antigravity-cli');
+    expect(updated.shared_sources?.agy).toBe('~/.gemini/antigravity-cli');
+  });
+
   it('keeps claude/codex profile paths unchanged (no .gemini suffix)', () => {
     expect(addProfile(base(), 'work', {}).profiles.work.path).toBe('~/.aimux/profiles/work');
     expect(addProfile(base(), 'cx', { cli: 'codex' }).profiles.cx.path).toBe('~/.aimux/profiles/cx');

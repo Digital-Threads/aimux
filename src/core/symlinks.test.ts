@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   mkdirSync, rmSync, writeFileSync, readFileSync, readlinkSync, symlinkSync,
-  readdirSync, lstatSync, existsSync,
+  readdirSync, lstatSync, existsSync, chmodSync,
 } from 'node:fs';
 import { join, sep, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -680,5 +680,138 @@ describe('syncProfile keeps the nested codex state link healthy', () => {
 
     expect(existsSync(join(profileDir, 'sqlite', 'state_10.sqlite'))).toBe(true);
     expect(() => lstatSync(join(profileDir, 'sqlite', 'state_9.sqlite'))).toThrow();
+  });
+});
+
+describe('syncProfile gives an agy profile a stand-in home', () => {
+  // agy finds its config only under HOME, so its profile runs with a stand-in one: the
+  // profile's base dir. The tools its agent runs inherit that HOME, and without links to
+  // the real home they lost the user's .gitconfig, .ssh and gh login.
+  const home = join(TEST_DIR, 'home');
+  const agySrc = join(home, '.gemini', 'antigravity-cli');
+  const base = join(PROFILES_DIR, 'ag');
+  const profileDir = join(base, '.gemini', 'antigravity-cli');
+
+  const config = (): AimuxConfig => makeConfig({
+    profiles: {
+      main: { cli: 'claude', path: SHARED_DIR, is_source: true },
+      work: { cli: 'claude', path: join(PROFILES_DIR, 'work') },
+      ag: { cli: 'agy', path: profileDir },
+    },
+    shared_sources: { agy: agySrc },
+  });
+
+  beforeEach(() => {
+    mkdirSync(join(home, '.ssh'), { recursive: true });
+    mkdirSync(join(home, '.gemini', 'config'), { recursive: true });
+    mkdirSync(agySrc, { recursive: true });
+    writeFileSync(join(home, '.gitconfig'), '[user]\n');
+    writeFileSync(join(home, '.gemini', 'GEMINI.md'), 'rules');
+    writeFileSync(join(agySrc, 'antigravity-oauth-token'), '{}');
+  });
+
+  it("links every real home entry into the stand-in, level by level down to agy's own dir", () => {
+    syncProfile(config(), 'ag', home);
+
+    expect(readlinkSync(join(base, '.gitconfig'))).toBe(join(home, '.gitconfig'));
+    expect(readlinkSync(join(base, '.ssh'))).toBe(join(home, '.ssh'));
+    expect(lstatSync(join(base, '.gemini')).isSymbolicLink()).toBe(false);
+    expect(readlinkSync(join(base, '.gemini', 'config'))).toBe(join(home, '.gemini', 'config'));
+    expect(readlinkSync(join(base, '.gemini', 'GEMINI.md'))).toBe(join(home, '.gemini', 'GEMINI.md'));
+    expect(lstatSync(profileDir).isSymbolicLink()).toBe(false);
+    expect(existsSync(join(profileDir, 'antigravity-oauth-token'))).toBe(false);
+  });
+
+  it('follows the real home: a new entry is linked, a removed one unlinked', () => {
+    syncProfile(config(), 'ag', home);
+    rmSync(join(home, '.gitconfig'));
+    writeFileSync(join(home, '.npmrc'), '');
+    syncProfile(config(), 'ag', home);
+
+    expect(() => lstatSync(join(base, '.gitconfig'))).toThrow();
+    expect(readlinkSync(join(base, '.npmrc'))).toBe(join(home, '.npmrc'));
+  });
+
+  it('leaves a real copy where a link belongs and reports it, as sed -i makes one', () => {
+    syncProfile(config(), 'ag', home);
+    rmSync(join(base, '.gitconfig'));
+    writeFileSync(join(base, '.gitconfig'), 'edited');
+
+    expect(syncProfile(config(), 'ag', home).conflicts).toEqual(['~/.gitconfig']);
+    expect(readFileSync(join(base, '.gitconfig'), 'utf-8')).toBe('edited');
+  });
+
+  it("keeps a link the user pointed elsewhere, and replaces one that points at nothing", () => {
+    mkdirSync(base, { recursive: true });
+    writeFileSync(join(home, '.gitconfig-work'), '');
+    symlinkSync(join(home, '.gitconfig-work'), join(base, '.gitconfig'));
+    symlinkSync(join(home, 'gone'), join(base, '.ssh'));
+    syncProfile(config(), 'ag', home);
+
+    expect(readlinkSync(join(base, '.gitconfig'))).toBe(join(home, '.gitconfig-work'));
+    expect(readlinkSync(join(base, '.ssh'))).toBe(join(home, '.ssh'));
+  });
+
+  it("makes ~/.gemini/config in the real home, so agy can't keep a private one per profile", () => {
+    rmSync(join(home, '.gemini'), { recursive: true });
+    syncProfile(config(), 'ag', home);
+
+    expect(lstatSync(join(home, '.gemini', 'config')).isDirectory()).toBe(true);
+    expect(readlinkSync(join(base, '.gemini', 'config'))).toBe(join(home, '.gemini', 'config'));
+  });
+
+  it('never links the dir that holds the stand-in, which would loop', () => {
+    syncProfile(config(), 'ag', TEST_DIR);
+
+    expect(readlinkSync(join(base, 'shared'))).toBe(SHARED_DIR);
+    expect(() => lstatSync(join(base, 'profiles'))).toThrow();
+  });
+
+  it('keeps going past an entry it cannot link', () => {
+    syncProfile(config(), 'ag', home);
+    writeFileSync(join(home, '.npmrc'), '');
+    chmodSync(base, 0o555);
+    try {
+      expect(() => syncProfile(config(), 'ag', home)).not.toThrow();
+    } finally {
+      chmodSync(base, 0o755);
+    }
+  });
+
+  it('a removed stand-in takes only its links, never the real home', () => {
+    syncProfile(config(), 'ag', home);
+    rmSync(base, { recursive: true, force: true });
+
+    expect(readFileSync(join(home, '.gitconfig'), 'utf-8')).toBe('[user]\n');
+    expect(existsSync(join(home, '.ssh'))).toBe(true);
+    expect(existsSync(join(home, '.gemini', 'config'))).toBe(true);
+  });
+
+  it('still fails loudly for a claude profile whose source is gone', () => {
+    rmSync(SHARED_DIR, { recursive: true });
+
+    expect(() => syncProfile(config(), 'work', home)).toThrow();
+  });
+
+  it('touches nothing when the stand-in is taken for the real home', () => {
+    mkdirSync(profileDir, { recursive: true });
+    syncProfile(config(), 'ag', base);
+
+    expect(() => lstatSync(join(base, '.gemini', 'config'))).toThrow();
+  });
+
+  it('syncs a profile whose real agy dir was never made', () => {
+    rmSync(agySrc, { recursive: true });
+
+    expect(() => syncProfile(config(), 'ag', home)).not.toThrow();
+    expect(checkProfileHealth(config(), 'ag').broken).toEqual([]);
+    expect(readlinkSync(join(base, '.gitconfig'))).toBe(join(home, '.gitconfig'));
+  });
+
+  it('gives other CLIs no stand-in home', () => {
+    syncProfile(config(), 'work', home);
+
+    expect(readdirSync(PROFILES_DIR)).not.toContain('.gitconfig');
+    expect(readdirSync(join(PROFILES_DIR, 'work'))).not.toContain('.gitconfig');
   });
 });

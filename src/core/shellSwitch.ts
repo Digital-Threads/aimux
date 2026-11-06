@@ -34,8 +34,15 @@ export function parseShell(value: string | undefined, shellPath: string | undefi
  * plus any profile `.env` (ANTHROPIC_BASE_URL, tokens, model overrides).
  */
 export function buildSwitchEnv(config: AimuxConfig, profileName: string): Record<string, string> {
-  const env = { ...buildRunParams(config, profileName).env };
   const profile = getProfile(config, profileName);
+
+  // agy is isolated through HOME itself. Exported into the shell it would move the
+  // shell's own home, and the next switch would unset HOME altogether.
+  if (adapterFor(profile.cli).homeDir) {
+    throw new Error(`'${profileName}' is an ${profile.cli} profile, which can't be switched into a shell. Start it with: aimux run ${profileName}`);
+  }
+
+  const env = { ...buildRunParams(config, profileName).env };
 
   // `run` passes the profile model as --model. A shell switch has no command line, so
   // without this a plain `claude` afterwards ran on claude's own default — `run` and

@@ -1,15 +1,15 @@
 import {
   type Stats,
   readdirSync, lstatSync, statSync, symlinkSync, readlinkSync,
-  existsSync, mkdirSync, unlinkSync,
+  existsSync, mkdirSync, unlinkSync, realpathSync,
   readFileSync, writeFileSync, renameSync, openSync, closeSync,
 } from 'node:fs';
-import { join, resolve, sep, dirname, basename } from 'node:path';
+import { join, resolve, sep, dirname, basename, relative } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { AimuxConfig } from '../types/index.js';
-import { expandHome } from './paths.js';
+import { expandHome, standInHome, userHome } from './paths.js';
 import { profileNotFound, sourceFor } from './config.js';
-import { adapterFor } from './adapters/index.js';
+import { adapterFor, type CliAdapter } from './adapters/index.js';
 
 export interface SyncResult {
   created: string[];
@@ -274,7 +274,74 @@ function reclaimable(path: string, stat: Stats): boolean {
   return stat.isFile() && !existsSync(`${path}-wal`) && !existsSync(`${path}-shm`);
 }
 
-export function syncProfile(config: AimuxConfig, profileName: string): SyncResult {
+/** Link the real home into the stand-in home of a profile whose CLI only finds its config
+ *  under HOME (agy), one level per segment of `homeDir`, skipping the segment that leads
+ *  down to the profile's own config dir. The agent's tools inherit the stand-in, and
+ *  without these links git, ssh and gh lose the user's dotfiles. */
+function mirrorHome(profilePath: string, adapter: CliAdapter, home: string, result: SyncResult): void {
+  const segments = adapter.homeDir!.split('/');
+  const top = standInHome(profilePath, adapter.homeDir!);
+
+  // Taken for the real home (an agy session that lost AIMUX_REAL_HOME), the stand-in
+  // would be linked to itself.
+  try {
+    if (realpathSync(home) === realpathSync(top)) return;
+  } catch {
+    return;
+  }
+
+  for (const dir of adapter.sharedHomeDirs ?? []) mkdirSync(join(home, dir), { recursive: true });
+
+  let standIn = top;
+  let real = home;
+  for (const own of segments) {
+    let entries: string[];
+    try {
+      entries = readdirSync(real);
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      const target = join(real, entry);
+      // The aimux dir holds the stand-in itself: linked, it would loop.
+      if (entry === own || top.startsWith(target + sep)) continue;
+
+      const link = join(standIn, entry);
+      try {
+        if (!lstatExists(link)) {
+          symlinkSync(target, link);
+        } else if (!lstatSync(link).isSymbolicLink()) {
+          // A real copy (sed -i swaps a link for one) no longer follows the real file.
+          result.conflicts.push(`~/${relative(top, link)}`);
+        } else if (!existsSync(link)) {
+          unlinkSync(link);
+          symlinkSync(target, link);
+        }
+        // A live link to somewhere else is the user's own (a work .gitconfig) and stays.
+      } catch {
+        // One odd entry (no symlink right on Windows, a second run racing this one) must
+        // not keep the profile from starting.
+      }
+    }
+
+    // A link to an entry since removed from the real home points at nothing.
+    for (const entry of readdirSync(standIn)) {
+      const link = join(standIn, entry);
+      const target = join(real, entry);
+      try {
+        if (lstatSync(link).isSymbolicLink() && readlinkSync(link) === target && !lstatExists(target)) unlinkSync(link);
+      } catch {
+        // gone already
+      }
+    }
+
+    standIn = join(standIn, own);
+    real = join(real, own);
+  }
+}
+
+export function syncProfile(config: AimuxConfig, profileName: string, home = userHome()): SyncResult {
   const profile = config.profiles[profileName];
   if (!profile) {
     throw profileNotFound(config, profileName);
@@ -358,7 +425,9 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
     }
   }
 
-  const sourceEntries = readdirSync(sourcePath);
+  // agy shares nothing from its own dir, and someone who only ever ran it through aimux
+  // has no such dir at all. A missing claude or codex source stays an error.
+  const sourceEntries = adapter.homeDir && !existsSync(sourcePath) ? [] : readdirSync(sourcePath);
 
 
   for (const entry of sourceEntries) {
@@ -467,6 +536,8 @@ export function syncProfile(config: AimuxConfig, profileName: string): SyncResul
     }
   }
 
+  if (adapter.homeDir) mirrorHome(profilePath, adapter, home, result);
+
   return result;
 }
 
@@ -505,7 +576,7 @@ export function checkProfileHealth(config: AimuxConfig, profileName: string): He
     return report;
   }
 
-  const sourceEntries = new Set(readdirSync(sourcePath));
+  const sourceEntries = new Set(adapter.homeDir && !existsSync(sourcePath) ? [] : readdirSync(sourcePath));
   const profileEntries = readdirSync(profilePath);
 
   for (const entry of sourceEntries) {

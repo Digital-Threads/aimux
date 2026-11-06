@@ -22,6 +22,18 @@ export interface CliAdapter {
    *  Optional — when absent the base dir is used unchanged. */
   configPathFor?(baseDir: string): string;
 
+  /** For a CLI with no config-dir variable that finds its config only under HOME (agy:
+   *  `.gemini/antigravity-cli`): that dir's path inside HOME. Such a profile runs with a
+   *  stand-in HOME, its base dir, and sync links the rest of the real home into it so
+   *  the tools the agent runs still find the user's dotfiles. It can't be switched into
+   *  a shell with `aimux use`, which would replace the shell's own HOME. Optional. */
+  homeDir?: string;
+
+  /** Dirs under the real home that every profile of a `homeDir` CLI shares (agy's
+   *  `.gemini/config`: skills, plugins, MCP). Sync makes them in the real home up front;
+   *  otherwise the CLI makes a private one in the stand-in that a link can't replace. */
+  sharedHomeDirs?: string[];
+
   /** Env that selects a model, for launches with no command line to carry the model
    *  flag (`aimux use` + a plain CLI call). Optional — absent when the CLI reads its
    *  model from nowhere but flags and its own config. */

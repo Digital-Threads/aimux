@@ -6,7 +6,7 @@
 [![node](https://img.shields.io/node/v/@digital-threads/aimux?color=339933&logo=node.js)](https://nodejs.org)
 [![GitHub stars](https://img.shields.io/github/stars/Digital-Threads/aimux?style=social)](https://github.com/Digital-Threads/aimux)
 
-Run multiple Claude Code / Codex / Gemini subscriptions side by side: one shared brain — skills, agents, memory, settings — separate logins, and every subscription's live 5h/7d limits in a single view.
+Run multiple Claude Code / Codex / Gemini / Antigravity subscriptions side by side: one shared brain — skills, agents, memory, settings — separate logins, and every subscription's live 5h/7d limits in a single view.
 
 ![aimux status — every subscription's 5-hour and weekly usage and when it resets, in one table](docs/aimux-status.svg)
 
@@ -308,15 +308,16 @@ plugins from your main profile (or with `CLAUDE_CONFIG_DIR=~/.claude claude plug
 and every profile picks them up on its next run. A plugin installed from inside a
 profile is merged back into the shared source automatically.
 
-## Multiple AI CLIs (Codex, Gemini)
+## Multiple AI CLIs (Codex, Gemini, Antigravity)
 
 aimux isn't claude-only. A profile's `cli` field selects which AI CLI it runs, so you
-can keep claude, Codex, **and** Gemini subscriptions side by side — same shared brain,
+can keep claude, Codex, Gemini **and** Antigravity subscriptions side by side — same shared brain,
 isolated auth — and even hand a live conversation from one to the other when a limit hits.
 
 ```bash
 aimux profile add codework --cli codex   # a Codex profile
 aimux profile add gem --cli gemini       # a Gemini profile (~/.gemini)
+aimux profile add ag --cli agy           # an Antigravity CLI profile (~/.gemini/antigravity-cli)
 aimux auth login codework                # runs `codex login` under an isolated CODEX_HOME
 aimux run codework                        # launches Codex with the right model flag
 aimux agents                              # claude + codex sessions in one view (CLI-badged)
@@ -335,6 +336,14 @@ aimux agents                              # claude + codex sessions in one view 
   `GEMINI_CLI_HOME` at the profile's parent and the profile dir IS gemini's `.gemini`.
   Gemini resumes by per-project index (`-r latest`), not by session id, so cross-Gemini
   native resume isn't wired into the session list yet.
+- **Antigravity specifics.** `agy` reads `~/.gemini/antigravity-cli` from the home and has
+  no variable to move it, so an agy profile runs with a stand-in home (`HOME`, or
+  `USERPROFILE` on Windows): the profile's own dir. Every sync links the rest of your
+  real home into it, so the tools the agent runs still find `.gitconfig`, `.ssh` and the
+  rest, and skills, plugins and MCP servers in `~/.gemini/config` are shared. The login,
+  settings and conversations stay private. `aimux auth login ag` starts `agy`, which asks
+  you to sign in. An agy profile can't be switched into a shell with `aimux use`: start it
+  with `aimux run ag`.
 - **claude is untouched.** Multi-CLI is strictly opt-in — without a non-claude profile
   nothing changes.
 
