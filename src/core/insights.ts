@@ -1,4 +1,4 @@
-import { pickFreestProfile, type LimitsSnapshot, type RateLimitProbe } from './limits.js';
+import { pickFreestProfile, type LimitsSnapshot, type RateLimitProbe, type ServiceStatus } from './limits.js';
 
 const FIVE_HOURS = 5 * 3_600_000;
 const SEVEN_DAYS = 7 * 24 * 3_600_000;
@@ -85,6 +85,8 @@ export interface LimitsInsight {
   profiles: ProfileInsight[];
   /** The subscription with the most room in its tightest window, if any has figures. */
   freest: string | null;
+  /** Anthropic's status page, when it says something is wrong. */
+  service: ServiceStatus | null;
 }
 
 const WORST: Array<Verdict | 'unknown'> = ['unknown', 'ok', 'tight', 'over', 'spent'];
@@ -111,5 +113,6 @@ export function limitsInsight(snapshot: LimitsSnapshot, now: number = Date.now()
     now,
     profiles,
     freest: pickFreestProfile(new Map(Object.entries(snapshot.profiles))),
+    service: snapshot.service && snapshot.service.indicator !== 'none' ? snapshot.service : null,
   };
 }

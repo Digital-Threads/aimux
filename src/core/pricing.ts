@@ -139,14 +139,15 @@ export function hasPricing(model: string): boolean {
   return resolvePricing(model) !== null;
 }
 
-/** Estimate USD for one model's token totals — one request's, for a model whose price
- *  depends on the prompt's length. Returns 0 for unknown models. */
-export function estimateCost(totals: UsageTotals, model: string): number {
+/** Estimate USD for one model's token totals over `requests` requests. A model whose
+ *  price depends on the prompt's length is priced by the average prompt, so a sum must
+ *  hold only requests on one side of the line. Returns 0 for unknown models. */
+export function estimateCost(totals: UsageTotals, model: string, requests = 1): number {
   let p = resolvePricing(model);
   if (!p) return 0;
 
   const prompt = totals.inputTokens + totals.cacheCreationInputTokens + totals.cacheReadInputTokens;
-  if (p.longPrompt && prompt > p.longPrompt.tokens) p = p.longPrompt.pricing;
+  if (p.longPrompt && prompt / requests > p.longPrompt.tokens) p = p.longPrompt.pricing;
 
   return (
     (totals.inputTokens * p.input +

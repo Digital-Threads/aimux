@@ -3,7 +3,7 @@ import type { AimuxData, UsageWindow } from './dashboard.js';
 import { mcpReply } from './mcp.js';
 
 const data: AimuxData = {
-  limits: async (fresh) => ({ fetchedAt: fresh ? 2 : 1, now: 3, profiles: [], freest: 'dt', order: ['dt'] }),
+  limits: async (fresh) => ({ fetchedAt: fresh ? 2 : 1, now: 3, profiles: [], freest: 'dt', service: null, order: ['dt'] }),
   usage: async (since) => {
     if (since === 'bad') throw new Error("since takes 'all' or a duration like 24h");
     return { since, hourly: false, computedAt: 1, profiles: [], days: [{ day: '2026-05-14' }], buckets: ['2026-05-14'], models: [], projects: [], sessions: [] } as unknown as UsageWindow;

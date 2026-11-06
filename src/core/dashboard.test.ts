@@ -10,7 +10,7 @@ const usageOf = (since: string) => ({ since, hourly: false, computedAt: 1, profi
 
 function fakeData(over: Partial<AimuxData> = {}): AimuxData {
   return {
-    limits: async (fresh) => ({ fetchedAt: fresh ? 2 : 1, now: 3, profiles: [], freest: null, order: ['main'] }),
+    limits: async (fresh) => ({ fetchedAt: fresh ? 2 : 1, now: 3, profiles: [], freest: null, service: null, order: ['main'] }),
     usage: async (since) => usageOf(since),
     history: (hours) => [{ at: hours, profiles: {} }],
     ...over,

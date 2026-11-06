@@ -12,7 +12,14 @@ export type Probe = { cli: string; status: Usage | null; error?: string; loginEn
 
 /** What the band above the prompt draws: this session's subscription and the rest,
  *  as of `now` (which the reset times are counted from). */
-export type View = { current: string; others: Record<string, Probe>; live: Usage | null; now: number };
+export type View = {
+  current: string;
+  others: Record<string, Probe>;
+  live: Usage | null;
+  now: number;
+  /** Anthropic's status page from aimux's reading: `indicator` is `none` while all is well. */
+  service?: { indicator: string; description: string } | null;
+};
 
 declare module 'claude-code' {
   interface PluginState {

@@ -87,7 +87,7 @@ export { limitsInsight, windowPace } from './insights.js';
 export type { LimitsInsight, ProfileInsight, Verdict, WindowPace } from './insights.js';
 export { limitsHistory, recordLimits } from './limitsHistory.js';
 export type { LimitsReading } from './limitsHistory.js';
-export { fetchRateLimits, limitsSnapshot, fmtPct, parseRateLimitHeaders, parseCodexUsage, classifyProfile, rateLimitProfiles, pctColor, formatResetAt, probeError, pickFreestProfile, claudeVersion, versionAtLeast, RENEW_MIN_CLAUDE } from './limits.js';
+export { fetchRateLimits, limitsSnapshot, fmtPct, parseRateLimitHeaders, parseCodexUsage, classifyProfile, rateLimitProfiles, pctColor, formatResetAt, probeError, pickFreestProfile, claudeVersion, versionAtLeast, RENEW_MIN_CLAUDE, fetchServiceStatus } from './limits.js';
 export type { RateLimitStatus, RateLimitProbe, ProfileKind } from './limits.js';
 
 export { estimateCost, resolvePricing, hasPricing } from './pricing.js';

@@ -239,7 +239,7 @@ claude mcp add aimux -- aimux mcp
 | `aimux init --source <path>` | Initialize with explicit source directory |
 | `aimux status` | TUI dashboard — profiles, auth, live 5h/7d limit usage and reset times (claude + codex), auto-mode rules when any are set, symlink health. `--watch [s]` keeps it on screen and re-reads the limits; `--json` prints them for scripts; `--max-age <s>` reuses a reading that recent |
 | `aimux status --no-limits` | Same dashboard without the rate-limit probe (offline / faster) |
-| `aimux usage` | Show token usage by profile (Claude transcripts + codex rollouts), including sessions started outside aimux |
+| `aimux usage` | Show token usage by profile (Claude transcripts + codex rollouts), including sessions started outside aimux. A `└ background` line under a profile is the part its subagents and plugins' own claude runs spent |
 | `aimux usage --profile work --since 24h` | Show usage for one profile over a recent window. `--json` prints the full report: per profile, day, model, project and the heaviest sessions |
 | `aimux memory` | Claude's auto-memory notes for the current folder (shared by every profile): notes saved twice, notes `MEMORY.md` doesn't list, index lines pointing at nothing. `--all` lists every project with notes; `aimux memory export [dir]` copies them into the repo (default `.claude/memory`), leaving any file you changed there alone |
 | `aimux dashboard` | Open a page in the browser: every subscription's limits and pace, and where the tokens went. `--port <n>`, `--no-open` |

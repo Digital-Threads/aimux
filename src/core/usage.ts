@@ -9,7 +9,7 @@ import { buildProfileSessionMap } from './profileSessionMap.js';
 import { parseSessionJsonl, quickFirstLineType } from './sessionScanner.js';
 import { listRolloutFiles } from './codexSessionScanner.js';
 import { estimateCost } from './pricing.js';
-import { codexCalls, openScanNotes, usageRows, type CodexCalls, type UsageRow } from './transcriptIndex.js';
+import { codexCalls, helperUsage, openScanNotes, usageRows, type CodexCalls, type UsageRow } from './transcriptIndex.js';
 
 export interface UsageTotals {
   inputTokens: number;
@@ -24,6 +24,8 @@ export interface ProfileUsageSummary extends UsageTotals {
   sessions: number;
   requests: number;
   models: Map<string, number>;
+  /** The part of it background helpers spent (subagents, plugins' own claude runs). */
+  background: UsageTotals & { requests: number };
 }
 
 export interface SessionUsageSummary extends UsageTotals {
@@ -57,6 +59,7 @@ function emptySummary(profile: string): ProfileUsageSummary {
     outputTokens: 0,
     estimatedCostUsd: 0,
     models: new Map<string, number>(),
+    background: { ...emptySlice() },
   };
 }
 
@@ -64,7 +67,7 @@ function numberValue(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
-function addUsage(summary: UsageTotals, usage: UsagePayload, model: string): void {
+function addUsage(summary: UsageTotals, usage: UsagePayload, model: string, requests = 1): void {
   const inputTokens = numberValue(usage.input_tokens);
   const cacheCreationInputTokens = numberValue(usage.cache_creation_input_tokens);
   const cacheReadInputTokens = numberValue(usage.cache_read_input_tokens);
@@ -88,6 +91,7 @@ function addUsage(summary: UsageTotals, usage: UsagePayload, model: string): voi
             estimatedCostUsd: 0,
           },
           model,
+          requests,
         );
 }
 
@@ -117,6 +121,10 @@ interface UsageRecord {
   at: number;
   /** The directory the session ran in. */
   project: string;
+  /** Spent by a background helper, not in a conversation. */
+  background?: boolean;
+  /** How many requests the record sums: a helper's are kept summed. One when absent. */
+  requests?: number;
 }
 
 // All usage records across every configured CLI → deduplicated per-request. Shared by
@@ -144,7 +152,7 @@ function collectUsageRecords(config: AimuxConfig, options: UsageOptions = {}): U
 
 type ScanNotes = ReturnType<typeof openScanNotes>;
 
-function payloadOf(row: UsageRow): UsagePayload {
+function payloadOf(row: Pick<UsageRow, 'usage'>): UsagePayload {
   const [input, cacheWrite, cacheRead, output, cost] = row.usage;
 
   return {
@@ -201,36 +209,54 @@ function collectClaudeUsageRecords(config: AimuxConfig, options: UsageOptions, n
       if (stat.size === 0) continue;
       if (options.sinceMs !== undefined && stat.mtimeMs < options.sinceMs) continue;
 
-      // A background helper's own transcript is not a conversation to count. Telling
-      // costs opening the file, and there are tens of thousands of them, so the answer
-      // is kept — and asked again while the file is still short and still growing, when
-      // its first lines may not have said yet what it is.
+      // A background helper's own transcript (a subagent, a plugin's claude run) is not a
+      // conversation, but it spends the same subscription. Telling which a file is costs
+      // opening it, and there are tens of thousands, so the answer is kept — and asked
+      // again while the file is still short and still growing, when its first lines may
+      // not have said yet what it is. A helper's spend is kept with it, summed.
       const note = notes.get(filePath);
+      const hasGrown = note?.size !== stat.size;
       let skip = note?.skip;
-      if (skip === undefined || (note!.size !== stat.size && note!.size < SETTLED_BYTES)) {
+      if (skip === undefined || (hasGrown && note!.size < SETTLED_BYTES)) {
         skip = quickFirstLineType(filePath) === 'queue-operation' || parseSessionJsonl(filePath, stat.size).isSubagent;
-        notes.put(filePath, { size: stat.size, mtimeMs: stat.mtimeMs, skip });
       }
-      if (skip) continue;
+      const bg = skip ? (!hasGrown && note?.bg) || helperUsage(filePath, stat.mtimeMs) : undefined;
+      if (hasGrown || skip !== note?.skip || bg !== note?.bg) {
+        notes.put(filePath, { size: stat.size, mtimeMs: stat.mtimeMs, skip, ...(bg && { bg }) });
+      }
 
       const fallbackSessionId = file.replace(/\.jsonl$/, '');
+      // Order matters. aimux's own record of a session it attached to is explicit, so it
+      // wins. Next the session-env marker Claude Code left in the config dir that ran this
+      // turn: decided per turn, so a session continued on another subscription is split
+      // between the two. `.claude.json`'s lastSessionId comes after it — it names only a
+      // profile's latest session, and names it whole. A subagent's records carry the
+      // session that started it, so its spend goes where that session's does.
+      const ownerOf = (sessionId: string, at: number) =>
+        history.get(sessionId)?.profile
+        ?? history.get(fallbackSessionId)?.profile
+        ?? ownerAt(owners.get(sessionId) ?? owners.get(fallbackSessionId), at)
+        ?? profileMap.get(sessionId)?.profile
+        ?? profileMap.get(fallbackSessionId)?.profile
+        ?? 'unknown';
+
+      if (bg) {
+        for (const h of bg) {
+          if (options.sinceMs !== undefined && h.at < options.sinceMs) continue;
+
+          const profile = ownerOf(h.sessionId, h.at);
+          if (options.profile && profile !== options.profile) continue;
+
+          records.push({ profile, cli: 'claude', sessionId: h.sessionId, model: h.model, usage: payloadOf(h), at: h.at, project: h.cwd || cwdDir, background: true, requests: h.requests });
+        }
+        continue;
+      }
 
       for (const row of usageRows(filePath, stat.mtimeMs)) {
         if (options.sinceMs !== undefined && row.at < options.sinceMs) continue;
 
         const sessionId = row.sessionId;
-        // Order matters. aimux's own record of a session it attached to is explicit, so it
-        // wins. Next the session-env marker Claude Code left in the config dir that ran this
-        // turn: decided per turn, so a session continued on another subscription is split
-        // between the two. `.claude.json`'s lastSessionId comes after it — it names only a
-        // profile's latest session, and names it whole.
-        const profile =
-          history.get(sessionId)?.profile
-          ?? history.get(fallbackSessionId)?.profile
-          ?? ownerAt(owners.get(sessionId) ?? owners.get(fallbackSessionId), row.at)
-          ?? profileMap.get(sessionId)?.profile
-          ?? profileMap.get(fallbackSessionId)?.profile
-          ?? 'unknown';
+        const profile = ownerOf(sessionId, row.at);
         if (options.profile && profile !== options.profile) continue;
 
         if (seenRequests.has(row.key)) continue;
@@ -370,9 +396,14 @@ export function summarizeUsage(config: AimuxConfig, options: UsageOptions = {}):
       sessionSets.set(rec.profile, new Set<string>());
     }
     const summary = summaries.get(rec.profile)!;
-    summary.requests += 1;
-    addUsage(summary, rec.usage, rec.model);
-    summary.models.set(rec.model, (summary.models.get(rec.model) ?? 0) + 1);
+    const requests = rec.requests ?? 1;
+    summary.requests += requests;
+    addUsage(summary, rec.usage, rec.model, requests);
+    if (rec.background) {
+      summary.background.requests += requests;
+      addUsage(summary.background, rec.usage, rec.model, requests);
+    }
+    summary.models.set(rec.model, (summary.models.get(rec.model) ?? 0) + requests);
     sessionSets.get(rec.profile)!.add(rec.sessionId);
   }
 
@@ -415,8 +446,8 @@ export function usageBySession(config: AimuxConfig, options: UsageOptions = {}):
       summary = emptySessionSummary(rec.sessionId, rec.profile);
       sessions.set(rec.sessionId, summary);
     }
-    summary.requests += 1;
-    addUsage(summary, rec.usage, rec.model);
+    summary.requests += rec.requests ?? 1;
+    addUsage(summary, rec.usage, rec.model, rec.requests);
   }
 
   return Array.from(sessions.values()).sort(
@@ -435,7 +466,8 @@ export interface UsageSlice extends UsageTotals {
  * profile), on which model, in which project, and the heaviest sessions.
  */
 export interface UsageReport {
-  profiles: Array<UsageSlice & { profile: string; sessions: number; models: string[] }>;
+  /** Each profile's whole spend; `background` is the part background helpers spent. */
+  profiles: Array<UsageSlice & { profile: string; sessions: number; models: string[]; background: UsageSlice }>;
   days: Array<UsageSlice & { day: string; profile: string }>;
   /** Every day (or hour) the window covers, oldest first, the ones with no usage too. */
   buckets: string[];
@@ -477,7 +509,7 @@ function bucketsBetween(fromMs: number, toMs: number, byHour: boolean): string[]
 /** `byHour` splits `days` by the hour instead — `2026-05-14T09` — for a window of a day or two. */
 export function usageReport(config: AimuxConfig, options: UsageOptions & { top?: number; byHour?: boolean } = {}): UsageReport {
   const top = options.top ?? 15;
-  const profiles = new Map<string, UsageSlice & { profile: string; sessions: Set<string>; models: Set<string> }>();
+  const profiles = new Map<string, UsageSlice & { profile: string; sessions: Set<string>; models: Set<string>; background: UsageSlice }>();
   const days = new Map<string, UsageSlice & { day: string; profile: string }>();
   const models = new Map<string, UsageSlice & { model: string }>();
   const projects = new Map<string, UsageSlice & { project: string }>();
@@ -494,7 +526,7 @@ export function usageReport(config: AimuxConfig, options: UsageOptions & { top?:
 
   for (const name of Object.keys(config.profiles)) {
     if (!options.profile || options.profile === name) {
-      profiles.set(name, { ...emptySlice(), profile: name, sessions: new Set(), models: new Set() });
+      profiles.set(name, { ...emptySlice(), profile: name, sessions: new Set(), models: new Set(), background: emptySlice() });
     }
   }
 
@@ -507,7 +539,7 @@ export function usageReport(config: AimuxConfig, options: UsageOptions & { top?:
     const day = localDay(rec.at, options.byHour);
     // No profile's: at least say which tool's subscription it ran on.
     const who = rec.profile === 'unknown' && rec.cli === 'codex' ? 'unknown (codex)' : rec.profile;
-    const profile = slice(profiles, who, () => ({ ...emptySlice(), profile: who, sessions: new Set<string>(), models: new Set<string>() }));
+    const profile = slice(profiles, who, () => ({ ...emptySlice(), profile: who, sessions: new Set<string>(), models: new Set<string>(), background: emptySlice() }));
     profile.sessions.add(rec.sessionId);
     profile.models.add(rec.model);
 
@@ -519,9 +551,10 @@ export function usageReport(config: AimuxConfig, options: UsageOptions & { top?:
       slice(sessions, rec.sessionId, () => ({ ...emptySlice(), sessionId: rec.sessionId, profile: who, project: rec.project })),
     ];
 
+    if (rec.background) touched.push(profile.background);
     for (const each of touched) {
-      each.requests += 1;
-      addUsage(each, rec.usage, rec.model);
+      each.requests += rec.requests ?? 1;
+      addUsage(each, rec.usage, rec.model, rec.requests);
     }
   }
 

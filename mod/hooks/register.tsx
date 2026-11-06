@@ -131,7 +131,8 @@ export function table(view: View): string {
     return `${name}  ${windows.join(' · ')}${i === 0 ? '  ← this session' : ''}`;
   });
 
-  return ['How much of each subscription is used', ...lines].join('\n');
+  const trouble = view.service && view.service.indicator !== 'none' ? [`⚠ Anthropic: ${view.service.description} — status.claude.com`] : [];
+  return ['How much of each subscription is used', ...trouble, ...lines].join('\n');
 }
 
 export function warning(current: string, window: SessionRateLimit, others: Record<string, Probe>, own: number, now: number): string {
@@ -158,6 +159,7 @@ let current: string | undefined;
 let aimux: string[] | undefined;
 let handoff: string | undefined;
 let others: Record<string, Probe> = {};
+let service: View['service'];
 let live: Usage | undefined;
 let fetchedAt: number | undefined;
 let reading: Promise<boolean> | undefined;
@@ -165,7 +167,7 @@ let offered: string | undefined;
 const warned = new Set<string>();
 
 async function snapshot($: EngineInterface): Promise<View | undefined> {
-  return current ? { current, others, live: live ?? null, now: await $.clock.now() } : undefined;
+  return current ? { current, others, live: live ?? null, now: await $.clock.now(), service } : undefined;
 }
 
 async function show($: EngineInterface) {
@@ -179,7 +181,9 @@ async function readOthers($: EngineInterface, command: string[]): Promise<boolea
     const { exitCode, stdout } = await $.process.run(command, { timeoutMs: 60_000 });
     if (exitCode !== 0) return false;
 
-    others = JSON.parse(stdout).profiles;
+    const reading = JSON.parse(stdout);
+    others = reading.profiles;
+    service = reading.service ?? null;
     return true;
   } catch {
     // aimux unreachable this time: keep the figures we have
@@ -408,6 +412,7 @@ export const register: Register = (on) => {
             <Text>{`${cell.name} `}</Text>,
             ...usage(cell),
           ])}
+          {drawn.service && drawn.service.indicator !== 'none' ? <Text color="yellow">{`  │  Anthropic: ${drawn.service.description}`}</Text> : null}
         </Text>
       </Box>
     );

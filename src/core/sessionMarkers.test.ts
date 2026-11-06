@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { AimuxConfig } from '../types/index.js';
@@ -73,28 +73,28 @@ describe('sessionOwners', () => {
 });
 
 describe('sessionTouchedSince', () => {
-  const transcript = (id: string) => {
+  // Each write's time is set, not waited for: on a loaded machine a short pause put both
+  // writes on the same side of `since` (aimux-5uv).
+  const transcript = (id: string, at: number) => {
+    const path = join(source(), 'projects', '-home-me-app', `${id}.jsonl`);
     mkdirSync(join(source(), 'projects', '-home-me-app'), { recursive: true });
-    writeFileSync(join(source(), 'projects', '-home-me-app', `${id}.jsonl`), `{"id":"${id}"}\n`);
+    writeFileSync(path, `{"id":"${id}"}\n`);
+    utimesSync(path, at / 1000, at / 1000);
   };
 
-  it('returns the session of this profile whose transcript was written since the given time', async () => {
-    marker(profileDir('work'), 'idle');
-    transcript('idle');
-    marker(profileDir('work'), 'resumed');
-    transcript('resumed');
-    await pause();
+  it('returns the session of this profile whose transcript was written since the given time', () => {
     const since = Date.now();
-    await pause();
-    transcript('resumed'); // an old session, written to again after launch
+    marker(profileDir('work'), 'idle');
+    transcript('idle', since - 60_000);
+    marker(profileDir('work'), 'resumed');
+    transcript('resumed', since + 60_000); // an old session, written to again after launch
     expect(sessionTouchedSince(config(), profileDir('work'), since)).toBe('resumed');
   });
 
-  it('ignores sessions other profiles ran', async () => {
+  it('ignores sessions other profiles ran', () => {
     const since = Date.now();
-    await pause();
     marker(source(), 'someone-else');
-    transcript('someone-else');
+    transcript('someone-else', since + 60_000);
     expect(sessionTouchedSince(config(), profileDir('work'), since)).toBeNull();
   });
 });

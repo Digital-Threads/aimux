@@ -39,6 +39,18 @@ All notable changes to this project are documented here. The format is based on
   dashboard and the band and `/aimux` in Claude Code, which warns at 90% as for the
   plan's own windows. It doesn't judge the plan: a spent Fable week leaves every other
   model running.
+- **Background spend in `aimux usage`.** Subagents and plugins' own claude runs write
+  transcripts of their own, and aimux used to set them aside as not conversations — yet
+  they spend the same subscription: on the maintainer's machine, more than half of one
+  profile's week. They now count in their profile, attributed by the session that
+  started them, and show on a line of their own (`└ background`) under it, in
+  `usage --json` (`profiles[].background`) and on the dashboard. There are tens of
+  thousands of such files, so each one's spend is kept summed with the scan's notes
+  rather than in an index file of its own: the first scan reads them once, later ones
+  only those that grew.
+- **Anthropic's status.** aimux reads status.claude.com with the limits; while it reports
+  trouble, `aimux status`, `status --json` (`service`), the dashboard and the band and
+  `/aimux` in Claude Code say so, since no subscription switch fixes that.
 - **When a login ends.** Since Claude Code 2.1.318 a claude.ai login has a hard end that
   renewing can't move. aimux reads it from the stored login and says so a week ahead;
   past it, it no longer asks claude to renew and says to run `aimux auth login`.

@@ -356,6 +356,15 @@ describe('aimux mod', () => {
     expect(seen.toasts.filter((t) => t.includes('Fable'))).toEqual(['dt has used 92% of its weekly Fable limit. Other models are not counted against it.']);
   });
 
+  test("puts Anthropic's own trouble at the top of the table, and nothing while all is well", () => {
+    const others = { main: LIMITS.profiles.main };
+    const header = (service: { indicator: string; description: string }) =>
+      table({ current: 'main', others, live: null, now: 0, service }).split('\n')[1];
+
+    expect(header({ indicator: 'major', description: 'Partial System Outage' })).toBe('⚠ Anthropic: Partial System Outage — status.claude.com');
+    expect(header({ indicator: 'none', description: 'All Systems Operational' })).toBe('▸ main  5h 13% · 7d 17%  ← this session');
+  });
+
   test('stays silent in a session aimux did not launch', async ($, on) => {
     const clock = mock.clock(on);
     engineBeneath(on);

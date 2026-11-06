@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, openSync, readdirSync, rmSync, 
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { getAimuxDir, setAimuxDir } from './paths.js';
-import { codexCalls, openScanNotes, usageRows } from './transcriptIndex.js';
+import { codexCalls, helperUsage, openScanNotes, usageRows } from './transcriptIndex.js';
 
 let root: string;
 let originalAimuxDir: string;
@@ -251,5 +251,29 @@ describe('openScanNotes', () => {
     expect(openScanNotes().get(gone)).toBeUndefined();
     expect(openScanNotes().get(file)).toBeDefined();
     expect(readdirSync(join(root, '.aimux', 'usage-index')).sort()).toHaveLength(2); // one index, and the notes
+  });
+});
+
+describe('helperUsage', () => {
+  // Tens of thousands of helper transcripts would each need an index file; their
+  // requests appear in no other transcript, so a sum per session and model is enough.
+  it('sums a helper transcript per session and model, each request once, notices left out', () => {
+    const synthetic = JSON.stringify({ type: 'assistant', sessionId: 'p', message: { model: '<synthetic>', usage: { input_tokens: 99 } } });
+    const haiku = JSON.stringify({ type: 'assistant', requestId: 'h1', sessionId: 'p', timestamp: '2026-05-14T00:00:09.000Z', cwd: '/srv/shop', message: { model: 'claude-haiku-4-5', usage: { input_tokens: 3, output_tokens: 1 } } });
+    writeFileSync(file, `${reply('r1', 5)}\n${reply('r1', 5)}\n${reply('r2', 2)}\n${synthetic}\n${haiku}\n`);
+
+    expect(helperUsage(file, 0)).toEqual([
+      { sessionId: 'session-a', model: 'claude-opus-4-7', at: Date.parse('2026-05-14T00:00:00.000Z'), cwd: '/srv/shop', usage: [20, 0, 0, 7, 0], requests: 2 },
+      { sessionId: 'p', model: 'claude-haiku-4-5', at: Date.parse('2026-05-14T00:00:09.000Z'), cwd: '/srv/shop', usage: [3, 0, 0, 1, 0], requests: 1 },
+    ]);
+  });
+});
+
+describe('helperUsage and a price that depends on the prompt', () => {
+  it('keeps Haiku 5.5 requests over 100K apart from the rest', () => {
+    const haiku = (id: string, input: number) => JSON.stringify({ type: 'assistant', requestId: id, sessionId: 'p', message: { model: 'claude-haiku-5-5', usage: { input_tokens: input } } });
+    writeFileSync(file, `${haiku('a', 60_000)}\n${haiku('b', 60_000)}\n${haiku('c', 150_000)}\n`);
+
+    expect(helperUsage(file, 0).map((h) => [h.usage[0], h.requests])).toEqual([[120_000, 2], [150_000, 1]]);
   });
 });

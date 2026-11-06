@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import type { AimuxConfig } from './types/index.js';
-import type { ProfileUsageSummary, RateLimitProbe } from './core/index.js';
+import type { ProfileUsageSummary, RateLimitProbe, UsageTotals } from './core/index.js';
 import { rmSync, existsSync, cpSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { isatty } from 'node:tty';
@@ -16,7 +16,7 @@ import {
   summarizeUsage, usageReport, parseSinceDuration, totalTokens,
   loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedClaudeOnboarding, confirm,
   parseShell, buildSwitchEnv, renderShellExports, renderShellInit,
-  fetchRateLimits, rateLimitProfiles, pickFreestProfile, limitsSnapshot, claudeVersion, versionAtLeast, RENEW_MIN_CLAUDE,
+  fetchRateLimits, rateLimitProfiles, pickFreestProfile, limitsSnapshot, claudeVersion, versionAtLeast, RENEW_MIN_CLAUDE, fetchServiceStatus,
   planContinuation, runWithContinuation, fmtPct, openSplit, posixQuote, baseEnvFor,
   sessionIdFromArgs, followProcessSession, keepOpenOnFailure,
   startDashboard, openBrowser, liveData, serveMcp,
@@ -146,17 +146,19 @@ function topModels(models: Map<string, number>): string {
 
 function printUsageTable(summaries: ProfileUsageSummary[]): void {
   const headers = ['PROFILE', 'SESS', 'REQ', 'INPUT', 'CACHE+', 'CACHE', 'OUTPUT', 'TOTAL', 'COST', 'MODELS'];
-  const rows = summaries.map((s) => [
-    s.profile,
-    formatInteger(s.sessions),
-    formatInteger(s.requests),
-    formatInteger(s.inputTokens),
-    formatInteger(s.cacheCreationInputTokens),
-    formatInteger(s.cacheReadInputTokens),
-    formatInteger(s.outputTokens),
-    formatInteger(totalTokens(s)),
-    formatUsd(s.estimatedCostUsd),
-    topModels(s.models),
+  const cells = (t: UsageTotals) => [
+    formatInteger(t.inputTokens),
+    formatInteger(t.cacheCreationInputTokens),
+    formatInteger(t.cacheReadInputTokens),
+    formatInteger(t.outputTokens),
+    formatInteger(totalTokens(t)),
+    formatUsd(t.estimatedCostUsd),
+  ];
+  // Under each profile, the part of it background helpers spent (subagents, plugins'
+  // own claude runs): counted in the profile's line, and shown on its own.
+  const rows = summaries.flatMap((s) => [
+    [s.profile, formatInteger(s.sessions), formatInteger(s.requests), ...cells(s), topModels(s.models)],
+    ...(s.background.requests > 0 ? [['  └ background', '', formatInteger(s.background.requests), ...cells(s.background), '']] : []),
   ]);
   const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)));
   console.log(headers.map((h, i) => h.padEnd(widths[i])).join('  '));
@@ -215,10 +217,13 @@ program
     const { render } = await import('ink');
     const { StatusView } = await import('./components/StatusView.js');
     const draw = async () => {
-      const limits = await probeRateLimits(config, options.limits);
+      const [limits, service] = await Promise.all([
+        probeRateLimits(config, options.limits),
+        options.limits ? fetchServiceStatus() : null,
+      ]);
       const footer = every && `Read at ${new Date().toLocaleTimeString('en-GB')} · again every ${every}s · Ctrl-C to stop`;
 
-      return <StatusView config={config} limits={limits} footer={footer || undefined} />;
+      return <StatusView config={config} limits={limits} footer={footer || undefined} service={service} />;
     };
 
     const app = render(await draw());

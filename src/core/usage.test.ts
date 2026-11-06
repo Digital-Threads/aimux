@@ -163,7 +163,9 @@ describe('summarizeUsage', () => {
     expect(work.outputTokens).toBe(5);
   });
 
-  it('skips subagent transcripts', () => {
+  it("counts a background helper's transcript in its profile, and says how much of it was background", () => {
+    // Subagents and plugins' own claude runs spend the same subscription: about a third
+    // of the tokens on the maintainer's machine went uncounted before.
     writeProfileSession('work', 'session-subagent', 1000);
     writeTranscript('-tmp-project', 'session-subagent', [
       queueOperationLine(),
@@ -174,8 +176,10 @@ describe('summarizeUsage', () => {
     ]);
 
     const work = summarizeUsage(makeConfig()).find((s) => s.profile === 'work')!;
-    expect(work.requests).toBe(0);
-    expect(totalTokens(work)).toBe(0);
+    expect(work.requests).toBe(1);
+    expect(totalTokens(work)).toBe(1500);
+    expect(work.background).toMatchObject({ requests: 1, inputTokens: 1000, outputTokens: 500 });
+    expect(usageReport(makeConfig()).profiles.find((p) => p.profile === 'work')?.background).toMatchObject({ requests: 1, inputTokens: 1000 });
   });
 
   it('counts stable line fallback keys when request identifiers are missing', () => {
@@ -535,13 +539,14 @@ describe('what a scan remembers about a transcript', () => {
     expect(work()).toBe(1);
   });
 
-  it('still sets a helper\'s transcript aside the second time', () => {
+  it("counts a helper's transcript again once it grows, from what the scan kept", () => {
     writeProfileSession('work', 'session-a', 1000);
     const helper = [{ type: 'queue-operation', sessionId: 'session-a' }, assistantLine('session-a', 'req-1', { input_tokens: 7 })];
     writeTranscript('-srv-shop', 'session-a', helper);
-    expect(work()).toBe(0);
+    expect(work()).toBe(1);
+    expect(work()).toBe(1);
 
     writeTranscript('-srv-shop', 'session-a', [...helper, assistantLine('session-a', 'req-2', { input_tokens: 7 })]);
-    expect(work()).toBe(0);
+    expect(work()).toBe(2);
   });
 });

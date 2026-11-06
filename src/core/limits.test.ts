@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'node:os';
 import type { ProfileConfig } from '../types/index.js';
 import type { AimuxConfig } from '../types/index.js';
 import { getAimuxDir, setAimuxDir } from './paths.js';
-import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt, pickFreestProfile, keychainService, classifyProfile, limitsSnapshot, fetchRateLimits, parseOAuthUsage, renewEnv, versionAtLeast, RENEW_MIN_CLAUDE, fresherLogin, loginEnds } from './limits.js';
+import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt, pickFreestProfile, keychainService, classifyProfile, limitsSnapshot, fetchRateLimits, parseOAuthUsage, renewEnv, versionAtLeast, RENEW_MIN_CLAUDE, fresherLogin, loginEnds, fetchServiceStatus } from './limits.js';
 
 // Real header keys captured from a live HTTP 200 probe (see plan spike result).
 const REAL = {
@@ -365,6 +365,14 @@ describe('limitsSnapshot', () => {
       },
     });
     expect(JSON.parse(readFileSync(join(root, '.aimux', 'limits-cache.json'), 'utf-8'))).toEqual(snapshot);
+  });
+
+  it("keeps Anthropic's status beside the figures, and reads none with a stand-in probe", async () => {
+    const { probe } = counting();
+    const service = { indicator: 'minor', description: 'Degraded Performance' };
+
+    expect(await limitsSnapshot(config(), 0, T, probe, async () => service)).toMatchObject({ service });
+    expect(await limitsSnapshot(config(), 0, T, probe)).not.toHaveProperty('service');
   });
 
   it('shares one probe between callers while the figures are fresh enough', async () => {
@@ -739,5 +747,23 @@ describe('loginEnds', () => {
       ended: ['gone'],
       soon: [{ name: 'soon', at: now + 2 * DAY }, { name: 'later', at: now + 6 * DAY }],
     });
+  });
+});
+
+describe('Anthropic service status', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('reads the status page indicator and its words', async () => {
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ status: { indicator: 'major', description: 'Partial System Outage' } }), { status: 200 }));
+
+    expect(await fetchServiceStatus()).toEqual({ indicator: 'major', description: 'Partial System Outage' });
+  });
+
+  it('gives nothing, not an error, when the page cannot be read', async () => {
+    vi.stubGlobal('fetch', async () => { throw new TypeError('fetch failed'); });
+    expect(await fetchServiceStatus()).toBeNull();
+
+    vi.stubGlobal('fetch', async () => new Response('nope', { status: 503 }));
+    expect(await fetchServiceStatus()).toBeNull();
   });
 });

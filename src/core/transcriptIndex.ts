@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { closeSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { getAimuxDir } from './paths.js';
+import { resolvePricing } from './pricing.js';
 
 /** One request found in a transcript: what was spent, when, on which model. */
 export interface UsageRow {
@@ -339,8 +340,75 @@ export function codexCalls(filePath: string, mtimeMs: number): CodexCalls {
 export interface FileNote {
   size: number;
   mtimeMs: number;
-  /** Not a conversation to count (a background helper's own transcript). */
+  /** Not a conversation (a background helper's own transcript: a subagent, a plugin's run). */
   skip?: boolean;
+  /** Such a helper's spend, summed: see helperUsage. */
+  bg?: HelperUsage[];
+}
+
+/** A background helper's spend in one session on one model. */
+export interface HelperUsage {
+  sessionId: string;
+  model: string;
+  /** The last request's time. */
+  at: number;
+  cwd: string | null;
+  usage: UsageRow['usage'];
+  requests: number;
+}
+
+/**
+ * A helper transcript's requests, summed per session and model (and, for a model priced
+ * by each request's prompt, per side of that line). There are tens of
+ * thousands of these, each short-lived, and an index file for every one would be as
+ * many files again; their requests appear in no other transcript, so the sums are
+ * all a count needs.
+ */
+export function helperUsage(filePath: string, mtimeMs: number): HelperUsage[] {
+  let fd: number;
+  try {
+    fd = openSync(filePath, 'r');
+  } catch {
+    return [];
+  }
+
+  const name = basename(filePath).replace(/\.jsonl$/, '');
+  const seen = new Set<string>();
+  const sums = new Map<string, HelperUsage>();
+  let lines = 0;
+  const take = (line: Buffer) => {
+    lines++;
+    if (line.subarray(0, REQUEST_RECORD.length).equals(REQUEST_RECORD) || !line.includes(MARKER)) return;
+
+    let row: UsageRow | null;
+    try {
+      row = rowOf(line.toString('utf-8'), lines - 1, name, mtimeMs);
+    } catch {
+      return; // a line too long to hold as text
+    }
+    if (!row || seen.has(row.key)) return;
+    seen.add(row.key);
+
+    // A model priced by each request's prompt (Haiku 5.5) gets a sum per side of its line.
+    const threshold = resolvePricing(row.model)?.longPrompt?.tokens;
+    const isLong = threshold !== undefined && row.usage[0] + row.usage[1] + row.usage[2] > threshold;
+    const key = `${row.sessionId}\n${row.model}\n${isLong}`;
+    const sum = sums.get(key) ?? { sessionId: row.sessionId, model: row.model, at: row.at, cwd: row.cwd, usage: [0, 0, 0, 0, 0], requests: 0 };
+    sum.requests += 1;
+    sum.at = Math.max(sum.at, row.at);
+    sum.cwd ??= row.cwd;
+    row.usage.forEach((n, i) => { sum.usage[i] += n; });
+    sums.set(key, sum);
+  };
+
+  try {
+    const { tail } = readLines(fd, 0, take);
+    if (tail) take(tail);
+  } finally {
+    closeSync(fd);
+  }
+
+  return [...sums.values()];
 }
 
 /**

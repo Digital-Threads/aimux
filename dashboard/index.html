@@ -232,6 +232,7 @@
   th:first-child, td:first-child, td.text, th.text { text-align: left; }
   tbody tr:hover { background: var(--wash); }
   tfoot td { font-weight: 600; border-bottom: 0; }
+  tr.part td { color: var(--muted); }
   td .dot { margin-right: 9px; vertical-align: baseline; }
 
   .bars { display: grid; gap: 8px; }
@@ -493,6 +494,8 @@ const LANGS = {
     asTable: 'Show as a table',
     bySubscription: 'By subscription',
     profileHeads: ['Subscription', 'Sessions', 'Requests', 'Input', 'Cache write', 'Cache read', 'Output', 'Est. cost'],
+    backgroundRow: '└ of it, background (subagents, plugins)',
+    service: (what) => `Anthropic reports: ${what} (status.claude.com).`,
     byModel: (measure) => `By model · ${measure.toLowerCase()}`,
     byProject: (measure) => `By project · ${measure.toLowerCase()}`,
     tipRows: ['est. cost', 'tokens', 'requests'],
@@ -601,6 +604,8 @@ const LANGS = {
     asTable: 'Показать таблицей',
     bySubscription: 'По подпискам',
     profileHeads: ['Подписка', 'Сессии', 'Запросы', 'Ввод', 'Запись в кэш', 'Чтение кэша', 'Вывод', 'Стоимость'],
+    backgroundRow: '└ из них фоновые (субагенты, плагины)',
+    service: (what) => `У Anthropic сейчас: ${what} (status.claude.com).`,
     byModel: (measure) => `По моделям · ${measure.toLowerCase()}`,
     byProject: (measure) => `По проектам · ${measure.toLowerCase()}`,
     tipRows: ['стоимость', 'токены', 'запросы'],
@@ -919,8 +924,10 @@ function renderLimits(animate) {
   const roomy = profiles.find((p) => p.name === freest);
 
   const [title, lead] = leadOf(profiles, windows, now);
+  // Anthropic's own trouble first: it explains errors no subscription can fix.
+  const service = state.limits.service ? [el('strong', { class: 'service', text: L.service(state.limits.service.description) }), ' '] : [];
   $('headline').replaceChildren(...[title].flat(Infinity));
-  $('lead').replaceChildren(...[lead].flat(Infinity));
+  $('lead').replaceChildren(...[service, lead].flat(Infinity));
   // The tab says how things stand, for when the page is not the one in front.
   document.title = `${$('headline').textContent} — aimux`;
 
@@ -1107,10 +1114,14 @@ function renderProfiles() {
 
   $('profile-table').replaceChildren(el('table', {},
     el('thead', {}, el('tr', {}, ...L.profileHeads.map((h) => el('th', { text: h })))),
-    el('tbody', {}, ...rows.map((r) => el('tr', {},
-      el('td', {}, el('span', { class: 'dot', style: `background:${colorOf(r.profile)}` }), r.profile),
-      el('td', { text: whole(r.sessions) }),
-      ...numberCells(r)))),
+    // Under each subscription, the part background helpers spent: counted in its row.
+    el('tbody', {}, ...rows.flatMap((r) => [
+      el('tr', {},
+        el('td', {}, el('span', { class: 'dot', style: `background:${colorOf(r.profile)}` }), r.profile),
+        el('td', { text: whole(r.sessions) }),
+        ...numberCells(r)),
+      r.background?.requests > 0 && el('tr', { class: 'part' }, el('td', { text: L.backgroundRow }), el('td', {}), ...numberCells(r.background)),
+    ].filter(Boolean))),
     el('tfoot', {}, el('tr', {}, el('td', { text: L.Total }), el('td', { text: whole(rows.reduce((n, r) => n + r.sessions, 0)) }), ...numberCells(total)))));
 
   const all = tokensOf(total);

@@ -10,7 +10,7 @@ import { baseEnvFor, loadProfileEnv } from '../core/run.js';
 import { readProfileAutoMode, type AutoModeStatus } from '../core/autoMode.js';
 import { getSharedElements, checkAllProfiles } from '../core/symlinks.js';
 import { adapterFor } from '../core/adapters/index.js';
-import { loginEnds, type RateLimitProbe } from '../core/limits.js';
+import { loginEnds, type RateLimitProbe, type ServiceStatus } from '../core/limits.js';
 import { windowPct, probeFallback, resetCell } from './rateLimitCell.js';
 
 interface Props {
@@ -22,6 +22,8 @@ interface Props {
   limits?: Map<string, RateLimitProbe>;
   /** A dim line under the table — `status --watch` says when it last read and how often. */
   footer?: string;
+  /** Anthropic's status page, read with the limits. */
+  service?: ServiceStatus | null;
 }
 
 type AuthStatus =
@@ -116,7 +118,7 @@ function safeGetSharedElements(config: AimuxConfig): string[] {
   }
 }
 
-export function StatusView({ config, limits, footer }: Props) {
+export function StatusView({ config, limits, footer, service }: Props) {
   const profiles = Object.entries(config.profiles);
   const authStatuses = new Map(profiles.map(([name, profile]) => [name, checkAuth(profile)]));
   // Memoized on config: each entry reads a settings.json synchronously, so we
@@ -274,6 +276,13 @@ export function StatusView({ config, limits, footer }: Props) {
                 login? — stored token expired for {staleAuth.join(', ')}. The CLI refreshes it on
                 its next run: `aimux run {staleAuth[0]}`.
               </Text>
+            </>
+          ) : null}
+
+          {service && service.indicator !== 'none' ? (
+            <>
+              <Text> </Text>
+              <Text color="yellow">Anthropic: {service.description} — status.claude.com</Text>
             </>
           ) : null}
 

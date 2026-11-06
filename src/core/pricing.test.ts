@@ -124,6 +124,12 @@ describe('official list prices', () => {
     expect(long).toBeCloseTo((10_000 * 0.5 + 90_001 * 0.05) / 1e6 + 2.5, 9);
   });
 
+  it('prices a sum of Haiku 5.5 requests by the prompt of each, not by the sum', () => {
+    const twoShort = estimateCost(totals({ inputTokens: 120_000 }), 'claude-haiku-5-5', 2);
+
+    expect(twoShort).toBeCloseTo((120_000 * 0.1) / 1e6, 9);
+  });
+
   it('prices a [1m] model id like its base id', () => {
     expect(resolvePricing('claude-opus-5-5[1m]')).toEqual(resolvePricing('claude-opus-5-5'));
   });

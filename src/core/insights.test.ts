@@ -143,4 +143,12 @@ describe('limits history and insight', () => {
     expect(dt.loginEndsAt).toBe(NOW + 48 * HOUR);
     expect(dt.verdict).not.toBe('spent');
   });
+
+  it("names Anthropic's status only when something is wrong", () => {
+    const quiet = { ...snapshot(NOW, 10, 20), service: { indicator: 'none', description: 'All Systems Operational' } };
+    const loud = { ...snapshot(NOW, 10, 20), service: { indicator: 'major', description: 'Partial System Outage' } };
+
+    expect(limitsInsight(quiet, NOW).service).toBeNull();
+    expect(limitsInsight(loud, NOW).service).toEqual({ indicator: 'major', description: 'Partial System Outage' });
+  });
 });

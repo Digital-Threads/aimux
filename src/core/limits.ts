@@ -600,6 +600,29 @@ export async function fetchRateLimits(
 export interface LimitsSnapshot {
   fetchedAt: number;
   profiles: Record<string, RateLimitProbe & { cli: string }>;
+  /** Anthropic's status page as of the same reading, when it could be read. */
+  service?: ServiceStatus;
+}
+
+/** Anthropic's own status page: `indicator` is `none` while all is well, else `minor`,
+ *  `major`, `critical` or `maintenance`; `description` says it in words. */
+export interface ServiceStatus {
+  indicator: string;
+  description: string;
+}
+
+/** status.claude.com, or null when it can't be read: a status table must not wait long
+ *  on, or fail over, a page that only explains errors. */
+export async function fetchServiceStatus(timeoutMs = 4000): Promise<ServiceStatus | null> {
+  try {
+    const res = await fetch('https://status.claude.com/api/v2/status.json', { signal: AbortSignal.timeout(timeoutMs), headers: { 'user-agent': 'aimux' } });
+    if (!res.ok) return null;
+
+    const s = ((await res.json()) as { status?: { indicator?: unknown; description?: unknown } } | null)?.status;
+    return typeof s?.indicator === 'string' && typeof s.description === 'string' ? { indicator: s.indicator, description: s.description } : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -614,6 +637,8 @@ export async function limitsSnapshot(
   maxAgeMs: number,
   now: number = Date.now(),
   probe: (profile: ProfileConfig, profilePath: string) => Promise<RateLimitProbe> = fetchRateLimits,
+  // Read along with the real probes only: a stand-in probe reads no network at all.
+  readService: () => Promise<ServiceStatus | null> = probe === fetchRateLimits ? fetchServiceStatus : async () => null,
 ): Promise<LimitsSnapshot> {
   const cachePath = join(getAimuxDir(), 'limits-cache.json');
   const names = rateLimitProfiles(config.profiles);
@@ -635,11 +660,14 @@ export async function limitsSnapshot(
     }
   }
 
-  const profiles = Object.fromEntries(await Promise.all(names.map(async (name) => {
-    const p = config.profiles[name];
-    return [name, { cli: p.cli ?? 'claude', ...(await probe(p, expandHome(p.path))) }] as const;
-  })));
-  const snapshot: LimitsSnapshot = { fetchedAt: now, profiles };
+  const [entries, service] = await Promise.all([
+    Promise.all(names.map(async (name) => {
+      const p = config.profiles[name];
+      return [name, { cli: p.cli ?? 'claude', ...(await probe(p, expandHome(p.path))) }] as const;
+    })),
+    readService(),
+  ]);
+  const snapshot: LimitsSnapshot = { fetchedAt: now, profiles: Object.fromEntries(entries), ...(service && { service }) };
   recordLimits(snapshot);
 
   // Written aside and renamed, so a session reading it never sees half a file.
