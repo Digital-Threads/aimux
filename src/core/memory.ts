@@ -1,5 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { constants, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
 
 // Claude's auto-memory: one note per file in projects/<project>/memory/, plus a
 // MEMORY.md index it loads at the start of each session. Every aimux profile shares
@@ -94,20 +94,31 @@ export function readMemory(dir: string): MemoryReport {
   };
 }
 
-/** Copy the notes and their index into `target` (a folder in the repo). A file already
- *  there with other content is left alone and named, never overwritten. */
-export function exportMemory(dir: string, target: string): { copied: string[]; same: string[]; differs: string[] } {
+/** Copy the notes and their index into `target`, a folder inside the repo at `repo`. A
+ *  file already there with other content is left alone and named, never overwritten, and
+ *  nothing is written through a link: a cloned repo could plant one where a note goes. */
+export function exportMemory(dir: string, target: string, repo: string): { copied: string[]; same: string[]; differs: string[] } {
   const result = { copied: [] as string[], same: [] as string[], differs: [] as string[] };
+  const root = realpathSync(repo);
+  const isInside = (path: string) => path.startsWith(root + sep);
+
+  // Checked before anything is made, and again once made, for a link on the way.
+  if (!isInside(resolve(root, target))) throw new Error(`${target} is outside this repo`);
   mkdirSync(target, { recursive: true });
+  const inside = realpathSync(target);
+  if (!isInside(inside)) throw new Error(`${target} leads outside this repo, to ${inside}`);
 
   for (const file of readdirSync(dir).filter((f) => f.endsWith('.md')).sort()) {
     const from = join(dir, file);
-    const to = join(target, file);
-    if (!existsSync(to)) {
-      copyFileSync(from, to);
+    if (!lstatSync(from).isFile()) continue;
+
+    const to = join(inside, file);
+    const there = lstatSync(to, { throwIfNoEntry: false });
+    if (!there) {
+      copyFileSync(from, to, constants.COPYFILE_EXCL);
       result.copied.push(file);
     } else {
-      result[readFileSync(to).equals(readFileSync(from)) ? 'same' : 'differs'].push(file);
+      result[there.isFile() && readFileSync(to).equals(readFileSync(from)) ? 'same' : 'differs'].push(file);
     }
   }
 

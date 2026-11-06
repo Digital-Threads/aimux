@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { exportMemory, memoryOverview, projectDirName, readMemory } from './memory.js';
@@ -76,9 +76,41 @@ describe('exportMemory', () => {
     writeFileSync(join(target, 'a.md'), readFileSync(join(dir, 'a.md')));
     writeFileSync(join(target, 'b.md'), 'edited in the repo');
 
-    expect(exportMemory(dir, target)).toEqual({ copied: ['MEMORY.md'], same: ['a.md'], differs: ['b.md'] });
+    expect(exportMemory(dir, target, join(root, 'repo'))).toEqual({ copied: ['MEMORY.md'], same: ['a.md'], differs: ['b.md'] });
     expect(readFileSync(join(target, 'b.md'), 'utf-8')).toBe('edited in the repo');
     expect(readFileSync(join(target, 'MEMORY.md'), 'utf-8')).toBe('- [A](a.md)\n');
+  });
+});
+
+describe('exportMemory and links', () => {
+  // A cloned repo could hold a link where a note goes: copied through it, the note would
+  // land wherever the link points.
+  it('never writes through a link in the repo, and skips a note that is itself a link', () => {
+    note('a.md', 'a', 'A');
+    symlinkSync(join(root, 'elsewhere.md'), join(dir, 'b.md'));
+    const target = join(root, 'repo', '.claude', 'memory');
+    mkdirSync(target, { recursive: true });
+    symlinkSync(join(root, 'planted.md'), join(target, 'a.md'));
+
+    expect(exportMemory(dir, target, join(root, 'repo'))).toEqual({ copied: [], same: [], differs: ['a.md'] });
+    expect(existsSync(join(root, 'planted.md'))).toBe(false);
+  });
+
+  it('refuses a target outside the repo before making anything', () => {
+    note('a.md', 'a', 'A');
+    mkdirSync(join(root, 'repo'));
+
+    expect(() => exportMemory(dir, join(root, 'repo', '..', 'made'), join(root, 'repo'))).toThrow(/outside/);
+    expect(existsSync(join(root, 'made'))).toBe(false);
+  });
+
+  it('refuses a target that leads out of the repo', () => {
+    note('a.md', 'a', 'A');
+    mkdirSync(join(root, 'repo', '.claude'), { recursive: true });
+    symlinkSync(join(root, 'outside'), join(root, 'repo', '.claude', 'memory'));
+    mkdirSync(join(root, 'outside'));
+
+    expect(() => exportMemory(dir, join(root, 'repo', '.claude', 'memory'), join(root, 'repo'))).toThrow(/outside/);
   });
 });
 

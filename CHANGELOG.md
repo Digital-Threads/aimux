@@ -31,7 +31,9 @@ All notable changes to this project are documented here. The format is based on
   the current folder's notes and flags notes saved twice, notes `MEMORY.md` doesn't
   list (no session loads those) and index lines pointing at nothing; `--all` lists
   every project; `aimux memory export [dir]` copies the notes into the repo (default
-  `.claude/memory`) and never overwrites a file that differs there.
+  `.claude/memory`) and never overwrites a file that differs there. It refuses a folder
+  outside the repo and never writes through a link, which a cloned repo could plant
+  where a note goes.
 - **Fable's weekly limit.** The usage endpoint now also reports weekly limits that count
   one model only. Once used, Fable's shows in `aimux status`, `status --json`, the
   dashboard and the band and `/aimux` in Claude Code, which warns at 90% as for the

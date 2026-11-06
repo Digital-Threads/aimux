@@ -5,7 +5,7 @@ import type { ProfileUsageSummary, RateLimitProbe } from './core/index.js';
 import { rmSync, existsSync, cpSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { isatty } from 'node:tty';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   loadConfig, saveConfig, addProfile, removeProfile, profileNotFound, expandHome, getAimuxDir, getProfilesDir, standInHome,
@@ -248,8 +248,12 @@ program
       }
 
       const memoryDir = join(projects, projectDirName(process.cwd()), 'memory');
+      if (action === 'export' && readMemory(memoryDir).notes.length === 0) {
+        console.log(`No auto-memory notes for this folder (${memoryDir}).`);
+        return;
+      }
       if (action === 'export') {
-        const r = exportMemory(memoryDir, join(process.cwd(), dir));
+        const r = exportMemory(memoryDir, resolve(process.cwd(), dir), process.cwd());
         console.log(`Copied ${r.copied.length} into ${dir}, ${r.same.length} already the same.`);
         if (r.differs.length > 0) console.log(`Left alone, different in the repo: ${r.differs.join(', ')}`);
         return;
