@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.35.1] - 2026-11-06
+
+### Fixed
+- An agy profile's own login holds only where `agy` keeps the login in a file, as it does
+  with no system keychain (WSL, a headless Linux). On Windows, macOS and a Linux desktop
+  it keeps it in the keychain (Credential Manager, Keychain, Secret Service), one for the
+  whole user, which a stand-in home can't keep apart: every agy profile then shares your
+  usual login, and signing in or out in one does it for all. 0.35.0 promised separate
+  logins everywhere. `aimux auth login` now says when the login went to the keychain,
+  and the README says where separation holds. Settings and conversations stay private
+  either way.
+
 ## [0.35.0] - 2026-11-06
 
 ### Added

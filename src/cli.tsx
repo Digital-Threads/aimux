@@ -1275,6 +1275,13 @@ program
             // account again, right after this login succeeded.
             if (p.cli === 'claude') seedClaudeOnboarding(profilePath);
             console.log(`✓ Profile '${resolved}' authenticated`);
+          } else if (adapter.homeDir) {
+            // agy writes its login to a file only where the system has no keychain (WSL, a
+            // headless Linux). Elsewhere the login lands in the keychain, which every agy
+            // profile of this user shares: the stand-in home can't keep it apart.
+            console.log(`⚠ No login file appeared in '${resolved}'. If ${p.cli} signed you in, it kept the login in the system keychain`
+              + ' (Windows Credential Manager, macOS Keychain, Linux Secret Service), which every agy profile of this user shares:'
+              + ' signing in or out here does the same for your usual agy.');
           }
         } catch (err) {
           console.error(`Error: ${(err as Error).message}`);

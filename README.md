@@ -347,10 +347,14 @@ aimux agents                              # claude + codex sessions in one view 
   no variable to move it, so an agy profile runs with a stand-in home (`HOME`, or
   `USERPROFILE` on Windows): the profile's own dir. Every sync links the rest of your
   real home into it, so the tools the agent runs still find `.gitconfig`, `.ssh` and the
-  rest, and skills, plugins and MCP servers in `~/.gemini/config` are shared. The login,
-  settings and conversations stay private. `aimux auth login ag` starts `agy`, which asks
-  you to sign in. An agy profile can't be switched into a shell with `aimux use`: start it
-  with `aimux run ag`.
+  rest, and skills, plugins and MCP servers in `~/.gemini/config` are shared. Settings and
+  conversations stay private. The login does only where `agy` keeps it in a file, as it
+  does with no system keychain (WSL, a headless Linux). On Windows, macOS or a Linux
+  desktop `agy` keeps it in the keychain (Credential Manager, Keychain, Secret Service),
+  one for the whole user: every agy profile then shares your usual login, and signing in
+  or out in one does it for all; `aimux auth login` says so when it happens. `aimux auth
+  login ag` starts `agy`, which asks you to sign in. An agy profile can't be switched
+  into a shell with `aimux use`: start it with `aimux run ag`.
 - **claude is untouched.** Multi-CLI is strictly opt-in — without a non-claude profile
   nothing changes.
 
