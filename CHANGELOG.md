@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.35.0] - 2026-11-06
 
 ### Added
 - **Antigravity CLI support (`--cli agy`).** Google replaced Gemini CLI with `agy` for
@@ -26,6 +26,34 @@ All notable changes to this project are documented here. The format is based on
   - `aimux profile remove` deletes the whole stand-in, so a profile made later under
     that name doesn't inherit its links.
   - Windows is not verified yet: there agy should read its home from `USERPROFILE`.
+- **`aimux memory`.** Claude's auto-memory lives in `~/.claude/projects/<project>/memory`,
+  shared by every profile, outside the repo and with no history. `aimux memory` lists
+  the current folder's notes and flags notes saved twice, notes `MEMORY.md` doesn't
+  list (no session loads those) and index lines pointing at nothing; `--all` lists
+  every project; `aimux memory export [dir]` copies the notes into the repo (default
+  `.claude/memory`) and never overwrites a file that differs there.
+- **Fable's weekly limit.** The usage endpoint now also reports weekly limits that count
+  one model only. Once used, Fable's shows in `aimux status`, `status --json`, the
+  dashboard and the band and `/aimux` in Claude Code, which warns at 90% as for the
+  plan's own windows. It doesn't judge the plan: a spent Fable week leaves every other
+  model running.
+- **When a login ends.** Since Claude Code 2.1.318 a claude.ai login has a hard end that
+  renewing can't move. aimux reads it from the stored login and says so a week ahead;
+  past it, it no longer asks claude to renew and says to run `aimux auth login`.
+
+### Fixed
+- Claude Haiku 5.5 was priced as Haiku 4.5, ten times too high: it costs $0.10/$0.50 per
+  million tokens, and $0.50/$2.50 for a request whose prompt is over 100K, which aimux
+  now prices request by request. Sonnet 5.5 reads its cache at $0.10, not $0.20.
+- On macOS a leftover `~/.claude/.credentials.json` hid the fresher login in the
+  Keychain, so a profile claude had renewed read as "login expired". aimux now takes
+  whichever of the two expires later.
+- aimux renews a lapsed login only on Claude Code 2.1.317 or newer: an older
+  `claude auth status` could quit mid-refresh and sign the profile out. `aimux doctor`
+  warns about an older claude.
+- Counting usage no longer reads the request records Claude Code 2.1.300 started
+  keeping in transcripts, some of them many megabytes, in search of a usage figure
+  they never hold.
 
 ## [0.34.1] - 2026-10-17
 

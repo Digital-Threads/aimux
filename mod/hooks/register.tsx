@@ -64,19 +64,26 @@ function freest(others: Record<string, Probe>, current: string, own: number): [s
 /** ` (resets in 2h 10m)`, or nothing when the reset time is unknown or past. Counted
  *  from `now` rather than printed as a clock time: the mod's sandbox has no time zone. */
 export function resetsIn(resetsAt: number | undefined, now: number): string {
-  if (resetsAt === undefined || !Number.isFinite(resetsAt) || resetsAt <= now) return '';
+  const left = timeLeft(resetsAt, now);
+  return left ? ` (resets in ${left})` : '';
+}
 
-  const minutes = Math.ceil((resetsAt - now) / 60_000);
+/** `2d 3h`, `3h 10m` or `40m` until `at`; empty when it is unknown or past. */
+function timeLeft(at: number | undefined, now: number): string {
+  if (at === undefined || !Number.isFinite(at) || at <= now) return '';
+
+  const minutes = Math.ceil((at - now) / 60_000);
   const days = Math.floor(minutes / 1440);
   const hours = Math.floor((minutes % 1440) / 60);
-  const text = days > 0 ? `${days}d ${hours}h` : hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
-
-  return ` (resets in ${text})`;
+  return days > 0 ? `${days}d ${hours}h` : hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
 }
+
+/** How long before a login's end the table starts saying so. */
+const LOGIN_NOTICE_MS = 7 * 24 * 60 * 60_000;
 
 /** One subscription: its windows, each named as claude's own status line names them;
  *  one it does not have (codex's 5-hour one) is left out. */
-export type Cell = { name: string; isExpired: boolean; windows: { label: string; pct: number; resetsAt?: number }[] };
+export type Cell = { name: string; isExpired: boolean; loginEndsAt?: number; windows: { label: string; pct: number; resetsAt?: number }[] };
 
 /**
  * The session's own subscription first, wherever it sits in the profile list, then
@@ -84,20 +91,25 @@ export type Cell = { name: string; isExpired: boolean; windows: { label: string;
  * an older reading that said otherwise predates it.
  */
 export function cells(view: View): Cell[] {
-  const cell = (name: string, usage: Usage | null | undefined, isExpired: boolean): Cell => ({
+  // A model's own week (Fable's) only once it is used: an untouched one is noise. Never
+  // in claude's own figures for the session, so the session's comes from aimux too.
+  const cell = (name: string, usage: Usage | null | undefined, probe: Probe | undefined, isExpired: boolean): Cell => ({
     name,
     isExpired,
+    loginEndsAt: probe?.loginEndsAt,
     windows: [
       ...(usage?.fiveHourPct != null ? [{ label: '5h', pct: usage.fiveHourPct, resetsAt: usage.fiveHourResetsAt }] : []),
       ...(usage?.weeklyPct != null ? [{ label: '7d', pct: usage.weeklyPct, resetsAt: usage.weeklyResetsAt }] : []),
+      ...(probe?.status?.scoped ?? []).filter((w) => w.pct > 0).map((w) => ({ label: w.name, pct: w.pct, resetsAt: w.resetsAt })),
     ],
   });
 
   const rest = Object.entries(view.others)
     .filter(([name]) => name !== view.current)
-    .map(([name, probe]) => cell(name, probe.status, probe.error === 'auth'));
+    .map(([name, probe]) => cell(name, probe.status, probe, probe.error === 'auth'));
 
-  return [cell(view.current, view.live ?? view.others[view.current]?.status, false), ...rest];
+  const own = view.others[view.current];
+  return [cell(view.current, view.live ?? own?.status, own, false), ...rest];
 }
 
 /** What `/aimux` prints: every subscription on its own line, each window with its reset. */
@@ -107,11 +119,16 @@ export function table(view: View): string {
 
   const lines = all.map((c, i) => {
     const name = `${i === 0 ? '▸' : ' '} ${c.name.padEnd(width)}`;
-    if (c.isExpired) return `${name}  login expired — run: aimux run ${c.name}`;
+    // Past its own end a login can't be renewed by a run, only by signing in again.
+    const hasEnded = c.loginEndsAt !== undefined && c.loginEndsAt <= view.now;
+    if (c.isExpired) return hasEnded ? `${name}  login ended — sign in again: aimux auth login ${c.name}` : `${name}  login expired — run: aimux run ${c.name}`;
     if (c.windows.length === 0) return `${name}  no figures right now`;
 
-    const windows = c.windows.map((w) => `${w.label} ${w.pct}%${resetsIn(w.resetsAt, view.now)}`).join(' · ');
-    return `${name}  ${windows}${i === 0 ? '  ← this session' : ''}`;
+    const windows = c.windows.map((w) => `${w.label} ${w.pct}%${resetsIn(w.resetsAt, view.now)}`);
+    if (c.loginEndsAt !== undefined && !hasEnded && c.loginEndsAt - view.now <= LOGIN_NOTICE_MS) {
+      windows.push(`login ends in ${timeLeft(c.loginEndsAt, view.now)}`);
+    }
+    return `${name}  ${windows.join(' · ')}${i === 0 ? '  ← this session' : ''}`;
   });
 
   return ['How much of each subscription is used', ...lines].join('\n');
@@ -192,7 +209,23 @@ async function refresh($: EngineInterface) {
   if (fetchedAt !== undefined && now - fetchedAt < REFRESH_MS) return;
 
   await fetchOthers($, 240);
+  await warnScoped($);
   await show($);
+}
+
+/** Once per window: this subscription's own week of one model (Fable's) near its end.
+ *  claude's responses don't carry that limit, so it comes from aimux's reading. */
+async function warnScoped($: EngineInterface) {
+  if (!current) return;
+
+  const now = await $.clock.now();
+  for (const w of others[current]?.status?.scoped ?? []) {
+    const at = `scoped:${w.name}:${w.resetsAt ?? ''}`;
+    if (w.pct < WARN_AT || warned.has(at)) continue;
+
+    warned.add(at);
+    $.ui.toast(`${current} has used ${w.pct}% of its weekly ${w.name} limit${resetsIn(w.resetsAt, now)}. Other models are not counted against it.`, { timeoutMs: 15_000 });
+  }
 }
 
 /** `/aimux`: the whole table, read fresh — or saying so when it could not be. */
@@ -201,6 +234,7 @@ async function report($: EngineInterface): Promise<string> {
   // land, then ask again.
   await reading;
   const isFresh = await fetchOthers($, 30);
+  await warnScoped($);
   await show($);
 
   const now = await snapshot($);

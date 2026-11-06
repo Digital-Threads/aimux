@@ -70,6 +70,11 @@ export interface ProfileInsight {
   error?: RateLimitProbe['error'];
   fiveHour: WindowPace | null;
   weekly: WindowPace | null;
+  /** Weekly limits of one model (Fable's) that are in use. They don't judge the plan:
+   *  a spent Fable week leaves every other model running. */
+  scoped: Array<WindowPace & { name: string }>;
+  /** When the claude.ai login itself ends, if known. */
+  loginEndsAt?: number;
   /** The worse of its windows; `unknown` when there are no figures to judge. */
   verdict: Verdict | 'unknown';
 }
@@ -94,7 +99,11 @@ export function limitsInsight(snapshot: LimitsSnapshot, now: number = Date.now()
       .map((w) => w?.verdict ?? 'unknown')
       .reduce((worst, v) => (WORST.indexOf(v) > WORST.indexOf(worst) ? v : worst), 'unknown' as Verdict | 'unknown');
 
-    return { name, cli: probe.cli, error: probe.error, fiveHour, weekly, verdict };
+    const scoped = (s?.scoped ?? [])
+      .filter((w) => w.pct > 0)
+      .map((w) => ({ name: w.name, ...windowPace(w.pct, w.resetsAt, SEVEN_DAYS, now) }));
+
+    return { name, cli: probe.cli, error: probe.error, fiveHour, weekly, scoped, loginEndsAt: probe.loginEndsAt, verdict };
   });
 
   return {

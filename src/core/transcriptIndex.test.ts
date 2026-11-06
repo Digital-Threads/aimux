@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { appendFileSync, mkdirSync, mkdtempSync, openSync, readdirSync, rmSync, statSync, writeSync, closeSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -31,6 +31,20 @@ const reply = (requestId: string, output: number) => JSON.stringify({
 const noise = (size: number) => JSON.stringify({ type: 'user', message: { role: 'user', content: 'x'.repeat(size) } });
 
 describe('usageRows', () => {
+  it("passes over the requests claude stores in a transcript (2.1.300 on) without reading them", () => {
+    // Some are many megabytes; a body that mentions "usage" was parsed whole for nothing.
+    const blob = JSON.stringify({ type: 'api-request-blob', sessionId: 's', body: { usage: { input_tokens: 1 }, messages: ['x'.repeat(5000)] } });
+    writeFileSync(file, `${blob}\n${reply('r1', 5)}\n`);
+    const parse = vi.spyOn(JSON, 'parse');
+
+    try {
+      expect(usageRows(file, 0).map((r) => r.key)).toEqual(['request:r1']);
+      expect(parse.mock.calls.some(([text]) => String(text).startsWith('{"type":"api-request'))).toBe(false);
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
   it('finds each request, with what it cost and where it ran', () => {
     writeFileSync(file, `${noise(50)}\n${reply('r1', 5)}\n`);
 

@@ -16,10 +16,11 @@ import {
   summarizeUsage, usageReport, parseSinceDuration, totalTokens,
   loadProfileEnv, collectApiCredentials, collectProviderCredentials, PROVIDER_PRESETS, writeProfileDotEnv, mergeProfileDotEnv, checkDotenvPermissions, seedClaudeOnboarding, confirm,
   parseShell, buildSwitchEnv, renderShellExports, renderShellInit,
-  fetchRateLimits, rateLimitProfiles, pickFreestProfile, limitsSnapshot,
+  fetchRateLimits, rateLimitProfiles, pickFreestProfile, limitsSnapshot, claudeVersion, versionAtLeast, RENEW_MIN_CLAUDE,
   planContinuation, runWithContinuation, fmtPct, openSplit, posixQuote, baseEnvFor,
   sessionIdFromArgs, followProcessSession, keepOpenOnFailure,
   startDashboard, openBrowser, liveData, serveMcp,
+  readMemory, exportMemory, memoryOverview, projectDirName,
 } from './core/index.js';
 
 function collectRepeatable(value: string, previous: string[]): string[] {
@@ -223,6 +224,54 @@ program
     const app = render(await draw());
     // Each reading is a request per subscription, so the pace has a floor (15s above).
     if (every) setInterval(async () => app.rerender(await draw()), every * 1000);
+  });
+
+program
+  .command('memory')
+  .helpGroup('Everyday:')
+  .description("Claude's auto-memory for this folder: notes saved twice, notes the index misses; export copies them into the repo")
+  .argument('[action]', 'list (default) or export')
+  .argument('[dir]', 'export: the folder in this repo to copy into', '.claude/memory')
+  .option('--all', 'Every project that has notes, with how many were saved twice')
+  .action((action: string | undefined, dir: string, options: { all?: boolean }) => {
+    try {
+      const config = requireConfig();
+      const projects = join(expandHome(config.shared_source), 'projects');
+
+      if (options.all) {
+        const overview = memoryOverview(projects);
+        if (overview.length === 0) console.log('No project has auto-memory notes.');
+        for (const p of overview) {
+          console.log(`${p.project}  ${p.notes} ${p.notes === 1 ? 'note' : 'notes'}${p.duplicates > 0 ? `, ${p.duplicates} saved twice` : ''}`);
+        }
+        return;
+      }
+
+      const memoryDir = join(projects, projectDirName(process.cwd()), 'memory');
+      if (action === 'export') {
+        const r = exportMemory(memoryDir, join(process.cwd(), dir));
+        console.log(`Copied ${r.copied.length} into ${dir}, ${r.same.length} already the same.`);
+        if (r.differs.length > 0) console.log(`Left alone, different in the repo: ${r.differs.join(', ')}`);
+        return;
+      }
+      if (action && action !== 'list') throw new Error(`Unknown action '${action}'. Use list or export.`);
+
+      const r = readMemory(memoryDir);
+      if (r.notes.length === 0) {
+        console.log(`No auto-memory notes for this folder (${memoryDir}).`);
+        return;
+      }
+
+      console.log(`${r.notes.length} notes in ${memoryDir}\n`);
+      for (const n of r.notes) console.log(`  ${n.file}  [${n.type ?? '—'}]  ${n.description || n.name}`);
+      for (const g of r.duplicates) console.log(`\n⚠ saved twice: ${g.join(', ')}`);
+      if (r.unindexed.length > 0) console.log(`\n⚠ not in MEMORY.md, so no session loads them: ${r.unindexed.join(', ')}`);
+      if (r.missing.length > 0) console.log(`\n⚠ MEMORY.md points at notes that are gone: ${r.missing.join(', ')}`);
+      console.log(`\nThe folder is outside the repo, with no history. Keep a copy: aimux memory export`);
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
   });
 
 program
@@ -1160,6 +1209,13 @@ program
           if (report.conflicts.length > 0) console.log(`    conflicts: ${report.conflicts.join(', ')}`);
           if (report.orphaned.length > 0) console.log(`    orphaned: ${report.orphaned.join(', ')}`);
         }
+      }
+
+      // Not a symlink issue, so it doesn't fail the check — but an older claude makes
+      // aimux leave a lapsed login alone instead of renewing it.
+      const claude = claudeVersion();
+      if (Object.values(config.profiles).some((p) => p.cli === 'claude') && claude && !versionAtLeast(claude, RENEW_MIN_CLAUDE)) {
+        console.log(`\n⚠ claude ${claude} is older than ${RENEW_MIN_CLAUDE}: aimux won't renew a lapsed login. Update with: claude update`);
       }
 
       if (healthy) {

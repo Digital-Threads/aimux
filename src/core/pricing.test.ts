@@ -73,7 +73,7 @@ describe('estimateCost', () => {
 });
 
 describe('official list prices', () => {
-  // Checked 2026-09-30 against docs.claude.com pricing, developers.openai.com pricing
+  // Checked 2026-09-30 (Claude rows again 2026-11-06) against docs.claude.com pricing, developers.openai.com pricing
   // and api-docs.deepseek.com pricing. One case per model, not per family: the
   // families no longer share a price — Opus 4.5+ costs a third of Opus 4.1, and
   // Opus 5.5 reads its cache at 0.05× input, not the old 0.1× convention.
@@ -90,11 +90,15 @@ describe('official list prices', () => {
     ['claude-opus-4-5-20251101', opus45to5],
     ['claude-opus-4-1-20250805', opusLegacy],
     ['claude-opus-4-20250514', opusLegacy],
-    ['claude-sonnet-5-5', sonnet5],
+    ['claude-sonnet-5-5', { ...sonnet5, cacheRead: 0.1 }],
     ['claude-sonnet-5', sonnet5],
     ['claude-sonnet-4-6', { input: 3, cacheWrite: 3.75, cacheRead: 0.3, output: 15 }],
     ['claude-fable-5-1', { input: 10, cacheWrite: 12.5, cacheRead: 0.25, output: 50 }],
     ['claude-haiku-4-5', { input: 1, cacheWrite: 1.25, cacheRead: 0.1, output: 5 }],
+    ['claude-haiku-5-5', {
+      input: 0.1, cacheWrite: 0.125, cacheRead: 0.01, output: 0.5,
+      longPrompt: { tokens: 100_000, pricing: { input: 0.5, cacheWrite: 0.625, cacheRead: 0.05, output: 2.5 } },
+    }],
     ['gpt-6.1-sol', { input: 2, cacheWrite: 2.5, cacheRead: 0.1, output: 10 }],
     ['gpt-6-sol', { input: 2, cacheWrite: 2.5, cacheRead: 0.2, output: 10 }],
     ['gpt-6-luna', { input: 0.1, cacheWrite: 0.125, cacheRead: 0.01, output: 0.5 }],
@@ -111,6 +115,14 @@ describe('official list prices', () => {
       expect(resolvePricing(model)).toEqual(price);
     });
   }
+
+  it('prices a Haiku 5.5 request by its own prompt: cache reads and writes count, one over 100K pays the higher rate', () => {
+    const short = estimateCost(totals({ inputTokens: 10_000, cacheReadInputTokens: 90_000, outputTokens: 1_000_000 }), 'claude-haiku-5-5');
+    const long = estimateCost(totals({ inputTokens: 10_000, cacheReadInputTokens: 90_001, outputTokens: 1_000_000 }), 'claude-haiku-5-5');
+
+    expect(short).toBeCloseTo((10_000 * 0.1 + 90_000 * 0.01) / 1e6 + 0.5, 9);
+    expect(long).toBeCloseTo((10_000 * 0.5 + 90_001 * 0.05) / 1e6 + 2.5, 9);
+  });
 
   it('prices a [1m] model id like its base id', () => {
     expect(resolvePricing('claude-opus-5-5[1m]')).toEqual(resolvePricing('claude-opus-5-5'));

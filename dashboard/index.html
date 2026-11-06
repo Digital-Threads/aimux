@@ -453,6 +453,8 @@ const LANGS = {
     meterLabel: (win) => `${win} window used`,
     problem: {
       login: 'Login expired. Sign in again with:',
+      ended: 'This login has ended and no renewal brings it back. Sign in again with:',
+      endsSoon: (when) => `This login ends ${when}. Sign in again before then with:`,
       unavailable: 'The limits could not be read just now.',
       noLimits: 'This plan reports no limits.',
     },
@@ -559,6 +561,8 @@ const LANGS = {
     meterLabel: (win) => `${win}: занято`,
     problem: {
       login: 'Вход истёк. Войди заново командой:',
+      ended: 'Срок этого входа закончился, продлением его не вернуть. Войди заново командой:',
+      endsSoon: (when) => `Срок этого входа закончится ${when}. Войди заново до этого командой:`,
       unavailable: 'Сейчас не удалось прочитать лимиты.',
       noLimits: 'Этот тариф не сообщает лимиты.',
     },
@@ -755,13 +759,13 @@ function windowNote(w, now) {
   return reset ? L.note.resets(reset) : L.note.unknown;
 }
 
-function windowRow(key, w, now) {
+function windowRow(key, w, now, label = L.winShort[key]) {
   if (!w) return null;
 
   const passed = w.resetsAt ? 1 - (w.resetsAt - now) / WINDOW_MS[key] : null;
   return el('div', { class: `win tone-${w.verdict}` },
-    el('span', { class: 'wlabel', text: L.winShort[key] }),
-    el('div', { class: 'meter', role: 'meter', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': w.pct, 'aria-label': L.meterLabel(L.winShort[key]) },
+    el('span', { class: 'wlabel', text: label }),
+    el('div', { class: 'meter', role: 'meter', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': w.pct, 'aria-label': L.meterLabel(label) },
       el('div', { class: 'fill', style: `width:${Math.min(100, w.pct)}%` }),
       passed !== null && passed > 0 && passed < 1 && el('span', { class: 'tick', style: `left:${passed * 100}%`, title: L.tickTitle(Math.round(passed * 100)) })),
     el('span', { class: 'pct' }, String(w.pct), el('small', { text: '%' })),
@@ -825,11 +829,17 @@ function command(text) {
 
 /** One channel strip: the subscription, its verdict, a level meter per window. `n` staggers its arrival. */
 function subscriptionCard(p, now, n) {
-  const problem =
-    p.error === 'auth' ? L.problem.login
-    : p.error === 'unavailable' ? L.problem.unavailable
-    : !p.fiveHour && !p.weekly ? L.problem.noLimits
-    : null;
+  // A login past its own end can't be renewed by a run, only by signing in again.
+  const ends = p.loginEndsAt ?? Infinity;
+  const hasEnded = ends <= now;
+  const endsSoon = !hasEnded && ends - now <= 7 * 24 * 3600e3;
+  const [problem, fix] =
+    hasEnded ? [L.problem.ended, `aimux auth login ${p.name}`]
+    : p.error === 'auth' ? [L.problem.login, `aimux run ${p.name}`]
+    : p.error === 'unavailable' ? [L.problem.unavailable]
+    : !p.fiveHour && !p.weekly ? [L.problem.noLimits]
+    : endsSoon ? [L.problem.endsSoon(dayClock(ends)), `aimux auth login ${p.name}`]
+    : [];
 
   return el('div', { class: 'card strip', style: `--id:${colorOf(p.name)};--n:${n}` },
     el('div', { class: 'sub-head' },
@@ -838,9 +848,10 @@ function subscriptionCard(p, now, n) {
       el('span', { class: 'grow' }),
       badge(p.verdict)),
     problem && el('p', { class: 'problem', text: problem }),
-    p.error === 'auth' && command(`aimux run ${p.name}`),
+    fix && command(fix),
     windowRow('fiveHour', p.fiveHour, now),
     windowRow('weekly', p.weekly, now),
+    ...(p.scoped ?? []).map((w) => windowRow('weekly', w, now, w.name)),
     sparkline(p.name, Boolean(p.weekly)));
 }
 

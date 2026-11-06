@@ -132,4 +132,15 @@ describe('limits history and insight', () => {
     // The freest is judged by its tightest window, as everywhere else in aimux.
     expect(insight.freest).toBe('cx');
   });
+
+  it("carries a model's own used week and the login's end, without letting the model week judge the plan", () => {
+    const reading = snapshot(NOW, 10, 20);
+    reading.profiles.dt.status!.scoped = [{ name: 'Fable', pct: 100, resetsAt: NOW + 24 * HOUR }, { name: 'Other', pct: 0 }];
+    reading.profiles.dt.loginEndsAt = NOW + 48 * HOUR;
+
+    const dt = limitsInsight(reading, NOW).profiles.find((p) => p.name === 'dt')!;
+    expect(dt.scoped).toMatchObject([{ name: 'Fable', pct: 100, verdict: 'spent' }]);
+    expect(dt.loginEndsAt).toBe(NOW + 48 * HOUR);
+    expect(dt.verdict).not.toBe('spent');
+  });
 });

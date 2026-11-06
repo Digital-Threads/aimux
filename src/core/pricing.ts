@@ -14,6 +14,9 @@ export interface ModelPricing {
   cacheWrite: number;
   cacheRead: number;
   output: number;
+  /** Prices for a request whose prompt (input, cache writes and cache reads together)
+   *  is over `tokens`: Haiku 5.5 charges each such request five times as much. */
+  longPrompt?: { tokens: number; pricing: ModelPricing };
 }
 
 /** Anthropic list price at the 5-minute cache-write tier (1.25× input; the 1-hour
@@ -35,15 +38,21 @@ function thirdParty(input: number, output: number): ModelPricing {
   return { input, cacheWrite: input, cacheRead: input * 0.1, output };
 }
 
-// List prices checked 2026-09-30 against docs.claude.com, developers.openai.com and
-// api-docs.deepseek.com. Families no longer share one price, so each is its own row.
+// List prices checked 2026-09-30 (Claude rows again 2026-11-06) against docs.claude.com,
+// developers.openai.com and api-docs.deepseek.com. Families no longer share one price,
+// so each is its own row.
 const OPUS_5_5 = claudeTier(4, 20, 0.2);
 const OPUS_4_5_TO_5 = claudeTier(5, 25, 0.5);
 const OPUS_4_AND_4_1 = claudeTier(15, 75, 1.5);
+const SONNET_5_5 = claudeTier(2, 10, 0.1);
 const SONNET_5 = claudeTier(2, 10, 0.2);
 const SONNET_4 = claudeTier(3, 15, 0.3);
 const FABLE_5_1 = claudeTier(10, 50, 0.25);
 const FABLE_5 = claudeTier(10, 50, 1);
+const HAIKU_5_5: ModelPricing = {
+  ...claudeTier(0.1, 0.5, 0.01),
+  longPrompt: { tokens: 100_000, pricing: claudeTier(0.5, 2.5, 0.05) },
+};
 const HAIKU_4_5 = claudeTier(1, 5, 0.1);
 
 const GPT_6_1_SOL = openaiTier(2, 0.1, 2.5, 10);
@@ -83,12 +92,14 @@ const FAMILY_PREFIXES: Array<[string, ModelPricing]> = [
   ['claude-opus-4-5', OPUS_4_5_TO_5],
   ['claude-opus-4', OPUS_4_AND_4_1],
   ['claude-opus', OPUS_5_5], // an unreleased Opus: price it like the newest
+  ['claude-sonnet-5-5', SONNET_5_5],
   ['claude-sonnet-5', SONNET_5],
   ['claude-sonnet-4', SONNET_4],
   ['claude-sonnet', SONNET_5],
   ['claude-fable-5-1', FABLE_5_1],
   ['claude-fable-5', FABLE_5],
   ['claude-fable', FABLE_5_1],
+  ['claude-haiku-5-5', HAIKU_5_5],
   ['claude-haiku', HAIKU_4_5],
   ['glm-4', thirdParty(0.6, 2.2)],
   ['kimi', thirdParty(0.6, 2.5)],
@@ -128,10 +139,15 @@ export function hasPricing(model: string): boolean {
   return resolvePricing(model) !== null;
 }
 
-/** Estimate USD for one model's token totals. Returns 0 for unknown models. */
+/** Estimate USD for one model's token totals — one request's, for a model whose price
+ *  depends on the prompt's length. Returns 0 for unknown models. */
 export function estimateCost(totals: UsageTotals, model: string): number {
-  const p = resolvePricing(model);
+  let p = resolvePricing(model);
   if (!p) return 0;
+
+  const prompt = totals.inputTokens + totals.cacheCreationInputTokens + totals.cacheReadInputTokens;
+  if (p.longPrompt && prompt > p.longPrompt.tokens) p = p.longPrompt.pricing;
+
   return (
     (totals.inputTokens * p.input +
       totals.cacheCreationInputTokens * p.cacheWrite +

@@ -315,6 +315,47 @@ describe('aimux mod', () => {
     ].join('\n'));
   });
 
+  test("names a model's own weekly limit once it is used, the session's own taken from aimux", () => {
+    const others = {
+      main: { cli: 'claude', status: { fiveHourPct: 13, weeklyPct: 17, scoped: [{ name: 'Fable', pct: 50 }] } },
+      fab: { cli: 'claude', status: { fiveHourPct: 5, weeklyPct: 20, scoped: [{ name: 'Fable', pct: 91, resetsAt: 2 * DAY }] } },
+      idle: { cli: 'claude', status: { fiveHourPct: 1, weeklyPct: 2, scoped: [{ name: 'Fable', pct: 0 }] } },
+    };
+
+    expect(table({ current: 'main', others, live: { fiveHourPct: 14, weeklyPct: 17 }, now: 0 })).toBe([
+      'How much of each subscription is used',
+      '▸ main  5h 14% · 7d 17% · Fable 50%  ← this session',
+      '  fab   5h 5% · 7d 20% · Fable 91% (resets in 2d 0h)',
+      '  idle  5h 1% · 7d 2%',
+    ].join('\n'));
+  });
+
+  test('tells a login past its end from a lapsed one, and says when one ends within a week', () => {
+    const others = {
+      main: { cli: 'claude', status: { fiveHourPct: 13, weeklyPct: 17 }, loginEndsAt: 3 * DAY },
+      gone: { cli: 'claude', status: null, error: 'auth', loginEndsAt: 0 },
+      far: { cli: 'claude', status: { fiveHourPct: 1, weeklyPct: 2 }, loginEndsAt: 30 * DAY },
+    };
+
+    expect(table({ current: 'main', others, live: null, now: HOUR })).toBe([
+      'How much of each subscription is used',
+      '▸ main  5h 13% · 7d 17% · login ends in 2d 23h  ← this session',
+      '  gone  login ended — sign in again: aimux auth login gone',
+      '  far   5h 1% · 7d 2%',
+    ].join('\n'));
+  });
+
+  test("warns once when this subscription's weekly Fable limit nears its end", async ($, on) => {
+    const clock = mock.clock(on);
+    const limits = { ...LIMITS, profiles: { ...LIMITS.profiles, dt: { cli: 'claude', status: { fiveHourPct: 48, weeklyPct: 12, scoped: [{ name: 'Fable', pct: 92 }] } } } };
+    const seen = launchedByAimux(on, ran(JSON.stringify(limits)));
+    await $.session.start(START);
+    await clock.settle();
+    await $.command.run({ ...EXIT, command: 'aimux' });
+
+    expect(seen.toasts.filter((t) => t.includes('Fable'))).toEqual(['dt has used 92% of its weekly Fable limit. Other models are not counted against it.']);
+  });
+
   test('stays silent in a session aimux did not launch', async ($, on) => {
     const clock = mock.clock(on);
     engineBeneath(on);

@@ -87,10 +87,11 @@ export { limitsInsight, windowPace } from './insights.js';
 export type { LimitsInsight, ProfileInsight, Verdict, WindowPace } from './insights.js';
 export { limitsHistory, recordLimits } from './limitsHistory.js';
 export type { LimitsReading } from './limitsHistory.js';
-export { fetchRateLimits, limitsSnapshot, fmtPct, parseRateLimitHeaders, parseCodexUsage, classifyProfile, rateLimitProfiles, pctColor, formatResetAt, probeError, pickFreestProfile } from './limits.js';
+export { fetchRateLimits, limitsSnapshot, fmtPct, parseRateLimitHeaders, parseCodexUsage, classifyProfile, rateLimitProfiles, pctColor, formatResetAt, probeError, pickFreestProfile, claudeVersion, versionAtLeast, RENEW_MIN_CLAUDE } from './limits.js';
 export type { RateLimitStatus, RateLimitProbe, ProfileKind } from './limits.js';
 
 export { estimateCost, resolvePricing, hasPricing } from './pricing.js';
+export { readMemory, exportMemory, memoryOverview, projectDirName } from './memory.js';
 export type { ModelPricing } from './pricing.js';
 
 export { unifyAllSessions, cachedUnifiedSessions, deriveName } from './unifiedSessions.js';

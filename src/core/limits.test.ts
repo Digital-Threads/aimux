@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'node:os';
 import type { ProfileConfig } from '../types/index.js';
 import type { AimuxConfig } from '../types/index.js';
 import { getAimuxDir, setAimuxDir } from './paths.js';
-import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt, pickFreestProfile, keychainService, classifyProfile, limitsSnapshot, fetchRateLimits, parseOAuthUsage, renewEnv } from './limits.js';
+import { parseRateLimitHeaders, parseCodexUsage, pctColor, probeError, rateLimitProfiles, formatResetAt, pickFreestProfile, keychainService, classifyProfile, limitsSnapshot, fetchRateLimits, parseOAuthUsage, renewEnv, versionAtLeast, RENEW_MIN_CLAUDE, fresherLogin, loginEnds } from './limits.js';
 
 // Real header keys captured from a live HTTP 200 probe (see plan spike result).
 const REAL = {
@@ -496,6 +496,45 @@ describe('parseOAuthUsage', () => {
     expect(parseOAuthUsage({ error: 'nope' })).toBeNull();
     expect(parseOAuthUsage(null)).toBeNull();
   });
+
+  it("reads a weekly limit that counts one model (Fable's) beside the plan's own week", () => {
+    const status = parseOAuthUsage({
+      five_hour: { utilization: 27 },
+      seven_day: { utilization: 82 },
+      limits: [
+        { kind: 'session', percent: 27 },
+        { kind: 'weekly_all', percent: 82 },
+        { kind: 'weekly_scoped', percent: 41.6, resets_at: '2026-11-06T22:00:00+00:00', scope: { model: { display_name: 'Fable' } } },
+        { kind: 'weekly_scoped', percent: 5, scope: { model: null, surface: 'web' } },
+      ],
+    });
+
+    expect(status?.scoped).toEqual([{ name: 'Fable', pct: 42, resetsAt: Date.parse('2026-11-06T22:00:00Z') }]);
+  });
+
+  it('adds no scoped list to an answer without one', () => {
+    expect(parseOAuthUsage({ seven_day: { utilization: 1 } })).not.toHaveProperty('scoped');
+  });
+});
+
+describe('fresherLogin', () => {
+  // claude 2.1.286 stopped a leftover ~/.claude/.credentials.json shadowing the macOS
+  // Keychain; aimux read the file first and showed a renewed login as lapsed.
+  it('takes the login that expires later', () => {
+    const file = { accessToken: 'old', expiresAt: 1 };
+    const keychain = { accessToken: 'new', expiresAt: 2 };
+
+    expect(fresherLogin(file, keychain)).toBe(keychain);
+    expect(fresherLogin(keychain, file)).toBe(keychain);
+  });
+
+  it('takes whichever exists when only one does', () => {
+    const one = { accessToken: 't' };
+
+    expect(fresherLogin(one, null)).toBe(one);
+    expect(fresherLogin(null, one)).toBe(one);
+    expect(fresherLogin(null, null)).toBeNull();
+  });
 });
 
 describe('fetchRateLimits — claude', () => {
@@ -632,5 +671,73 @@ describe('renewEnv', () => {
 
   it('leaves the config dir unset for the source profile, as claude itself expects', () => {
     expect(renewEnv({ cli: 'claude', path: dir, is_source: true }, dir, inherited)).not.toHaveProperty('CLAUDE_CONFIG_DIR');
+  });
+});
+
+describe('versionAtLeast', () => {
+  // claude before 2.1.317 could quit `claude auth status` mid-refresh and sign the
+  // profile out, so aimux renews a login only on a claude at least that new.
+  it('compares part by part, not as text', () => {
+    expect(versionAtLeast('2.1.317', RENEW_MIN_CLAUDE)).toBe(true);
+    expect(versionAtLeast('2.1.319', RENEW_MIN_CLAUDE)).toBe(true);
+    expect(versionAtLeast('2.2.0', RENEW_MIN_CLAUDE)).toBe(true);
+    expect(versionAtLeast('2.1.99', RENEW_MIN_CLAUDE)).toBe(false);
+    expect(versionAtLeast('2.1.316', RENEW_MIN_CLAUDE)).toBe(false);
+  });
+
+  it('takes an unknown version as too old', () => {
+    expect(versionAtLeast(null, RENEW_MIN_CLAUDE)).toBe(false);
+  });
+});
+
+describe('fetchRateLimits — a login with an end date', () => {
+  // Since claude 2.1.318 a claude.ai login has a hard end that renewing can't move.
+  let dir: string;
+  const profile = { cli: 'claude' as const, path: '' };
+  const login = (refreshTokenExpiresAt: number) =>
+    writeFileSync(join(dir, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'tok', refreshTokenExpiresAt } }));
+
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'aimux-login-end-')); });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reports when the login ends beside the figures', async () => {
+    const ends = Date.now() + 5 * 86_400_000;
+    login(ends);
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ seven_day: { utilization: 8 } }), { status: 200 }));
+
+    expect(await fetchRateLimits(profile, dir)).toMatchObject({ status: { weeklyPct: 8 }, loginEndsAt: ends });
+  });
+
+  it("doesn't ask claude to renew a login that has ended, and says it ended", async () => {
+    const ended = Date.now() - 1000;
+    login(ended);
+    vi.stubGlobal('fetch', async () => new Response('unauthorized', { status: 401 }));
+    const renew = vi.fn(async () => {});
+
+    expect(await fetchRateLimits(profile, dir, { renew })).toEqual({ status: null, error: 'auth', loginEndsAt: ended });
+    expect(renew).not.toHaveBeenCalled();
+  });
+});
+
+describe('loginEnds', () => {
+  const DAY = 86_400_000;
+  const now = Date.parse('2026-11-06T10:00:00Z');
+
+  it('names the logins that ended and the ones ending within a week, soonest first', () => {
+    const probes: Array<[string, { status: null; loginEndsAt?: number }]> = [
+      ['far', { status: null, loginEndsAt: now + 12 * DAY }],
+      ['gone', { status: null, loginEndsAt: now - 1 }],
+      ['later', { status: null, loginEndsAt: now + 6 * DAY }],
+      ['soon', { status: null, loginEndsAt: now + 2 * DAY }],
+      ['unknown', { status: null }],
+    ];
+
+    expect(loginEnds(probes, now)).toEqual({
+      ended: ['gone'],
+      soon: [{ name: 'soon', at: now + 2 * DAY }, { name: 'later', at: now + 6 * DAY }],
+    });
   });
 });

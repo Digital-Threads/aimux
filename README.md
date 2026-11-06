@@ -89,6 +89,8 @@ aimux run --auto        # launch whichever subscription has the most headroom le
 aimux status            # dashboard
 aimux usage             # token usage by profile for the last 7 days
 aimux usage --all       # all known transcript usage
+aimux memory            # Claude's auto-memory for this folder: notes saved twice, notes MEMORY.md misses
+aimux memory export     # copy those notes into the repo (.claude/memory), never overwriting one you changed
 
 # Set a default model per profile. Prefer a family alias: `opus[1m]` always means the
 # newest Opus, so a new release is picked up without touching aimux. A full id such
@@ -170,7 +172,11 @@ subscription in a band above the prompt, the one it runs on first:
   close to its limit turns red and says when it resets. The others are refreshed at
   most every five minutes, and only while you work: an idle session sends nothing, and
   all open sessions share one reading.
-- **A warning at 90%**, naming the subscription with more room left.
+- **A warning at 90%**, naming the subscription with more room left. A model's own
+  weekly limit (Fable's) shows once it is used and warns at 90% too.
+- **The end of a login.** A claude.ai login now has a hard end that renewing can't
+  move; `/aimux`, `aimux status` and the dashboard say when it is a week away, and
+  `aimux auth login <profile>` once it has passed.
 - **One Enter to move.** Once the window is spent, `/exit` is already in the prompt:
   press Enter and aimux carries the conversation over to that subscription without
   asking again.
@@ -235,6 +241,7 @@ claude mcp add aimux -- aimux mcp
 | `aimux status --no-limits` | Same dashboard without the rate-limit probe (offline / faster) |
 | `aimux usage` | Show token usage by profile (Claude transcripts + codex rollouts), including sessions started outside aimux |
 | `aimux usage --profile work --since 24h` | Show usage for one profile over a recent window. `--json` prints the full report: per profile, day, model, project and the heaviest sessions |
+| `aimux memory` | Claude's auto-memory notes for the current folder (shared by every profile): notes saved twice, notes `MEMORY.md` doesn't list, index lines pointing at nothing. `--all` lists every project with notes; `aimux memory export [dir]` copies them into the repo (default `.claude/memory`), leaving any file you changed there alone |
 | `aimux dashboard` | Open a page in the browser: every subscription's limits and pace, and where the tokens went. `--port <n>`, `--no-open` |
 | `aimux mcp` | Serve the same figures to an AI client over MCP (stdio): `claude mcp add aimux -- aimux mcp` |
 | `aimux run [profile]` | Launch AI CLI with correct env and model |

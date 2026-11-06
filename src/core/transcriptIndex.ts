@@ -48,6 +48,9 @@ interface CodexState {
 const CHUNK_BYTES = 1 << 20;
 const HEAD_BYTES = 256;
 const MARKER = Buffer.from('"usage"');
+// Since claude 2.1.300 a transcript also stores the requests themselves, some many
+// megabytes. None is a reply to count, and searching one for MARKER reads all of it.
+const REQUEST_RECORD = Buffer.from('{"type":"api-request');
 const CODEX_MARKERS = ['"token_count"', '"turn_context"', '"session_meta"'].map((m) => Buffer.from(m));
 
 const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
@@ -254,7 +257,7 @@ function readIndexed(filePath: string, mtimeMs: number, kind: 'claude' | 'codex'
       try {
         if (kind === 'codex') {
           if (CODEX_MARKERS.some((m) => line.includes(m))) row = codexRowOf(line.toString('utf-8'), codex, codexId, mtimeMs);
-        } else if (line.includes(MARKER)) {
+        } else if (!line.subarray(0, REQUEST_RECORD.length).equals(REQUEST_RECORD) && line.includes(MARKER)) {
           row = rowOf(line.toString('utf-8'), index.lines - 1, name, mtimeMs);
         }
       } catch {

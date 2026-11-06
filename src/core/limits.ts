@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,6 +17,14 @@ export interface RateLimitStatus {
   fiveHourResetsAt?: number;
   weeklyResetsAt?: number;
   status?: string;
+  /** Weekly limits that count one model only (Fable's), beside the plan's own week. */
+  scoped?: ScopedWindow[];
+}
+
+export interface ScopedWindow {
+  name: string;
+  pct: number;
+  resetsAt?: number;
 }
 
 /** Outcome of one probe. `status === null` means no numbers came back, and
@@ -25,6 +33,8 @@ export interface RateLimitStatus {
 export interface RateLimitProbe {
   status: RateLimitStatus | null;
   error?: 'auth' | 'unavailable';
+  /** When the claude.ai login itself ends (epoch ms): renewing can't move it past this. */
+  loginEndsAt?: number;
 }
 
 export type ProfileKind = 'oauth' | 'api' | 'none';
@@ -101,8 +111,8 @@ export function hasKeychainCredentials(profilePath: string, isSource: boolean): 
   }
 }
 
-/** Read the OAuth token macOS keeps in the login Keychain rather than on disk. */
-function readKeychainToken(profilePath: string, isSource: boolean): string | null {
+/** Read the login macOS keeps in the login Keychain rather than on disk. */
+function readKeychainLogin(profilePath: string, isSource: boolean): OAuthLogin | null {
   if (process.platform !== 'darwin') return null;
   try {
     const raw = execFileSync(
@@ -110,7 +120,7 @@ function readKeychainToken(profilePath: string, isSource: boolean): string | nul
       ['find-generic-password', '-s', keychainService(profilePath, isSource), '-w'],
       { encoding: 'utf-8', timeout: KEYCHAIN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'ignore'] },
     );
-    return JSON.parse(raw)?.claudeAiOauth?.accessToken ?? null;
+    return parseLogin(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -177,7 +187,25 @@ export function parseOAuthUsage(payload: unknown): RateLimitStatus | null {
   const week = read(windows?.seven_day);
   if (five.pct === null && week.pct === null) return null;
 
-  return { fiveHourPct: five.pct, weeklyPct: week.pct, fiveHourResetsAt: five.resetsAt, weeklyResetsAt: week.resetsAt };
+  const status: RateLimitStatus = { fiveHourPct: five.pct, weeklyPct: week.pct, fiveHourResetsAt: five.resetsAt, weeklyResetsAt: week.resetsAt };
+  const scoped = scopedWindows((payload as { limits?: unknown }).limits);
+  if (scoped.length > 0) status.scoped = scoped;
+
+  return status;
+}
+
+/** The weekly limits of `limits[]` that count one model only, named as claude names it. */
+function scopedWindows(limits: unknown): ScopedWindow[] {
+  if (!Array.isArray(limits)) return [];
+
+  return limits.flatMap((raw) => {
+    const l = raw as { kind?: unknown; percent?: unknown; resets_at?: unknown; scope?: { model?: { display_name?: unknown } | null } | null };
+    const name = l?.scope?.model?.display_name;
+    if (l?.kind !== 'weekly_scoped' || typeof name !== 'string' || typeof l.percent !== 'number') return [];
+
+    const resetsAt = typeof l.resets_at === 'string' ? Date.parse(l.resets_at) : NaN;
+    return [{ name, pct: Math.max(0, Math.min(100, Math.round(l.percent))), resetsAt: Number.isFinite(resetsAt) ? resetsAt : undefined }];
+  });
 }
 
 /** Window lengths as reported by the ChatGPT usage endpoint, in seconds. */
@@ -262,16 +290,64 @@ export function pickFreestProfile(limits: Map<string, RateLimitProbe>): string |
   return best?.name ?? null;
 }
 
-function readOAuthToken(profilePath: string, isSource: boolean): string | null {
+/** How long before a login's end aimux starts saying so. */
+const LOGIN_END_NOTICE_MS = 7 * 24 * 3_600_000;
+
+/** The profiles whose claude.ai login has ended, and those whose end is within a week,
+ *  soonest first: renewing can't carry a login past its end, only signing in again. */
+export function loginEnds(
+  probes: Iterable<[string, RateLimitProbe]>,
+  now: number = Date.now(),
+): { ended: string[]; soon: Array<{ name: string; at: number }> } {
+  const ended: string[] = [];
+  const soon: Array<{ name: string; at: number }> = [];
+  for (const [name, probe] of probes) {
+    const at = probe.loginEndsAt;
+    if (at === undefined) continue;
+
+    if (at <= now) ended.push(name);
+    else if (at - now <= LOGIN_END_NOTICE_MS) soon.push({ name, at });
+  }
+
+  return { ended, soon: soon.sort((a, b) => a.at - b.at) };
+}
+
+/** A stored claude.ai login: what aimux reads of it. Times are epoch ms. */
+export interface OAuthLogin {
+  accessToken: string;
+  expiresAt?: number;
+  refreshTokenExpiresAt?: number;
+}
+
+function parseLogin(raw: unknown): OAuthLogin | null {
+  const r = raw as Record<string, unknown> | null;
+  const oauth = (r?.claudeAiOauth ?? r?.claude_ai_oauth ?? r) as Record<string, unknown> | null;
+  const accessToken = oauth?.accessToken ?? oauth?.access_token;
+  if (typeof accessToken !== 'string' || !accessToken) return null;
+
+  const time = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+  return { accessToken, expiresAt: time(oauth?.expiresAt), refreshTokenExpiresAt: time(oauth?.refreshTokenExpiresAt) };
+}
+
+/** Of a login on disk and one in the Keychain, the one that expires later: a leftover
+ *  credentials file on macOS holds a token claude stopped renewing there. */
+export function fresherLogin(file: OAuthLogin | null, keychain: OAuthLogin | null): OAuthLogin | null {
+  if (!file || !keychain) return file ?? keychain;
+  return (keychain.expiresAt ?? 0) > (file.expiresAt ?? 0) ? keychain : file;
+}
+
+function readOAuthLogin(profilePath: string, isSource: boolean): OAuthLogin | null {
+  let file: OAuthLogin | null = null;
   try {
-    const raw = JSON.parse(readFileSync(join(profilePath, '.credentials.json'), 'utf-8'));
-    const oauth = raw.claudeAiOauth ?? raw.claude_ai_oauth ?? raw;
-    const token = oauth.accessToken ?? oauth.access_token ?? null;
-    if (token) return token;
+    file = parseLogin(JSON.parse(readFileSync(join(profilePath, '.credentials.json'), 'utf-8')));
   } catch {
     // A missing credentials file is the normal case on macOS, not a failure.
   }
-  return readKeychainToken(profilePath, isSource);
+  return fresherLogin(file, readKeychainLogin(profilePath, isSource));
+}
+
+function readOAuthToken(profilePath: string, isSource: boolean): string | null {
+  return readOAuthLogin(profilePath, isSource)?.accessToken ?? null;
 }
 
 /** Read codex's stored ChatGPT tokens. Unlike claude, the account id is part of
@@ -381,6 +457,34 @@ async function fetchCodexLimits(profilePath: string, signal: AbortSignal): Promi
 
 const RENEW_TIMEOUT_MS = 15_000;
 
+/** The oldest claude whose `claude auth status` saves a token it refreshes before it
+ *  exits. An older one could quit mid-refresh and sign the profile out (fixed in
+ *  2.1.301, then again in 2.1.317), so there aimux leaves renewal to claude's next start. */
+export const RENEW_MIN_CLAUDE = '2.1.317';
+
+/** The installed claude's version (`2.1.319`), read once; null when claude can't be asked. */
+let installedClaude: string | null | undefined;
+export function claudeVersion(): string | null {
+  if (installedClaude === undefined) {
+    const out = spawnSync('claude', ['--version'], { encoding: 'utf-8', timeout: 5000 }).stdout ?? '';
+    installedClaude = /(\d+\.\d+\.\d+)/.exec(out)?.[1] ?? null;
+  }
+  return installedClaude;
+}
+
+/** Whether `version` is `min` or newer, compared part by part. */
+export function versionAtLeast(version: string | null, min: string): boolean {
+  if (!version) return false;
+
+  const have = version.split('.').map(Number);
+  const need = min.split('.').map(Number);
+  for (let i = 0; i < need.length; i++) {
+    if ((have[i] ?? 0) !== need[i]) return (have[i] ?? 0) > need[i];
+  }
+
+  return true;
+}
+
 // A login or endpoint claude takes from the environment ahead of its stored login:
 // inherited from the shell, it makes `claude auth status` report that and renew nothing.
 const ENV_LOGINS = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_BASE_URL'];
@@ -407,6 +511,8 @@ export function renewEnv(
  * refresh token stays claude's alone: aimux never writes credentials.
  */
 function renewClaudeLogin(profile: ProfileConfig, profilePath: string): Promise<void> {
+  if (!versionAtLeast(claudeVersion(), RENEW_MIN_CLAUDE)) return Promise.resolve();
+
   return new Promise((done) => {
     // Never killed, and detached so a Ctrl-C of aimux does not reach it: a refresh cut
     // short can lose the new refresh token. Past the timeout aimux just stops waiting.
@@ -465,7 +571,11 @@ export async function fetchRateLimits(
   // neither is a request that already waited out its whole timeout.
   const isSource = profile.is_source === true;
   // Read before the probe, not after: a token claude renews meanwhile must not look unchanged.
-  const used = cli === 'claude' ? readOAuthToken(profilePath, isSource) : null;
+  const login = cli === 'claude' ? readOAuthLogin(profilePath, isSource) : null;
+  const used = login?.accessToken ?? null;
+  // The login's own end (claude 2.1.318 on), which no renewal moves.
+  const endsAt = login?.refreshTokenExpiresAt;
+  const withEnd = (probe: RateLimitProbe): RateLimitProbe => (endsAt === undefined ? probe : { ...probe, loginEndsAt: endsAt });
   const startedAt = Date.now();
   const first = await attempt();
 
@@ -473,16 +583,17 @@ export async function fetchRateLimits(
   // on its next start: a profile left alone overnight read as logged out while claude
   // itself signed in without a word. Have claude renew it and ask again; a login that
   // is really gone leaves the token as it was and stays "auth".
-  if (first.error === 'auth' && used && !unrenewable.has(used)) {
+  const hasEnded = endsAt !== undefined && endsAt <= Date.now();
+  if (first.error === 'auth' && used && !hasEnded && !unrenewable.has(used)) {
     await (options.renew ?? renewClaudeLogin)(profile, profilePath);
-    if (readOAuthToken(profilePath, isSource) !== used) return attempt();
+    if (readOAuthToken(profilePath, isSource) !== used) return withEnd(await attempt());
 
     unrenewable.add(used);
   }
 
   const failedFast = first.error === 'unavailable' && Date.now() - startedAt < 2000;
 
-  return failedFast ? attempt() : first;
+  return withEnd(failedFast ? await attempt() : first);
 }
 
 /** What `aimux status --json` prints: every subscription's windows and when they were read. */

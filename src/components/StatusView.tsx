@@ -10,7 +10,7 @@ import { baseEnvFor, loadProfileEnv } from '../core/run.js';
 import { readProfileAutoMode, type AutoModeStatus } from '../core/autoMode.js';
 import { getSharedElements, checkAllProfiles } from '../core/symlinks.js';
 import { adapterFor } from '../core/adapters/index.js';
-import type { RateLimitProbe } from '../core/limits.js';
+import { loginEnds, type RateLimitProbe } from '../core/limits.js';
 import { windowPct, probeFallback, resetCell } from './rateLimitCell.js';
 
 interface Props {
@@ -84,6 +84,9 @@ function authText(auth: AuthStatus): string {
   return isAuthenticated(auth) ? '✓ oauth' : '✗ no auth';
 }
 
+/** A login's end with its day always: an hour alone would read as today's. */
+const whenEnds = (at: number) => new Date(at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+
 function autoModeText(mode: AutoModeStatus): string {
   return mode.configured ? `✓${capCount(mode.allowCount)} ✗${capCount(mode.softDenyCount)}` : '—';
 }
@@ -132,9 +135,16 @@ export function StatusView({ config, limits, footer }: Props) {
   const activeProfile = envActive && config.profiles[envActive] ? envActive : undefined;
   // Profiles whose stored token the provider rejected. Worth naming explicitly:
   // "login?" in a cell says something is wrong but not what to do about it.
+  // A login past its own end is told apart: the CLI can't renew that one on its next
+  // run, only `aimux auth login` brings it back.
+  const ends = loginEnds(limits ?? []);
   const staleAuth = limits
-    ? [...limits].filter(([, probe]) => probe.error === 'auth').map(([name]) => name)
+    ? [...limits].filter(([name, probe]) => probe.error === 'auth' && !ends.ended.includes(name)).map(([name]) => name)
     : [];
+
+  // A weekly limit of one model (Fable's) is named once it is used at all.
+  const scoped = [...(limits ?? [])].flatMap(([profile, probe]) =>
+    (probe.status?.scoped ?? []).filter((w) => w.pct > 0).map((w) => ({ profile, ...w })));
 
   // Columns are as wide as their widest cell, not a fixed guess: fixed widths
   // needed ~130 columns and Ink wrapped every row in half on a normal terminal.
@@ -263,6 +273,40 @@ export function StatusView({ config, limits, footer }: Props) {
               <Text dimColor>
                 login? — stored token expired for {staleAuth.join(', ')}. The CLI refreshes it on
                 its next run: `aimux run {staleAuth[0]}`.
+              </Text>
+            </>
+          ) : null}
+
+          {ends.ended.length > 0 ? (
+            <>
+              <Text> </Text>
+              <Text color="yellow">
+                login ended for {ends.ended.join(', ')} — sign in again: `aimux auth login {ends.ended[0]}`.
+              </Text>
+            </>
+          ) : null}
+
+          {ends.soon.length > 0 ? (
+            <>
+              <Text> </Text>
+              <Text color="yellow">
+                login ends soon: {ends.soon.map((e) => `${e.name} ${whenEnds(e.at)}`).join(', ')} — sign in
+                again before then: `aimux auth login {ends.soon[0].name}`.
+              </Text>
+            </>
+          ) : null}
+
+          {scoped.length > 0 ? (
+            <>
+              <Text> </Text>
+              <Text>
+                <Text dimColor>model weeks: </Text>
+                {scoped.map((w, i) => (
+                  <Text key={`${w.profile}-${w.name}`}>
+                    {i > 0 ? <Text dimColor>, </Text> : null}
+                    {w.profile} {w.name} {windowPct(w.pct)}
+                  </Text>
+                ))}
               </Text>
             </>
           ) : null}
